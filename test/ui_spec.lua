@@ -50,4 +50,24 @@ return {
       t:eq(ids, { "entry:.", "entry:src" })
     end,
   },
+  {
+    name = "untouched folders fold by default; touched ones and ancestors stay open",
+    run = function(t)
+      -- src/a.ts is planned: src and the root stay open; test/ is untouched.
+      local folded = ui.default_folded(rows)
+      t:eq(folded["src"], nil, "planned ancestor stays open")
+      t:eq(folded["."], nil, "root stays open")
+      t:eq(folded["test"], true, "untouched folder folds by default")
+      t:eq(folded["README.md"], nil, "files never fold")
+      -- With no plan at all, every folder except the root folds.
+      local barren = {
+        row("entry:.", true, false),
+        row("entry:src", true, true),
+        row("entry:src/a.ts", false, true),
+      }
+      local barren_folded = ui.default_folded(barren)
+      t:eq(barren_folded["src"], true)
+      t:eq(barren_folded["."], nil)
+    end,
+  },
 }

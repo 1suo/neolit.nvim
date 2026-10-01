@@ -109,7 +109,9 @@ o      open the selected file as a real buffer (falls back to its patch
        buffer for drafted new files; directories fold)
 p      edit the selected path's drafted patch as a diff buffer — :w saves it
        back into the plan through patch/set
-za/zc/zo  fold/unfold the directory under the cursor
+za/zc/zo  toggle/close/open the directory under the cursor (o also toggles);
+       untouched folders start folded — folders touched by the plan and
+       their ancestors stay open
 H      hide repository-only paths (planned paths and ancestors stay)
 Tab    switch pane (also <Right>; <Left> returns to the tree)
 Esc    cancel the running operation

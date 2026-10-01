@@ -82,6 +82,30 @@ local function ancestor_paths(path)
   return ancestors
 end
 
+--- Default fold set for a fresh frame: every directory that neither carries
+--- plan state nor is an ancestor of a planned path. Touched folders and
+--- their ancestors stay open.
+function M.default_folded(rows)
+  local open = { ["."] = true }
+  for _, row in ipairs(rows) do
+    local path = row_path(row)
+    if path and not row.repositoryOnly then
+      open[path] = true
+      for _, ancestor in ipairs(ancestor_paths(path)) do
+        open[ancestor] = true
+      end
+    end
+  end
+  local folded = {}
+  for _, row in ipairs(rows) do
+    local path = row_path(row)
+    if path and row.directory and not open[path] then
+      folded[path] = true
+    end
+  end
+  return folded
+end
+
 --- Which rows render: a row is visible when no ancestor directory is folded
 --- and, in plan-only mode, when it (or a descendant) carries plan state.
 --- `rows` come from the shim with `directory` and `repositoryOnly` flags.
@@ -112,6 +136,20 @@ function M.visible_rows(rows, folded, plan_only)
     if not hidden then visible[#visible + 1] = row end
   end
   return visible
+end
+
+--- The effective fold set for the live panel: the plan-aware default,
+--- minus directories the user explicitly opened, plus explicit folds.
+--- Lives up here because M.render calls it.
+local function effective_folded(rows)
+  local folded = M.default_folded(rows)
+  for path in pairs(state.explicit_open or {}) do
+    folded[path] = nil
+  end
+  for path in pairs(state.folded or {}) do
+    folded[path] = true
+  end
+  return folded
 end
 
 local function message_title()
@@ -234,13 +272,14 @@ function M.render(frame)
     if path then
       for _, ancestor in ipairs(ancestor_paths(path)) do
         state.folded[ancestor] = nil
+        state.explicit_open[ancestor] = true
       end
     end
   end
 
   local tree_lines = {}
   local row_ids = {}
-  local rows_visible = M.visible_rows(frame.tree.rows or {}, state.folded, state.plan_only)
+  local rows_visible = M.visible_rows(frame.tree.rows or {}, effective_folded(frame.tree.rows or {}), state.plan_only)
   for index, row in ipairs(rows_visible) do
     tree_lines[#tree_lines + 1] = { segments = row.segments }
     row_ids[#row_ids + 1] = row.id
@@ -452,6 +491,7 @@ function M.open(opts)
     row_ids = {},
     last_notice = nil,
     folded = {},
+    explicit_open = {},
     plan_only = false,
     ns = vim.api.nvim_create_namespace("neolit"),
   }
@@ -626,12 +666,19 @@ function M.toggle_fold(mode)
   local row = cursor_row()
   if not row or not row.directory then return end
   local path = row.id:sub(7)
+  local folded = effective_folded(state.frame.tree.rows or {})
   if mode == "open" then
+    state.explicit_open[path] = true
     state.folded[path] = nil
   elseif mode == "close" then
+    state.explicit_open[path] = nil
     state.folded[path] = true
+  elseif folded[path] then
+    state.explicit_open[path] = true
+    state.folded[path] = nil
   else
-    state.folded[path] = state.folded[path] and nil or true
+    state.explicit_open[path] = nil
+    state.folded[path] = true
   end
   M.render(state.frame)
   local win = state.wins.tree
