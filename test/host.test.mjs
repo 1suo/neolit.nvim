@@ -247,6 +247,18 @@ test("unknown methods return a JSON-RPC error", async () => {
   await client.shutdown();
 });
 
+test("frame exposes runtime models and configure updates them", async () => {
+  const directory = fixtureRepo();
+  const client = new HostClient(directory, { stub: true });
+  const initialized = await client.request("initialize", { directory });
+  const before = initialized.result.frame.models;
+  assert.ok(before && typeof before === "object", "frame carries runtime models");
+  const configured = await client.request("configure", { model: "test/switched" });
+  assert.equal(configured.result.models.model, "test/switched");
+  assert.equal(configured.result.models.draftModel, before.draftModel, "untouched roles keep their value");
+  await client.shutdown();
+});
+
 test("shutdown exits the process cleanly", async () => {
   const directory = fixtureRepo();
   const client = new HostClient(directory, { stub: true });

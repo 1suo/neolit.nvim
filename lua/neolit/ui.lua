@@ -147,6 +147,17 @@ function M.fold_level_targets(rows, effective, mode)
   return targets
 end
 
+--- True when two frames' rendered content differs. During a busy operation
+--- the spinner poll fires every 120ms; identical frames must not re-render
+--- buffers or touch cursors, or the editor drowns and input feels blocked.
+function M.frames_differ(a, b)
+  local function signature(frame)
+    if not frame then return "" end
+    return vim.json.encode({ rows = frame.tree and frame.tree.rows, detail = frame.detail })
+  end
+  return signature(a) ~= signature(b)
+end
+
 --- Which rows render: a row is visible when no ancestor directory is folded
 --- and, in plan-only mode, when it (or a descendant) carries plan state.
 --- `rows` come from the shim with `directory` and `repositoryOnly` flags.
@@ -284,7 +295,10 @@ local function ensure_timer()
     update_winbars()
     if not state.frame_in_flight and state.host and not state.host.dead then
       state.frame_in_flight = true
-      state.host:request("frame", { spinner = spinner() }, function(msg)
+      -- No spinner parameter: identical frames skip re-rendering, which
+      -- keeps the event loop free while an operation runs. The winbar
+      -- spinner animates locally.
+      state.host:request("frame", {}, function(msg)
         if not state then return end
         state.frame_in_flight = false
         if msg.result then M.render(msg.result) end
@@ -297,7 +311,7 @@ end
 -- Rendering
 --------------------------------------------------------------------------
 
-function M.render(frame)
+function M.render(frame, force)
   if not state or not frame then return end
   if not vim.api.nvim_win_is_valid(state.wins.tree) then
     M.close()
@@ -318,30 +332,37 @@ function M.render(frame)
     end
   end
 
-  local tree_lines = {}
-  local row_ids = {}
-  local rows_visible = M.visible_rows(frame.tree.rows or {}, effective_folded(frame.tree.rows or {}), state.plan_only)
-  for index, row in ipairs(rows_visible) do
-    tree_lines[#tree_lines + 1] = { segments = row.segments }
-    row_ids[#row_ids + 1] = row.id
-  end
-  state.row_ids = row_ids
-  state.rows_visible = rows_visible
-  render.render_lines(vim.api, state.ns, state.bufs.tree, theme, tree_lines)
+  -- Unchanged frames skip all buffer and cursor work: the busy poll fires
+  -- every 120ms and re-rendering thousands of extmarks per tick freezes
+  -- input. Fold/plan-only changes pass force = true.
+  local content_changed = M.frames_differ(state.rendered_frame, frame)
+  if content_changed or force then
+    state.rendered_frame = frame
+    local tree_lines = {}
+    local row_ids = {}
+    local rows_visible = M.visible_rows(frame.tree.rows or {}, effective_folded(frame.tree.rows or {}), state.plan_only)
+    for index, row in ipairs(rows_visible) do
+      tree_lines[#tree_lines + 1] = { segments = row.segments }
+      row_ids[#row_ids + 1] = row.id
+    end
+    state.row_ids = row_ids
+    state.rows_visible = rows_visible
+    render.render_lines(vim.api, state.ns, state.bufs.tree, theme, tree_lines)
 
-  local selected = 1
-  for index, id in ipairs(row_ids) do
-    if id == frame.tree.selectedRowId then selected = index break end
-  end
-  pcall(vim.api.nvim_win_set_cursor, state.wins.tree, { selected, 0 })
+    if state.last_selected ~= frame.tree.selectedRowId then
+      state.last_selected = frame.tree.selectedRowId
+      local selected = 1
+      for index, id in ipairs(row_ids) do
+        if id == frame.tree.selectedRowId then selected = index break end
+      end
+      pcall(vim.api.nvim_win_set_cursor, state.wins.tree, { selected, 0 })
+      if vim.api.nvim_win_is_valid(state.wins.detail) then
+        pcall(vim.api.nvim_win_set_cursor, state.wins.detail, { 1, 0 })
+      end
+    end
 
-  if vim.api.nvim_buf_is_valid(state.bufs.detail) then
-    render.render_lines(vim.api, state.ns, state.bufs.detail, theme, frame.detail or {})
-  end
-  if state.last_selected ~= frame.tree.selectedRowId then
-    state.last_selected = frame.tree.selectedRowId
-    if vim.api.nvim_win_is_valid(state.wins.detail) then
-      pcall(vim.api.nvim_win_set_cursor, state.wins.detail, { 1, 0 })
+    if vim.api.nvim_buf_is_valid(state.bufs.detail) then
+      render.render_lines(vim.api, state.ns, state.bufs.detail, theme, frame.detail or {})
     end
   end
 
@@ -534,6 +555,7 @@ function M.open(opts)
     folded = {},
     explicit_open = {},
     plan_only = false,
+    model_catalog = nil,
     ns = vim.api.nvim_create_namespace("neolit"),
   }
 
@@ -721,7 +743,7 @@ function M.toggle_fold(mode)
     state.explicit_open[path] = nil
     state.folded[path] = true
   end
-  M.render(state.frame)
+  M.render(state.frame, true)
   local win = state.wins.tree
   if vim.api.nvim_win_is_valid(win) then
     for index, id in ipairs(state.row_ids) do
@@ -764,14 +786,14 @@ function M.fold_level(mode)
       state.explicit_open[path] = true
     end
   end
-  M.render(state.frame)
+  M.render(state.frame, true)
 end
 
 --- Hides repository-only paths: only planned paths and their ancestors stay.
 function M.toggle_plan_only()
   if not state or not state.frame then return end
   state.plan_only = not state.plan_only
-  M.render(state.frame)
+  M.render(state.frame, true)
 end
 
 --- First non-panel window in the tab, creating one beside the sidebar if
@@ -927,28 +949,93 @@ function M.switch_model()
       vim.notify((agent_message.error and agent_message.error.message) or "No model runtime is active.", vim.log.levels.WARN)
       return
     end
-    local roles = {
-      { id = "model", label = "default" },
-      { id = "draftModel", label = "draft" },
-      { id = "challengeModel", label = "challenge" },
-    }
-    prompt_select(roles, { prompt = "Switch which model?", format_item = function(role) return role.label end }, function(role)
-      if not role or not state then return end
-      state.host:request("models", {}, function(models_message)
-        if not state then return end
-        local models = models_message.result and models_message.result.models or {}
-        local source = models_message.result and models_message.result.source
-        if models_message.error then models, source = {}, models_message.error.message end
-        if #models > 0 then
-          prompt_select(models, { prompt = role.label .. " model" }, function(model)
-            if model and state then M.dispatch("configure", { [role.id] = model }, OP_LABELS.configure) end
-          end)
-        else
-          prompt_input((source and source .. " — " or "") .. role.label .. " model id", function(model)
-            if model and model ~= "" and state then M.dispatch("configure", { [role.id] = model }, OP_LABELS.configure) end
-          end)
-        end
+
+    local function pick_model(role)
+      local catalog = state.model_catalog
+      if not catalog or #catalog.models == 0 then
+        prompt_input((catalog and catalog.source and catalog.source .. " — " or "") .. role.label .. " model id", function(model)
+          if model and model ~= "" and state then M.dispatch("configure", { [role.id] = model }, OP_LABELS.configure) end
+        end)
+        return
+      end
+
+      -- Group the catalog by provider so the picker is two short steps
+      -- instead of one flat wall of prefixed ids.
+      local by_provider = {}
+      for _, model in ipairs(catalog.models) do
+        local provider = model:match("^([^/]+)/") or "(no provider)"
+        by_provider[provider] = by_provider[provider] or {}
+        by_provider[provider][#by_provider[provider] + 1] = model
+      end
+      local current_provider = role.current and role.current:match("^([^/]+)/")
+      if role.current and current_provider and not vim.tbl_contains(by_provider[current_provider] or {}, role.current) then
+        local list = by_provider[current_provider] or {}
+        list[#list + 1] = role.current
+        by_provider[current_provider] = list
+      end
+      local providers = {}
+      for provider in pairs(by_provider) do providers[#providers + 1] = provider end
+      table.sort(providers, function(left, right)
+        if left == current_provider then return true end
+        if right == current_provider then return false end
+        return left < right
       end)
+
+      prompt_select(providers, {
+        prompt = role.label .. " model · provider",
+        format_item = function(provider)
+          local mark = provider == current_provider and " ●" or ""
+          return string.format("%s (%d)%s", provider, #by_provider[provider], mark)
+        end,
+      }, function(provider)
+        if not provider or not state then return end
+        local models = by_provider[provider]
+        table.sort(models)
+        prompt_select(models, {
+          prompt = role.label .. " model",
+          format_item = function(model)
+            return model .. (model == role.current and "  ● current" or "")
+          end,
+        }, function(model)
+          if model and state then M.dispatch("configure", { [role.id] = model }, OP_LABELS.configure) end
+        end)
+      end)
+    end
+
+    local function pick_role()
+      if not state then return end
+      local current = (state.frame and state.frame.models) or {}
+      local roles = {
+        { id = "model", label = "default", current = current.model },
+        { id = "draftModel", label = "draft", current = current.draftModel },
+        { id = "challengeModel", label = "challenge", current = current.challengeModel },
+      }
+      prompt_select(roles, {
+        prompt = "Switch which model?",
+        format_item = function(role)
+          return string.format("%-10s %s", role.label, role.current or "(backend default)")
+        end,
+      }, function(role)
+        if not role or not state then return end
+        pick_model(role)
+      end)
+    end
+
+    if state.model_catalog and os.time() - state.model_catalog.at < 300 then
+      return pick_role()
+    end
+    vim.notify("Loading model catalog…", vim.log.levels.INFO)
+    state.host:request("models", {}, function(models_message)
+      if not state then return end
+      local models, source = {}, nil
+      if models_message.result then
+        models = models_message.result.models or {}
+        source = models_message.result.source
+      elseif models_message.error then
+        source = models_message.error.message
+      end
+      state.model_catalog = { models = models, source = source, at = os.time() }
+      pick_role()
     end)
   end)
 end

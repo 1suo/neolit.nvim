@@ -100,7 +100,9 @@ C      commit the session-applied paths only (pathspec commit; unrelated
        dirty or staged files stay untouched)
 L / W  mark/unmark the selected path in the restriction plain (lock / allow
        polarity; the other key inverts the plain)
-M      switch the live runtime's default/draft/challenge model
+M      switch the live runtime's default/draft/challenge model — role picker
+       shows current models, then provider → model steps over the backend's
+       catalog (cached 5 minutes; typed fallback when no catalog)
 E      explain selected path (whole repository when no task is active)
 N      new change task
 O      reopen selected node with a reason

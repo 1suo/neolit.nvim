@@ -71,6 +71,20 @@ return {
     end,
   },
   {
+    name = "frames_differ ignores identical content and catches changes",
+    run = function(t)
+      local frame = { tree = { rows = { { id = "entry:." } } }, detail = { { text = "x" } } }
+      local same = { tree = { rows = { { id = "entry:." } } }, detail = { { text = "x" } } }
+      t:ok(not ui.frames_differ(frame, same), "identical frames skip re-render")
+      t:ok(not ui.frames_differ(nil, nil), "two empty frames are equal")
+      local moved = { tree = { rows = { { id = "entry:." }, { id = "entry:src" } } }, detail = { { text = "x" } } }
+      t:ok(ui.frames_differ(frame, moved), "row changes re-render")
+      local new_detail = { tree = frame.tree, detail = { { text = "y" } } }
+      t:ok(ui.frames_differ(frame, new_detail), "detail changes re-render")
+      t:ok(ui.frames_differ(frame, nil), "a first frame renders")
+    end,
+  },
+  {
     name = "fold levels: zm folds the shallowest open level, zr opens the shallowest folded one",
     run = function(t)
       -- Default state: test/ folded; root and src/ open (src is planned).
