@@ -43,7 +43,7 @@ return {
       t:eq(theme.xterm256("#000000"), 0, "black maps to base black")
       t:eq(theme.xterm256("#ffffff"), 15, "white maps to base white")
       t:eq(theme.xterm256("#838aa0"), 103, "blue-gray muted lands in the cube, not the gray ramp")
-      t:eq(theme.xterm256("#c0caf5"), 15, "text is near white")
+      t:eq(theme.xterm256("#c0caf5"), 153, "bluish text white lands in the cube")
       t:ok(theme.xterm256("#7aa2f7") >= 16 and theme.xterm256("#7aa2f7") <= 231, "primary lands in the color cube")
       t:eq(theme.xterm256("nonsense"), nil)
     end,
