@@ -1,6 +1,7 @@
 # neolit.nvim
 
-Neovim host for [neolit](../neolit), the planned-diff augmentation kernel.
+Neovim host for [neolit](https://github.com/1suo/neolit), the planned-diff
+augmentation kernel.
 The plugin gives Neovim the same operational plane as the standalone `augment`
 TUI: the repository tree with integrated plan state on the left, the
 DESCRIPTION/CHANGES detail pane on the right, the message panel below, and the
@@ -76,7 +77,7 @@ NEOLIT [COLLAPSED] [PLANNED CHANGE] …            OPENCODE
   (`lua/neolit/layout.lua`).
 - Indicators (`◆ ~ + - ✓ ! # ● ?` …) and the two-section detail pane come from
   the TUI's view model; their meaning is canonical in
-  [neolit's TUI README](../neolit/src/tui/README.md).
+  [neolit's TUI README](https://github.com/1suo/neolit/blob/main/src/tui/README.md).
 
 ## Keys
 
