@@ -1,0 +1,12 @@
+{
+  "name": "neolit.nvim",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Neovim host UI for the neolit planned-diff kernel (augmentd protocol)",
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/host.test.mjs"
+  },
+  "author": "1suo",
+  "license": "MIT"
+}

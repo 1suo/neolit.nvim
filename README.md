@@ -1,0 +1,176 @@
+# neolit.nvim
+
+Neovim host for [neolit](../neolit), the planned-diff augmentation kernel.
+The plugin gives Neovim the same operational plane as the standalone `augment`
+TUI: the repository tree with integrated plan state on the left, the
+DESCRIPTION/CHANGES detail pane on the right, the message panel below, and the
+same key set driving the same controller.
+
+It does not reimplement the TUI. A small Node **host shim**
+(`host/host.mjs`) embeds the exact classes the TUI embeds —
+`AugmentTuiController`, `CliAgentRuntime`, and the pure view model from
+`dist/tui/detail.js` — from a built neolit checkout, and speaks
+newline-delimited JSON-RPC 2.0 over stdio (the `augmentd` framing). The Lua
+side only renders frames into native windows and routes keys. Plan lifecycle,
+model routing, retries, apply/commit transactions, and pane formatting stay
+single-sourced in the neolit package.
+
+## Requirements
+
+- Neovim ≥ 0.10 (float titles, `vim.ui`, `vim.json`)
+- Node ≥ 22.12
+- A neolit checkout with `dist/` built (`npm run build`), or an npm-installed
+  `neolit`
+- Optional: an agent CLI on PATH (`opencode`, `claude`, or `codex`) for model
+  operations. Without one, the panel opens in browse-only "NO MODEL" mode —
+  pure tree operations still work.
+
+## Install
+
+```lua
+{
+  "1suo/neolit.nvim",
+  opts = {}, -- see Configuration
+  cmd = { "Neolit", "NeolitClose" },
+}
+```
+
+Run `:Neolit` inside the repository you want to plan a change for
+(`:Neolit add retry bounds` starts a task immediately, like
+`augment "add retry bounds"`). `Q` closes the panel and shuts the host down;
+with task persistence on (default), the active task is resumed on next open,
+exactly like restarting the TUI.
+
+The `neolit` package is located by trying, in order: the `neolit_dir` option,
+`$NEOLIT_DIR`, a `neolit` directory next to this plugin, then the npm global
+root.
+
+## Layout
+
+One operational plane composed of editor-relative floats:
+
+```text
+NEOLIT [COLLAPSED] [PLANNED CHANGE] …            OPENCODE
+╭─ FILES ───────────────────╮ ╭──────────────────────────╮
+│ ◆ repo/            78%    │ │ DESCRIPTION              │
+│ ├─ src/                   │ │  make retries bounded    │
+│ │  └─ auth/session.ts  +  │ │ CHANGES                  │
+│ └─ package.json    #      │ │  +gamma                  │
+╰───────────────────────────╯ ╰──────────────────────────╯
+[Enter] prompt/regenerate · [1-7] choose approach · [D] develop · …
+╭──────────────────────────────────────────────────────────╮
+│ ⠋ Generating approaches…                                 │
+╰──────────────────────────────────────────────────────────╯
+```
+
+- Header, legend, and the message panel are `focusable=false` floats — the
+  cursor can never walk into them.
+- The tree and detail panes carry identical buffer-local keymaps (the analog
+  of the TUI's global input handler), so every key behaves the same in both;
+  `Tab` switches pane focus programmatically.
+- The tree selection is the cursor line (`cursorline` highlight, window-local
+  `scrolloff` keeps it centered like the TUI's view window); the detail pane
+  wraps and scrolls with `j`/`k` while focused.
+- The geometry mirrors the TUI's `frameLayout()`: fixed chrome is subtracted
+  from the editor size first and the panes degrade to one row
+  (`lua/neolit/layout.lua`).
+- Indicators (`◆ ~ + - ✓ ! # ● ?` …) and the two-section detail pane come from
+  the TUI's view model; their meaning is canonical in
+  [neolit's TUI README](../neolit/src/tui/README.md).
+
+## Keys
+
+Same operations as the TUI, with `Tab`/`Esc` added:
+
+```text
+j k    move selection (tree pane) or scroll detail (detail pane)
+Enter  prompt for the selected path — text becomes a message that regenerates
+       its subtree; empty submit rethinks it
+1-9    choose the numbered approach
+D      develop selected path (expand into files; on a refined folder, draft
+       its next undrafted file)
+A      apply drafted patch to the working tree (git-apply preflighted as one
+       unit; nothing is staged)
+C      commit the session-applied paths only (pathspec commit; unrelated
+       dirty or staged files stay untouched)
+L / W  mark/unmark the selected path in the restriction plain (lock / allow
+       polarity; the other key inverts the plain)
+M      switch the live runtime's default/draft/challenge model
+E      explain selected path (whole repository when no task is active)
+N      new change task
+O      reopen selected node with a reason
+S      mark a real path changed outside the plan
+Tab    switch pane (also <Right>; <Left> returns to the tree)
+Esc    cancel the running operation
+Q      quit (cancels, closes the panel, shuts the host down)
+```
+
+Prompts (`N`, `E`, `Enter`, `O`, `S`) go through `vim.ui.input`, so
+`dressing.nvim`/`snacks.nvim` style pickers work if installed.
+
+## Configuration
+
+```lua
+require("neolit").setup({
+  neolit_dir = nil,     -- path to a neolit checkout with dist/ (default: $NEOLIT_DIR,
+                        -- then ../neolit beside this plugin, then npm root -g)
+  node = "node",        -- Node executable for the host shim
+  directory = nil,      -- repository root; default: working directory at open
+  no_model = false,     -- force NO MODEL mode (AUGMENT_TUI_NO_MODEL=1)
+  persist_tasks = true, -- persist and resume the active task (AUGMENT_TUI_TASKS)
+  margin = 1,           -- frame padding around the float grid
+  tree_ratio = 0.42,    -- tree pane share of the width
+  host_args = nil,      -- extra argv for host.mjs (advanced/tests)
+  hooks = nil,          -- { input = …, select = … } test seams
+})
+```
+
+Model configuration is shared with the TUI: `~/.config/neolit/augment.json`
+(written by `augment setup`), the same `AUGMENT_*` environment variables, and
+the same agent backends (OpenCode by default; `AUGMENT_BACKEND=claude|codex`).
+Authentication belongs to each backend's CLI.
+
+## Architecture
+
+```text
+┌─ Neovim ─────────────────────────────┐      ┌─ node host/host.mjs ─────────┐
+│ lua/neolit/ui.lua      float grid    │      │ AugmentTuiController        │
+│ lua/neolit/keys.lua    key routing   │◄────►│ CliAgentRuntime (opencode/  │
+│ lua/neolit/host.lua    JSON-RPC job  │ stdio│   claude/codex)             │
+│ lua/neolit/render.lua  extmarks      │ JSON │ detail.js view model        │
+│ lua/neolit/layout.lua  frame budget  │      │ apply/commit transactions   │
+│ lua/neolit/{theme,config,framing}    │      │ (from neolit's dist/)       │
+└──────────────────────────────────────┘      └─────────────────────────────┘
+```
+
+- Requests are one JSON-RPC object per line (no batches), like `augmentd`.
+  Every state-changing request answers with a fresh **frame**: header chips,
+  tree rows with colored segments, detail lines, panel state, and the numbered
+  approach choices open on the selected row.
+- Long operations never block: `frame` requests carry the animated spinner
+  while an operation runs; the shim pushes `neolit/progress` and `neolit/frame`
+  notifications when a background follow-up (the automatic approach generation
+  after a task starts) begins or completes.
+- The automatic singleton adoption, develop policy, restriction plain
+  semantics, apply preflight, and pathspec commit all live in the controller
+  and kernel — nothing is duplicated in Lua.
+- `lua/neolit/theme.lua` maps the TUI palette onto `Neolit*` highlight groups
+  (defined with `default = true`, so a user highlight wins); override any
+  `Neolit*` group to restyle.
+
+Known divergences from the TUI: `M` lists the backend's model catalog when
+available and falls back to typing a model id; the input line is
+`vim.ui.input` instead of the embedded panel input; and pane titles use float
+borders (the detail pane therefore has no title, like the TUI).
+
+## Validation
+
+```sh
+npm test                        # host shim end-to-end over stdio (node --test)
+nvim --clean -l test/run.lua    # Lua units + full-stack headless UI smoke test
+```
+
+The tests need a built neolit `dist/` next to this plugin (or `NEOLIT_DIR` /
+`NEOLIT_TEST_DIST`). The Lua suite runs the real UI against the shim's
+deterministic stub model runtime inside a throwaway git fixture; nothing
+touches your repositories or persisted tasks (`AUGMENT_TUI_TASKS=0`).
