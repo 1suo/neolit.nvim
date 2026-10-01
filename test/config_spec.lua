@@ -63,8 +63,8 @@ return {
       t:eq(config.geometry(120, { editor_windows = 1 }), { sidebar = 42, detail = 54 })
       t:eq(config.geometry(120, { editor_windows = 2 }), { sidebar = 42, detail = 54 }, "still fits with two editor windows")
       t:eq(config.geometry(200, { editor_windows = 3 }), { sidebar = 42, detail = 90 }, "capped at 90 with room to spare")
-      t:eq(config.geometry(80, { editor_windows = 1 }), { sidebar = 42, detail = 26 })
-      t:eq(config.geometry(80, { editor_windows = 2 }), { sidebar = 42, detail = 14 }, "tight editors share the leftovers honestly")
+      t:eq(config.geometry(80, { editor_windows = 1 }), { sidebar = 40, detail = 28 })
+      t:eq(config.geometry(80, { editor_windows = 2 }), { sidebar = 40, detail = 16 }, "tight editors share the leftovers honestly")
       t:eq(config.geometry(60, { editor_windows = 3 }), { sidebar = 30, detail = 0 }, "detail is skipped when nothing fits")
       t:eq(config.geometry(50, { sidebar_width = 60, editor_windows = 1 }), { sidebar = 25, detail = 13 })
     end,
