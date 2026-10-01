@@ -17,6 +17,7 @@ local spec_files = {
   "theme_spec",
   "framing_spec",
   "keys_spec",
+  "ui_spec",
   "ui_smoke_spec",
 }
 

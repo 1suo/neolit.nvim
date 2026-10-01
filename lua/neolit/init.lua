@@ -31,7 +31,7 @@ end
 
 function M.setup(user)
   configured = config.merge(user)
-  theme.apply()
+  theme.apply(vim.api, { palette = configured.palette })
 
   local group = vim.api.nvim_create_augroup("Neolit", { clear = true })
   vim.api.nvim_create_autocmd("VimLeavePre", { group = group, callback = function() ui.close() end })

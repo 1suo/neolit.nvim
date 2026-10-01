@@ -186,7 +186,13 @@ function buildFrame(spinner = DEFAULT_SPINNER) {
       segments.push({ text: " " });
       segments.push({ text: entryViewState.suffix, color: theme.muted });
     }
-    return { id: row.id, segments, selected: row.id === state.selectedRowId };
+    return {
+      id: row.id,
+      directory: row.entry.kind === "dir" || row.entry.kind === "root",
+      repositoryOnly: row.repositoryOnly,
+      segments,
+      selected: row.id === state.selectedRowId,
+    };
   });
 
   const detail = detailLines(state.task, selectedRow, {
@@ -200,11 +206,19 @@ function buildFrame(spinner = DEFAULT_SPINNER) {
     .filter((candidate) => candidate.status === "possible")
     .map((candidate, index) => ({ n: index + 1, candidateId: candidate.id, label: candidate.label }));
 
+  const primaryDiff = (selectedRow?.entry.diffIds ?? [])
+    .map((id) => state.task?.diffs[id])
+    .find(Boolean);
+  const patch = primaryDiff
+    ? { diffId: primaryDiff.id, path: primaryDiff.path, text: primaryDiff.patch }
+    : null;
+
   return {
     header,
     hasTask: Boolean(state.task),
     tree: { rows, selectedRowId: state.selectedRowId ?? null, count: rows.length },
     detail,
+    patch,
     panel: {
       busy: state.busy,
       operation: state.operation ?? null,
@@ -362,6 +376,34 @@ const methods = {
       draftModel: typeof params.draftModel === "string" && params.draftModel ? params.draftModel : undefined,
       challengeModel: typeof params.challengeModel === "string" && params.challengeModel ? params.challengeModel : undefined,
     });
+    return buildFrame();
+  },
+
+  /**
+   * Writes an editor-edited patch back into the plan (augmentd patch/set).
+   * The controller has no public method for this host operation, so the shim
+   * drives the controller's own server and then syncs its private task copy
+   * (TS `private` is compile-time only) — the documented seam for hosts that
+   * need operations the controller does not wrap yet.
+   */
+  async patch_set(params) {
+    if (!controller) throw rpcError(-32000, "No task is active.");
+    const task = controller.snapshot().task;
+    if (!task) throw rpcError(-32000, "No task is active.");
+    if (typeof params.diffId !== "string" || typeof params.patch !== "string") {
+      throw rpcError(-32602, "patch_set requires diffId and patch.");
+    }
+    const response = await controller.server.handle({
+      jsonrpc: "2.0",
+      id: 30,
+      method: "patch/set",
+      params: { taskId: task.id, expectedRevision: task.revision, diffId: params.diffId, patch: params.patch },
+    });
+    if (!response || "error" in response) {
+      throw rpcError(-32000, response?.error?.message ?? "patch/set failed.");
+    }
+    controller.task = response.result;
+    controller.refresh();
     return buildFrame();
   },
 

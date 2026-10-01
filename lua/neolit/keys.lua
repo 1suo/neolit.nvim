@@ -32,6 +32,12 @@ M.descriptions = {
   ["s"] = "neolit: mark path changed outside the plan",
   ["q"] = "neolit: quit panel",
   ["<Esc>"] = "neolit: cancel running operation",
+  ["za"] = "neolit: toggle folder under cursor",
+  ["zc"] = "neolit: collapse folder under cursor",
+  ["zo"] = "neolit: expand folder under cursor",
+  ["H"] = "neolit: show planned paths only",
+  ["o"] = "neolit: open selected file (patch buffer for new files)",
+  ["p"] = "neolit: edit drafted patch; :w saves it into the plan",
 }
 
 --- Returns the key → handler table against the ui module. Pure: handlers
@@ -68,6 +74,12 @@ function M.handlers(ui)
     ["s"] = function() ui.prompt_stale() end,
     ["q"] = function() ui.quit() end,
     ["<Esc>"] = function() ui.cancel_op() end,
+    ["za"] = function() ui.toggle_fold("toggle") end,
+    ["zc"] = function() ui.toggle_fold("close") end,
+    ["zo"] = function() ui.toggle_fold("open") end,
+    ["H"] = function() ui.toggle_plan_only() end,
+    ["o"] = function() ui.open_selected() end,
+    ["p"] = function() ui.edit_patch() end,
   }
   for _, digit in ipairs(M.DIGITS) do
     local n = tonumber(digit)

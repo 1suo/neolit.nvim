@@ -23,6 +23,10 @@ M.defaults = {
   --- (nil = 45% of the editor, clamped to 40–90).
   sidebar_width = 42,
   detail_width = nil,
+  --- Palette for the panel: "system" links every color to the active
+  --- colorscheme's semantic groups; "tui" uses the terminal TUI's exact
+  --- hexes (with an xterm-256 fallback for termguicolors=off).
+  palette = "system",
   --- Global prefix (e.g. "<leader>n") binding the TUI operation keys
   --- (n e <CR> 1-9 d a c l w m o s q <Tab> <Esc>) from any buffer. Motion
   --- keys stay pane-local. nil disables global maps.
@@ -45,13 +49,15 @@ function M.merge(user)
   return merged
 end
 
---- Panel window widths for an editor `columns` cells wide. Pure arithmetic.
+--- Panel window widths for an editor `columns` cells wide. The detail
+--- split never claims more than half of the space the sidebar leaves the
+--- editor, so opening the panel cannot squeeze user windows to a sliver.
 function M.geometry(columns, cfg)
   cfg = cfg or {}
   local sidebar = cfg.sidebar_width or M.defaults.sidebar_width
   sidebar = math.max(20, math.min(sidebar, math.max(20, columns - 30)))
-  local detail = cfg.detail_width or math.floor(columns * 0.45)
-  detail = math.max(40, math.min(detail, 90, math.max(20, columns - sidebar)))
+  local requested = cfg.detail_width or math.floor(columns * 0.45)
+  local detail = math.max(20, math.min(requested, 90, math.floor((columns - sidebar) * 0.5)))
   return { sidebar = sidebar, detail = detail }
 end
 

@@ -58,12 +58,12 @@ return {
     end,
   },
   {
-    name = "panel geometry clamps sidebar and detail widths",
+    name = "panel geometry never starves the editor windows",
     run = function(t)
-      t:eq(config.geometry(120, {}), { sidebar = 42, detail = 54 })
-      t:eq(config.geometry(200, {}), { sidebar = 42, detail = 90 }, "detail is capped")
-      t:eq(config.geometry(80, {}), { sidebar = 42, detail = 40 }, "detail keeps its floor at 80 columns")
-      t:eq(config.geometry(50, { sidebar_width = 60 }), { sidebar = 20, detail = 40 }, "sidebar degrades on narrow editors")
+      t:eq(config.geometry(120, {}), { sidebar = 42, detail = 39 }, "detail takes at most half the non-sidebar space")
+      t:eq(config.geometry(200, {}), { sidebar = 42, detail = 79 })
+      t:eq(config.geometry(80, {}), { sidebar = 42, detail = 20 }, "detail degrades to its floor on small editors")
+      t:eq(config.geometry(50, { sidebar_width = 60 }), { sidebar = 20, detail = 20 }, "both floors on tiny editors")
     end,
   },
 }

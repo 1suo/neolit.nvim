@@ -1,7 +1,13 @@
---- Theme: the same Tokyo-Night-flavored palette the TUI ships in
---- dist/tui/detail.js, mapped onto Neovim highlight groups. The host sends
---- TUI hex colors per segment; `group_for` translates them. Pure except for
---- `apply`, which defines the groups through the passed-in `vim`-like table.
+--- Theme: maps the TUI's per-segment palette roles onto Neovit highlight
+--- groups. Two palettes:
+---   system (default) — groups link to semantic colorscheme groups
+---     (Special, Directory, diffAdded, Comment, …), so the panel follows the
+---     user's theme in truecolor and 256-color alike.
+---   tui — the exact Tokyo-Night-flavored hexes the terminal TUI ships,
+---     plus a nearest-xterm-256 ctermfg fallback for termguicolors=off.
+--- Bold variants cannot be links (Neovim limitation), so in system mode
+--- they copy the resolved target colors once at apply time; plain groups
+--- stay links and adapt to colorscheme changes live.
 
 local M = {}
 
@@ -17,6 +23,23 @@ M.colors = {
   border = "#414868",
   border_active = "#7aa2f7",
   selected = "#24283b",
+}
+
+--- Where each palette role points in system mode. CursorLine follows Visual
+--- (the theme's own selection color) because the tree's selected row IS a
+--- selection.
+M.semantic_links = {
+  primary = "Special",
+  secondary = "Type",
+  accent = "Directory",
+  success = "diffAdded",
+  warning = "WarningMsg",
+  error = "ErrorMsg",
+  muted = "Comment",
+  text = "Normal",
+  border = "WinSeparator",
+  border_active = "WinSeparator",
+  selected = "Visual",
 }
 
 local by_hex = {}
@@ -86,27 +109,71 @@ function M.xterm256(hex)
   return best_index
 end
 
---- Defines all highlight groups through `api` (nvim's API table). Existing
---- user definitions win: groups are created with default=true, so a user
---- highlight set before/after setup overrides the palette.
-function M.apply(api)
+--- Follows highlight links to the first group with direct attributes.
+local function resolve(api, name)
+  for _ = 1, 8 do
+    local ok, attributes = pcall(api.nvim_get_hl, 0, { name = name })
+    if not ok or type(attributes) ~= "table" then return nil end
+    if attributes.link and type(attributes.link) == "string" then
+      name = attributes.link
+    else
+      return attributes
+    end
+  end
+  return nil
+end
+
+local function define(api, group, spec)
+  local attributes = { default = true }
+  for key, value in pairs(spec) do attributes[key] = value end
+  api.nvim_set_hl(0, group, attributes)
+end
+
+--- Defines all Neolit* groups. Existing user definitions win (default=true).
+function M.apply(api, opts)
   api = api or vim.api
-  local function spec(hex, extra)
-    local attributes = { fg = hex, ctermfg = M.xterm256(hex), default = true }
-    if extra then
-      for key, value in pairs(extra) do attributes[key] = value end
-    end
-    return attributes
-  end
-  for name, hex in pairs(M.colors) do
-    if name ~= "selected" then -- selected is a background, not a foreground
+  opts = opts or {}
+  local palette = opts.palette or "system"
+
+  if palette == "tui" then
+    for name, hex in pairs(M.colors) do
       local group = M.group_for(hex, false)
-      api.nvim_set_hl(0, group, spec(hex))
-      api.nvim_set_hl(0, group .. "Bold", spec(hex, { bold = true }))
+      if name == "selected" then
+        define(api, group, { bg = hex, ctermbg = M.xterm256(hex) })
+        define(api, "NeolitCursorLine", { bg = hex, ctermbg = M.xterm256(hex) })
+      else
+        define(api, group, { fg = hex, ctermfg = M.xterm256(hex) })
+        define(api, group .. "Bold", { fg = hex, ctermfg = M.xterm256(hex), bold = true })
+      end
+    end
+    return
+  end
+
+  for role, target in pairs(M.semantic_links) do
+    -- border and border_active date from the float-grid chrome; no frame
+    -- segment carries them, and border_active shares primary's hex (and
+    -- thus its group name), so defining it would clobber NeolitPrimary.
+    if role ~= "border" and role ~= "border_active" then
+      local group = M.group_for(M.colors[role], false)
+      if role == "selected" then
+        define(api, group, { link = target })
+        define(api, "NeolitCursorLine", { link = target })
+      else
+        define(api, group, { link = target })
+        -- Bold variants cannot be links; copy the resolved colors once.
+        local attributes = resolve(api, target)
+        if attributes and (attributes.fg or attributes.ctermfg) then
+          define(api, group .. "Bold", {
+            fg = attributes.fg,
+            ctermfg = attributes.ctermfg,
+            bold = true,
+          })
+        else
+          define(api, group .. "Bold", { bold = true })
+        end
+      end
     end
   end
-  api.nvim_set_hl(0, "NeolitSelected", spec(M.colors.selected, { bg = M.colors.selected, ctermbg = M.xterm256(M.colors.selected) }))
-  api.nvim_set_hl(0, "NeolitCursorLine", spec(M.colors.selected, { bg = M.colors.selected, ctermbg = M.xterm256(M.colors.selected) }))
 end
 
 return M

@@ -20,7 +20,9 @@ const dist = process.env.NEOLIT_TEST_DIST
 assert.ok(fs.existsSync(path.join(dist, "index.js")), `no neolit dist at ${dist} (build neolit or set NEOLIT_TEST_DIST)`);
 
 const temporaryDirectories = [];
+const liveClients = [];
 test.after(() => {
+  for (const client of liveClients) client.child.kill("SIGTERM");
   for (const directory of temporaryDirectories) fs.rmSync(directory, { recursive: true, force: true });
 });
 
@@ -61,6 +63,7 @@ class HostClient {
       });
       this.child.on("exit", (code) => resolve(code));
       this.child.stderr.on("data", (chunk) => process.stderr.write(`[host stderr] ${chunk}`));
+      liveClients.push(this);
       const lines = readline.createInterface({ input: this.child.stdout });
       lines.on("line", (line) => {
         if (!line.trim()) return;
@@ -129,6 +132,9 @@ test("initialize renders the repository tree with stub model info", async () => 
   assert.equal(message.result.model.label, "STUB");
   const frame = message.result.frame;
   assert.ok(frame.tree.rows.some((row) => row.id === "entry:session.ts"), "tree contains repository file");
+  assert.equal(frame.tree.rows[0].directory, true, "root row is a directory");
+  assert.ok(frame.tree.rows.some((row) => row.id === "entry:session.ts" && row.directory === false), "file rows are not directories");
+  assert.ok(frame.tree.rows.every((row) => typeof row.repositoryOnly === "boolean"), "rows carry the repositoryOnly flag");
   assert.equal(frame.hasTask, false);
   assert.ok(frame.panel.message.length > 0, "panel carries the standing message");
   assert.deepEqual(frame.choices, []);
@@ -159,9 +165,14 @@ test("full flow: start auto-adopts, develop refines then drafts, apply and commi
   const drafted = await client.request("select", { rowId: "entry:session.ts" });
   assert.ok(drafted.result.detail.some((line) => line.text.includes("+gamma")), "detail shows the exact patch");
 
-  const applied = await client.request("apply");
-  assert.ok(applied.result.panel.message.includes("Applied 1 drafted change"), applied.result.panel.message);
-  assert.equal(fs.readFileSync(path.join(directory, "session.ts"), "utf8"), "alpha\nbeta\ngamma\n");
+  // Editor round-trip: patch/set writes an edited diff back into the plan.
+  assert.ok(drafted.result.patch, "frame carries the selected path's patch");
+  const edited = drafted.result.patch.text.replace("+gamma", "+gamma!");
+  const rewritten = await client.request("patch_set", { diffId: drafted.result.patch.diffId, patch: edited });
+  assert.ok(rewritten.result.patch.text.includes("+gamma!"), "edited patch is stored");
+  const reapplied = await client.request("apply");
+  assert.ok(reapplied.result.panel.message.includes("Applied 1 drafted change"), reapplied.result.panel.message);
+  assert.equal(fs.readFileSync(path.join(directory, "session.ts"), "utf8"), "alpha\nbeta\ngamma!\n");
 
   const committed = await client.request("commit");
   assert.ok(committed.result.panel.message.includes("Committed 1 applied path"), committed.result.panel.message);

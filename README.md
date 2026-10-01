@@ -62,9 +62,14 @@ Native editor windows, no floating chrome:
 
 - `:Neolit` opens a **left sidebar split** with the planned tree and a
   **detail split** with DESCRIPTION/CHANGES — real windows, so standard
-  `<C-w>` motion, resizing, and `:q` behave normally. Closing the sidebar
-  ends the panel; the detail split closes independently and `Tab` recreates
-  it.
+  `<C-w>` motion, resizing, and `:q` behave normally. The detail split never
+  claims more than half the space the sidebar leaves, so user windows are
+  never squeezed out. Closing the sidebar ends the panel; the detail split
+  closes independently and `Tab` recreates it.
+- Colors follow the active colorscheme by default: every group links to a
+  semantic target (Special, Directory, diffAdded, WarningMsg, Comment,
+  Visual for the selected row). Set `palette = "tui"` for the terminal
+  TUI's exact colors instead.
 - Status, revision, and model chips live in the sidebar's **winbar**; while
   an operation runs, the winbar shows the spinner and operation instead.
   Messages and errors go through **`vim.notify`**.
@@ -100,17 +105,23 @@ E      explain selected path (whole repository when no task is active)
 N      new change task
 O      reopen selected node with a reason
 S      mark a real path changed outside the plan
+o      open the selected file as a real buffer (falls back to its patch
+       buffer for drafted new files; directories fold)
+p      edit the selected path's drafted patch as a diff buffer — :w saves it
+       back into the plan through patch/set
+za/zc/zo  fold/unfold the directory under the cursor
+H      hide repository-only paths (planned paths and ancestors stay)
 Tab    switch pane (also <Right>; <Left> returns to the tree)
 Esc    cancel the running operation
 Q      quit (cancels, closes the panel, shuts the host down)
 ```
 
-Every operation key is also reachable globally as `<leader>n<key>` (same key
-as the TUI — `<leader>nn`, `<leader>nd`, `<leader>n1`–`n9`, `<leader>n<CR>`,
-…): `require("neolit").key("<key>")` opens the panel when closed and then
-acts, so the maps work from any buffer. Motion keys (`j`/`k`, arrows) stay
-pane-local. For plugin managers without lazy key specs, set
-`keymap_prefix = "<leader>n"` and the plugin binds them itself.
+Every operation key is also reachable globally as `<prefix><key>` with the
+key identical to the TUI (`<leader>nd`, `<leader>n1`–`n9`, `<leader>n<CR>`,
+… — or any prefix you prefer): `require("neolit").key(key)` opens the panel
+when closed and then acts, so the maps work from any buffer. Motion and
+folding keys stay pane-local. For plugin managers without lazy key specs,
+set `keymap_prefix = "<leader>n"` and the plugin binds them itself.
 
 Prompts (`N`, `E`, `Enter`, `O`, `S`) go through `vim.ui.input`, so
 `dressing.nvim`/`snacks.nvim` style pickers work if installed.
@@ -126,7 +137,9 @@ require("neolit").setup({
   no_model = false,     -- force NO MODEL mode (AUGMENT_TUI_NO_MODEL=1)
   persist_tasks = true, -- persist and resume the active task (AUGMENT_TUI_TASKS)
   sidebar_width = 42,   -- tree sidebar width in columns
-  detail_width = nil,   -- detail split width (default 45% of the editor, 40–90)
+  detail_width = nil,   -- detail split width (at most half the non-sidebar space)
+  palette = "system",   -- "system": follow the colorscheme via semantic links
+                        -- "tui": the terminal TUI's exact hexes
   keymap_prefix = nil,  -- e.g. "<leader>n": bind every TUI operation key globally
   host_args = nil,      -- extra argv for host.mjs (advanced/tests)
   hooks = nil,          -- { input = …, select = … } test seams

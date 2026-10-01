@@ -59,6 +59,61 @@ local function selected_path()
   return nil
 end
 
+--------------------------------------------------------------------------
+-- Tree folding and hiding (pure row filtering)
+--------------------------------------------------------------------------
+
+local function row_path(row)
+  return type(row.id) == "string" and row.id:sub(1, 6) == "entry:" and row.id:sub(7) or nil
+end
+
+local function ancestor_paths(path)
+  local ancestors = {}
+  if path == "." then return ancestors end
+  ancestors[#ancestors + 1] = "."
+  local current = path
+  while true do
+    local parent = current:match("^(.*)/")
+    if not parent then break end
+    current = parent == "" and "." or parent
+    if current == "." then break end
+    ancestors[#ancestors + 1] = current
+  end
+  return ancestors
+end
+
+--- Which rows render: a row is visible when no ancestor directory is folded
+--- and, in plan-only mode, when it (or a descendant) carries plan state.
+--- `rows` come from the shim with `directory` and `repositoryOnly` flags.
+function M.visible_rows(rows, folded, plan_only)
+  local marked = nil
+  if plan_only then
+    marked = { ["."] = true }
+    for _, row in ipairs(rows) do
+      local path = row_path(row)
+      if path and not row.repositoryOnly then
+        marked[path] = true
+        for _, ancestor in ipairs(ancestor_paths(path)) do
+          marked[ancestor] = true
+        end
+      end
+    end
+  end
+  local visible = {}
+  for _, row in ipairs(rows) do
+    local path = row_path(row)
+    local hidden = false
+    if path then
+      for _, ancestor in ipairs(ancestor_paths(path)) do
+        if folded[ancestor] then hidden = true break end
+      end
+      if marked ~= nil and not marked[path] then hidden = true end
+    end
+    if not hidden then visible[#visible + 1] = row end
+  end
+  return visible
+end
+
 local function message_title()
   return (selected_path() or "repo") .. " · message (empty = rethink)"
 end
@@ -90,6 +145,9 @@ local function winbar_text()
         text = chip.text,
         group = group or theme.group_for(chip.color, chip.bold),
       }
+    end
+    if state.plan_only then
+      segments[#segments + 1] = { text = "[PLAN-ONLY]", group = "NeolitMuted" }
     end
   end
   local parts = {}
@@ -170,13 +228,25 @@ function M.render(frame)
   state.local_error = nil
   state.cancel_requested = false
 
+  -- The selection must stay reachable: unfold its ancestors.
+  if type(frame.tree.selectedRowId) == "string" then
+    local path = row_path({ id = frame.tree.selectedRowId })
+    if path then
+      for _, ancestor in ipairs(ancestor_paths(path)) do
+        state.folded[ancestor] = nil
+      end
+    end
+  end
+
   local tree_lines = {}
   local row_ids = {}
-  for index, row in ipairs(frame.tree.rows or {}) do
-    tree_lines[index] = { segments = row.segments }
-    row_ids[index] = row.id
+  local rows_visible = M.visible_rows(frame.tree.rows or {}, state.folded, state.plan_only)
+  for index, row in ipairs(rows_visible) do
+    tree_lines[#tree_lines + 1] = { segments = row.segments }
+    row_ids[#row_ids + 1] = row.id
   end
   state.row_ids = row_ids
+  state.rows_visible = rows_visible
   render.render_lines(vim.api, state.ns, state.bufs.tree, theme, tree_lines)
 
   local selected = 1
@@ -222,6 +292,7 @@ local function set_up_tree_window(win, buf)
   scope.foldcolumn = "0"
   scope.wrap = false
   scope.cursorline = true
+  scope.winhl = "CursorLine:NeolitCursorLine"
   scope.scrolloff = 999
   scope.winfixwidth = true
   scope.list = false
@@ -305,7 +376,7 @@ function M.open(opts)
     return
   end
   local cfg = config.merge(opts)
-  theme.apply()
+  theme.apply(vim.api, { palette = cfg.palette })
 
   local plugin_root = config.plugin_root()
   local dist_root, tried = config.find_neolit_dir(cfg, {
@@ -329,6 +400,8 @@ function M.open(opts)
     spinner_i = 1,
     row_ids = {},
     last_notice = nil,
+    folded = {},
+    plan_only = false,
     ns = vim.api.nvim_create_namespace("neolit"),
   }
 
@@ -438,7 +511,14 @@ function M.dispatch(method, params, label)
 end
 
 function M.pane()
-  return state and state.pane or "tree"
+  if not state then return "tree" end
+  -- The real focus decides, so <C-w>/mouse entry into the detail window
+  -- routes j/k there too; the remembered pane only covers keypresses from
+  -- outside the panel entirely.
+  local current = vim.api.nvim_get_current_win()
+  if current == state.wins.detail then return "detail" end
+  if current == state.wins.tree then return "tree" end
+  return state.pane
 end
 
 function M.set_pane(pane)
@@ -475,6 +555,126 @@ function M.scroll_detail(delta)
   local cursor = vim.api.nvim_win_get_cursor(win)
   local next_line = math.max(1, math.min(count, cursor[1] + delta))
   pcall(vim.api.nvim_win_set_cursor, win, { next_line, 0 })
+end
+
+--------------------------------------------------------------------------
+-- Folding, hiding, and opening selected paths as real buffers
+--------------------------------------------------------------------------
+
+local function cursor_row()
+  if not state then return nil end
+  local win = state.wins.tree
+  if not vim.api.nvim_win_is_valid(win) then return nil end
+  local cursor = vim.api.nvim_win_get_cursor(win)
+  return (state.rows_visible or {})[cursor[1]]
+end
+
+--- mode: "toggle" | "open" | "close" on the directory row under the cursor.
+function M.toggle_fold(mode)
+  if not state or not state.frame then return end
+  local row = cursor_row()
+  if not row or not row.directory then return end
+  local path = row.id:sub(7)
+  if mode == "open" then
+    state.folded[path] = nil
+  elseif mode == "close" then
+    state.folded[path] = true
+  else
+    state.folded[path] = state.folded[path] and nil or true
+  end
+  M.render(state.frame)
+  local win = state.wins.tree
+  if vim.api.nvim_win_is_valid(win) then
+    for index, id in ipairs(state.row_ids) do
+      if id == row.id then
+        pcall(vim.api.nvim_win_set_cursor, win, { index, 0 })
+        break
+      end
+    end
+  end
+end
+
+--- Hides repository-only paths: only planned paths and their ancestors stay.
+function M.toggle_plan_only()
+  if not state or not state.frame then return end
+  state.plan_only = not state.plan_only
+  M.render(state.frame)
+end
+
+--- First non-panel window in the tab, creating one beside the sidebar if
+--- the panel is alone.
+local function panel_target_window()
+  for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+    if win ~= state.wins.tree and win ~= state.wins.detail and vim.api.nvim_win_get_config(win).relative == "" then
+      return win
+    end
+  end
+  local tree = state.wins.tree
+  vim.api.nvim_win_call(tree, function()
+    vim.cmd("rightbelow vertical split")
+  end)
+  return vim.api.nvim_get_current_win()
+end
+
+--- o: open the selected file as a real buffer. Directories fold; drafted
+--- new files fall through to their patch buffer.
+function M.open_selected()
+  if not state then return end
+  local row = cursor_row()
+  if not row then return end
+  if row.directory then return M.toggle_fold("toggle") end
+  local path = row.id:sub(7)
+  local absolute = state.directory .. "/" .. path
+  if vim.fn.filereadable(absolute) == 1 then
+    local target = panel_target_window()
+    local buf = vim.fn.bufadd(absolute)
+    vim.fn.bufload(buf)
+    vim.api.nvim_win_set_buf(target, buf)
+    vim.api.nvim_set_current_win(target)
+    return
+  end
+  if state.frame and state.frame.patch then return M.edit_patch() end
+  vim.notify(path .. " is not in the working tree yet; press D to draft it first.", vim.log.levels.INFO)
+end
+
+--- p: edit the selected path's drafted patch as a diff buffer. Writing the
+--- buffer sends patch/set back into the plan.
+function M.edit_patch()
+  if not state or not state.host then return end
+  local patch = state.frame and state.frame.patch
+  if not patch then
+    vim.notify("No drafted patch on the selected path. Press D to develop it first.", vim.log.levels.WARN)
+    return
+  end
+  local buf = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_name(buf, "neolit://patch/" .. (patch.path ~= "" and patch.path or patch.diffId))
+  local lines = vim.split(patch.text:gsub("\n$", ""), "\n")
+  if lines[1] == "" then lines = {} end
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  vim.api.nvim_buf_set_option(buf, "filetype", "diff")
+  vim.api.nvim_buf_set_option(buf, "buftype", "acwrite")
+  vim.api.nvim_buf_set_option(buf, "swapfile", false)
+  vim.api.nvim_create_autocmd("BufWriteCmd", {
+    buffer = buf,
+    callback = function()
+      if not state or not state.host then return end
+      local text = table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n")
+      state.host:request("patch_set", { diffId = patch.diffId, patch = text }, function(msg)
+        if not state then return end
+        if msg.error then
+          vim.api.nvim_buf_set_option(buf, "modified", true)
+          vim.notify("patch/set failed: " .. msg.error.message, vim.log.levels.ERROR)
+          return
+        end
+        vim.api.nvim_buf_set_option(buf, "modified", false)
+        vim.notify("Patch saved into the plan.", vim.log.levels.INFO)
+        M.render(msg.result and msg.result.frame or msg.result)
+      end)
+    end,
+  })
+  local target = panel_target_window()
+  vim.api.nvim_win_set_buf(target, buf)
+  vim.api.nvim_set_current_win(target)
 end
 
 local function prompt_input(title, callback)

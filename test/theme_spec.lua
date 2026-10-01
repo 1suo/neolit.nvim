@@ -12,29 +12,46 @@ return {
     end,
   },
   {
-    name = "every palette color has a plain and bold group defined by apply()",
+    name = "system palette links groups to semantic colorscheme targets",
     run = function(t)
       local defined = {}
       local api = {
-        nvim_set_hl = function(_, group, spec)
-          defined[group] = spec
+        nvim_set_hl = function(_, group, spec) defined[group] = spec end,
+        nvim_get_hl = function(_, opts)
+          local canned = {
+            Special = { fg = 16777215, ctermfg = 15 },
+            Comment = { fg = 8421504, ctermfg = 59 },
+            Normal = { fg = 0, ctermfg = 0 },
+          }
+          return canned[opts.name]
         end,
       }
-      theme.apply(api)
-      for name, hex in pairs(theme.colors) do
-        if name ~= "selected" then
-          local plain = theme.group_for(hex, false)
-          local bold = theme.group_for(hex, true)
-          t:ok(defined[plain], plain .. " defined")
-          t:ok(defined[bold], bold .. " defined")
-          t:eq(defined[plain].fg, hex)
-          t:eq(defined[bold].bold, true)
-        end
-      end
-      t:eq(defined.NeolitCursorLine.bg, theme.colors.selected)
-      for _, group in pairs({ "NeolitPrimary", "NeolitError", "NeolitCursorLine" }) do
+      theme.apply(api, { palette = "system" })
+      t:eq(defined.NeolitPrimary.link, "Special")
+      t:eq(defined.NeolitMuted.link, "Comment")
+      t:eq(defined.NeolitCursorLine.link, "Visual", "selected row follows the theme's selection color")
+      -- Bold variants cannot be links; they copy resolved colors + bold.
+      t:eq(defined.NeolitPrimaryBold.fg, 16777215)
+      t:eq(defined.NeolitPrimaryBold.ctermfg, 15)
+      t:eq(defined.NeolitPrimaryBold.bold, true)
+    end,
+  },
+  {
+    name = "tui palette keeps exact hexes with xterm fallbacks",
+    run = function(t)
+      local defined = {}
+      local api = {
+        nvim_set_hl = function(_, group, spec) defined[group] = spec end,
+        nvim_get_hl = function() return nil end,
+      }
+      theme.apply(api, { palette = "tui" })
+      for _, name in ipairs({ "primary", "secondary", "accent", "success", "warning", "error", "muted", "text" }) do
+        local group = theme.group_for(theme.colors[name], false)
+        t:eq(defined[group].fg, theme.colors[name])
         t:ok(type(defined[group].ctermfg) == "number", group .. " carries a 256-color fallback")
+        t:eq(defined[group .. "Bold"].bold, true)
       end
+      t:eq(defined.NeolitCursorLine.ctermbg, theme.xterm256(theme.colors.selected))
     end,
   },
   {
