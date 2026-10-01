@@ -353,10 +353,6 @@ end
 --- remains — the 12-column-per-window budget from geometry() is what makes
 --- that share livable.
 local function balance_editor_windows()
-  local panel_width = vim.api.nvim_win_get_width(state.wins.tree)
-  if state.wins.detail ~= -1 and vim.api.nvim_win_is_valid(state.wins.detail) then
-    panel_width = panel_width + vim.api.nvim_win_get_width(state.wins.detail)
-  end
   local windows = {}
   for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
     if vim.api.nvim_win_get_config(win).relative == ""
@@ -365,7 +361,10 @@ local function balance_editor_windows()
     end
   end
   if #windows == 0 then return end
-  local remaining = vim.o.columns - panel_width
+  -- Distribute the space the user windows actually occupy (separators
+  -- already excluded by each window's own width).
+  local remaining = 0
+  for _, win in ipairs(windows) do remaining = remaining + vim.api.nvim_win_get_width(win) end
   local fair = math.floor(remaining / #windows)
   local extra = remaining - fair * #windows
   for index = #windows, 1, -1 do
