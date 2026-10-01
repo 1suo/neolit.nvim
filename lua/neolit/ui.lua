@@ -811,12 +811,14 @@ local function panel_target_window()
   return vim.api.nvim_get_current_win()
 end
 
---- o: open the selected file as a real buffer. Directories fold; drafted
---- new files fall through to their patch buffer.
+--- o: open the selected file as a real buffer. Directories fold (but not
+--- the root — use za/zm for that); drafted new files fall through to their
+--- patch buffer.
 function M.open_selected()
   if not state then return end
   local row = cursor_row()
   if not row then return end
+  if row.id == "entry:." then return end
   if row.directory then return M.toggle_fold("toggle") end
   local path = row.id:sub(7)
   local absolute = state.directory .. "/" .. path

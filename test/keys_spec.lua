@@ -82,13 +82,19 @@ return {
     run = function(t)
       local map = keys.global_action_map()
       for _, key in ipairs({
-        "n", "e", "<CR>", "d", "a", "c", "l", "w", "m", "o", "s", "q", "<Tab>", "<Esc>",
+        "n", "e", "<CR>", "d", "a", "c", "l", "w", "m", "o", "O", "p", "s", "q", "<Tab>", "<Esc>",
         "1", "2", "3", "4", "5", "6", "7", "8", "9",
       }) do
         t:ok(map[key], "global action for " .. key)
       end
+      for _, key in ipairs({ "j", "k", "za", "zc", "zo", "zr", "zR", "zm", "zM", "H" }) do
+        t:eq(map[key], nil, "motion and fold keys stay pane-local: " .. key)
+      end
       t:eq(map.l, { "restrict", "lock" })
       t:eq(map["3"], { "choose", 3 })
+      t:eq(map.o, { "open_selected" }, "global o matches the panel's open-file")
+      t:eq(map.O, { "prompt_reopen" }, "global O matches the panel's reopen")
+      t:eq(map.p, { "edit_patch" })
       t:eq(map.j, nil, "motion keys stay pane-local")
     end,
   },

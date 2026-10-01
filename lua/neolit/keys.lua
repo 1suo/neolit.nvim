@@ -109,11 +109,9 @@ function M.attach(ui, buf)
   end
 end
 
---- Global access to the panel actions under a prefix (e.g. "<leader>n"):
---- the same TUI operation keys, callable from anywhere. Motion keys (j/k,
---- arrows) stay pane-local; everything else — including 1-9, <CR>, <Tab>,
---- and <Esc> — is bound. `dispatcher(key)` decides what a key does (see
---- `require("neolit").key`), so map creation stays separate from policy.
+--- Global access to the panel actions under a prefix (e.g. "<leader>t"):
+--- `<prefix>X` behaves exactly like pressing `X` in the panel — same key,
+--- same action. Motion keys (j/k, arrows) and fold keys stay pane-local.
 M.global_actions = {
   ["n"] = { "prompt_objective" },
   ["e"] = { "prompt_explanation" },
@@ -124,7 +122,9 @@ M.global_actions = {
   ["l"] = { "restrict", "lock" },
   ["w"] = { "restrict", "allow" },
   ["m"] = { "switch_model" },
-  ["o"] = { "prompt_reopen" },
+  ["o"] = { "open_selected" },
+  ["O"] = { "prompt_reopen" },
+  ["p"] = { "edit_patch" },
   ["s"] = { "prompt_stale" },
   ["q"] = { "quit" },
   ["<Tab>"] = { "set_pane" },
