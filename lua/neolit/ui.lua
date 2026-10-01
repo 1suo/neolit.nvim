@@ -348,6 +348,32 @@ local function create_detail_window()
   vim.api.nvim_set_current_win(state.wins.tree)
 end
 
+--- Native splits steal columns from one neighbor, not evenly, so after the
+--- panel windows exist the user windows are resized to a fair share of what
+--- remains — the 12-column-per-window budget from geometry() is what makes
+--- that share livable.
+local function balance_editor_windows()
+  local panel_width = vim.api.nvim_win_get_width(state.wins.tree)
+  if state.wins.detail ~= -1 and vim.api.nvim_win_is_valid(state.wins.detail) then
+    panel_width = panel_width + vim.api.nvim_win_get_width(state.wins.detail)
+  end
+  local windows = {}
+  for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+    if vim.api.nvim_win_get_config(win).relative == ""
+      and win ~= state.wins.tree and win ~= state.wins.detail then
+      windows[#windows + 1] = win
+    end
+  end
+  if #windows == 0 then return end
+  local remaining = vim.o.columns - panel_width
+  local fair = math.floor(remaining / #windows)
+  local extra = remaining - fair * #windows
+  for index = #windows, 1, -1 do
+    local width = fair + (index <= extra and 1 or 0)
+    if width >= 1 then pcall(vim.api.nvim_win_set_width, windows[index], width) end
+  end
+end
+
 local function create_windows()
   state.bufs = { tree = prepare_buffer("tree"), detail = prepare_buffer("detail") }
 
@@ -367,6 +393,8 @@ local function create_windows()
 
   keys.attach(M, state.bufs.tree)
   keys.attach(M, state.bufs.detail)
+
+  balance_editor_windows()
 
   -- Closing the sidebar ends the panel; closing the detail split just hides it.
   state.autocmds = {}
