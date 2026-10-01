@@ -314,9 +314,13 @@ local function set_up_detail_window(win, buf)
 end
 
 local function editor_window_count()
+  local wins = state and state.wins or {}
   local count = 0
   for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
-    if vim.api.nvim_win_get_config(win).relative == "" then count = count + 1 end
+    if vim.api.nvim_win_get_config(win).relative == ""
+      and win ~= wins.tree and win ~= wins.detail then
+      count = count + 1
+    end
   end
   return count
 end
