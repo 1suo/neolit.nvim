@@ -49,15 +49,18 @@ function M.merge(user)
   return merged
 end
 
---- Panel window widths for an editor `columns` cells wide. The detail
---- split never claims more than half of the space the sidebar leaves the
---- editor, so opening the panel cannot squeeze user windows to a sliver.
+--- Panel window widths for an editor `columns` cells wide with
+--- `editor_windows` user windows already open. The panel reserves a minimum
+--- of 12 columns per existing window, so opening it never squeezes a user
+--- window to a sliver; detail is 0 when nothing fits.
 function M.geometry(columns, cfg)
   cfg = cfg or {}
+  local editor_windows = math.max(1, cfg.editor_windows or 1)
   local sidebar = cfg.sidebar_width or M.defaults.sidebar_width
-  sidebar = math.max(20, math.min(sidebar, math.max(20, columns - 30)))
+  sidebar = math.max(20, math.min(sidebar, math.floor(columns / 2)))
   local requested = cfg.detail_width or math.floor(columns * 0.45)
-  local detail = math.max(20, math.min(requested, 90, math.floor((columns - sidebar) * 0.5)))
+  local available = columns - sidebar - 12 * editor_windows
+  local detail = math.max(0, math.min(requested, 90, available))
   return { sidebar = sidebar, detail = detail }
 end
 

@@ -60,10 +60,13 @@ return {
   {
     name = "panel geometry never starves the editor windows",
     run = function(t)
-      t:eq(config.geometry(120, {}), { sidebar = 42, detail = 39 }, "detail takes at most half the non-sidebar space")
-      t:eq(config.geometry(200, {}), { sidebar = 42, detail = 79 })
-      t:eq(config.geometry(80, {}), { sidebar = 42, detail = 20 }, "detail degrades to its floor on small editors")
-      t:eq(config.geometry(50, { sidebar_width = 60 }), { sidebar = 20, detail = 20 }, "both floors on tiny editors")
+      t:eq(config.geometry(120, { editor_windows = 1 }), { sidebar = 42, detail = 54 })
+      t:eq(config.geometry(120, { editor_windows = 2 }), { sidebar = 42, detail = 54 }, "still fits with two editor windows")
+      t:eq(config.geometry(200, { editor_windows = 3 }), { sidebar = 42, detail = 90 }, "capped at 90 with room to spare")
+      t:eq(config.geometry(80, { editor_windows = 1 }), { sidebar = 42, detail = 26 })
+      t:eq(config.geometry(80, { editor_windows = 2 }), { sidebar = 42, detail = 14 }, "tight editors share the leftovers honestly")
+      t:eq(config.geometry(60, { editor_windows = 3 }), { sidebar = 30, detail = 0 }, "detail is skipped when nothing fits")
+      t:eq(config.geometry(50, { sidebar_width = 60, editor_windows = 1 }), { sidebar = 25, detail = 13 })
     end,
   },
 }

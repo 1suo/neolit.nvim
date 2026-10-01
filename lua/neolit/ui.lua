@@ -299,7 +299,7 @@ local function set_up_tree_window(win, buf)
   scope.winbar = "NEOLIT"
 end
 
-local function set_up_detail_window(win, buf, width)
+local function set_up_detail_window(win, buf)
   vim.api.nvim_win_set_buf(win, buf)
   local scope = vim.wo[win]
   scope.number = false
@@ -311,30 +311,50 @@ local function set_up_detail_window(win, buf, width)
   scope.winfixwidth = true
   scope.list = false
   scope.winbar = "repository"
-  vim.api.nvim_win_set_width(win, width)
+end
+
+local function editor_window_count()
+  local count = 0
+  for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+    if vim.api.nvim_win_get_config(win).relative == "" then count = count + 1 end
+  end
+  return count
 end
 
 local function create_detail_window()
   if not state or vim.api.nvim_win_is_valid(state.wins.detail) then return end
   local tree = state.wins.tree
   if not vim.api.nvim_win_is_valid(tree) then return end
+  local width = config.geometry(vim.o.columns, {
+    sidebar_width = state.cfg.sidebar_width,
+    detail_width = state.cfg.detail_width,
+    editor_windows = editor_window_count(),
+  }).detail
+  if width < 12 then
+    vim.notify("Not enough room for the detail split; close a window and press Tab.", vim.log.levels.INFO)
+    return
+  end
   vim.api.nvim_win_call(tree, function()
-    vim.cmd("rightbelow vertical split")
+    vim.cmd("rightbelow vertical " .. width .. "split")
     -- nvim_win_call restores the previous current window afterwards, so the
     -- new split must be captured here, inside the call.
     state.wins.detail = vim.api.nvim_get_current_win()
   end)
-  set_up_detail_window(state.wins.detail, state.bufs.detail, config.geometry(vim.o.columns).detail)
+  set_up_detail_window(state.wins.detail, state.bufs.detail)
   vim.api.nvim_set_current_win(state.wins.tree)
 end
 
 local function create_windows()
   state.bufs = { tree = prepare_buffer("tree"), detail = prepare_buffer("detail") }
 
-  vim.cmd("topleft vertical split")
+  local geometry = config.geometry(vim.o.columns, {
+    sidebar_width = state.cfg.sidebar_width,
+    detail_width = state.cfg.detail_width,
+    editor_windows = editor_window_count(),
+  })
+  vim.cmd("topleft vertical " .. geometry.sidebar .. "split")
   state.wins = { tree = vim.api.nvim_get_current_win(), detail = -1 }
   set_up_tree_window(state.wins.tree, state.bufs.tree)
-  vim.api.nvim_win_set_width(state.wins.tree, config.geometry(vim.o.columns).sidebar)
 
   create_detail_window()
 
