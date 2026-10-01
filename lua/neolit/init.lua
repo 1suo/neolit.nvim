@@ -64,6 +64,14 @@ function M.close()
   ui.close()
 end
 
+--- Opens the panel when closed, closes it when open (nvim-tree style).
+function M.toggle()
+  if ui._state() then
+    return M.close()
+  end
+  return M.open()
+end
+
 --- Effective configuration, mostly for tests and :NeolitStatus-style introspection.
 function M.config()
   return configured or config.merge(nil)

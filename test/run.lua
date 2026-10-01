@@ -18,6 +18,7 @@ local spec_files = {
   "framing_spec",
   "keys_spec",
   "ui_spec",
+  "init_spec",
   "ui_smoke_spec",
 }
 
