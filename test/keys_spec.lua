@@ -22,7 +22,7 @@ return {
       local handlers = keys.handlers(stub_ui())
       for _, key in ipairs({
         "j", "k", "<Down>", "<Up>", "<Tab>", "<Right>", "<Left>", "<CR>",
-        "n", "e", "d", "a", "c", "l", "w", "m", "o", "s", "q", "<Esc>",
+        "n", "e", "d", "a", "c", "l", "w", "m", "o", "O", "s", "q", "<Esc>",
         "za", "zc", "zo", "zr", "zR", "zm", "zM", "H", "p",
       }) do
         t:ok(handlers[key], "key " .. key .. " is routed")

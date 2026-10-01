@@ -41,6 +41,7 @@ M.descriptions = {
   ["zM"] = "neolit: close all folds",
   ["H"] = "neolit: show planned paths only",
   ["o"] = "neolit: open selected file (patch buffer for new files)",
+  ["O"] = "neolit: reopen selected node with a reason",
   ["p"] = "neolit: edit drafted patch; :w saves it into the plan",
 }
 
@@ -87,6 +88,7 @@ function M.handlers(ui)
     ["zM"] = function() ui.fold_level("all-closed") end,
     ["H"] = function() ui.toggle_plan_only() end,
     ["o"] = function() ui.open_selected() end,
+    ["O"] = function() ui.prompt_reopen() end,
     ["p"] = function() ui.edit_patch() end,
   }
   for _, digit in ipairs(M.DIGITS) do
