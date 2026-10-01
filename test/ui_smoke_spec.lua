@@ -117,4 +117,35 @@ return {
       system({ "rm", "-rf", directory })
     end,
   },
+  {
+    name = "opens with default options (no env overrides reach the host job)",
+    run = function(t)
+      if not vim.env.NEOLIT_DIR and not config.find_neolit_dir({}, {
+        env = vim.env,
+        plugin_root = config.plugin_root(),
+        readable = function(path) return vim.fn.filereadable(path) == 1 end,
+      }) then
+        print("  (skipped: no neolit dist found)")
+        return
+      end
+
+      -- Isolate the shim's state store so default task persistence cannot
+      -- resume or rewrite anything real.
+      local state_home = vim.fn.resolve(vim.fn.trim(vim.fn.system({ "mktemp", "-d", "/tmp/opencode/neolit-state-XXXXXX" })))
+      vim.fn.setenv("XDG_STATE_HOME", state_home)
+
+      local directory = fixture_repo()
+      neolit.setup({ directory = directory, host_args = { "--stub-runtime" } })
+      neolit.open()
+      t:ok(vim.wait(10000, function()
+        local s = ui._state()
+        return s ~= nil and s.frame ~= nil
+      end, 50), "initial frame renders without env overrides (jobstart E475 regression)")
+
+      ui.quit()
+      t:ok(vim.wait(5000, function() return ui._state() == nil end), "quit closes the UI")
+      vim.fn.setenv("XDG_STATE_HOME", nil)
+      system({ "rm", "-rf", directory, state_home })
+    end,
+  },
 }

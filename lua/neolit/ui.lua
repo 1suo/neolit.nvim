@@ -354,11 +354,15 @@ function M.open(opts)
   if cfg.no_model then env.AUGMENT_TUI_NO_MODEL = "1" end
   if cfg.persist_tasks == false then env.AUGMENT_TUI_TASKS = "0" end
 
-  local spawn_ok, spawned = pcall(hostmod.new, {
+  -- env is only passed when set: an empty env table is rejected by some
+  -- jobstart implementations (E475) and would otherwise break every open.
+  local spawn_opts = {
     cmd = { cfg.node, plugin_root .. "/host/host.mjs", "--dist", dist_root .. "/dist", unpack_table(cfg.host_args or {}) },
     cwd = directory,
-    env = env,
-  }, {
+  }
+  if next(env) ~= nil then spawn_opts.env = env end
+
+  local spawn_ok, spawned = pcall(hostmod.new, spawn_opts, {
     on_frame = function(frame)
       if state then M.render(frame) end
     end,
@@ -369,7 +373,9 @@ function M.open(opts)
       if text and text:find("%S") then vim.schedule(function() vim.notify("neolit host: " .. vim.trim(text), vim.log.levels.WARN) end) end
     end,
     on_exit = function(code)
-      if state and not state.closing then
+      -- Only a crash of THIS state's host tears the UI down; an exit from a
+      -- previous session's shutting-down host must never close a fresh panel.
+      if state and state.host == spawned and not state.closing then
         local was_state = state
         state = nil
         for _, win in pairs(was_state.wins) do pcall(vim.api.nvim_win_close, win, true) end
