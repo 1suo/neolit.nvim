@@ -8,7 +8,7 @@ local function stub_ui()
     "set_pane", "move", "scroll_detail", "prompt_message", "prompt_objective", "prompt_explanation",
     "develop", "apply_selected", "commit_applied", "restrict", "switch_model", "prompt_reopen",
     "prompt_stale", "quit", "cancel_op", "choose", "toggle_fold", "toggle_plan_only",
-    "open_selected", "edit_patch",
+    "open_selected", "edit_patch", "fold_level",
   }) do
     ui[name] = function(...) calls[#calls + 1] = { name = name, args = { ... } } end
   end
@@ -23,7 +23,7 @@ return {
       for _, key in ipairs({
         "j", "k", "<Down>", "<Up>", "<Tab>", "<Right>", "<Left>", "<CR>",
         "n", "e", "d", "a", "c", "l", "w", "m", "o", "s", "q", "<Esc>",
-        "za", "zc", "zo", "H", "p",
+        "za", "zc", "zo", "zr", "zR", "zm", "zM", "H", "p",
       }) do
         t:ok(handlers[key], "key " .. key .. " is routed")
       end

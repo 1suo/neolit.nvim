@@ -70,4 +70,26 @@ return {
       t:eq(barren_folded["."], nil)
     end,
   },
+  {
+    name = "fold levels: zm folds the shallowest open level, zr opens the shallowest folded one",
+    run = function(t)
+      -- Default state: test/ folded; root and src/ open (src is planned).
+      local effective = ui.default_folded(rows)
+      local more = ui.fold_level_targets(rows, effective, "more")
+      t:eq(more.fold, { ["."] = true }, "first zm folds the root level")
+      t:eq(next(more.open), nil)
+
+      local reduce = ui.fold_level_targets(rows, effective, "reduce")
+      t:eq(reduce.open, { test = true }, "zr opens the folded level")
+      t:eq(next(reduce.fold), nil)
+
+      -- With the root folded, every deeper directory is hidden, so zm has
+      -- nothing more to fold and zr reopens the root.
+      local root_folded = { ["."] = true }
+      local more_empty = ui.fold_level_targets(rows, root_folded, "more")
+      t:eq(next(more_empty.fold), nil, "zm has nothing deeper to fold")
+      local reopen = ui.fold_level_targets(rows, root_folded, "reduce")
+      t:eq(reopen.open, { ["."] = true }, "zr reopens the root")
+    end,
+  },
 }

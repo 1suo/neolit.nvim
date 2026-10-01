@@ -112,6 +112,7 @@ p      edit the selected path's drafted patch as a diff buffer — :w saves it
 za/zc/zo  toggle/close/open the directory under the cursor (o also toggles);
        untouched folders start folded — folders touched by the plan and
        their ancestors stay open
+zm/zr/zM/zR  fold by level: one level closed/opened, or everything
 H      hide repository-only paths (planned paths and ancestors stay)
 Tab    switch pane (also <Right>; <Left> returns to the tree)
 Esc    cancel the running operation

@@ -106,6 +106,47 @@ function M.default_folded(rows)
   return folded
 end
 
+--- zm/zr level targets: `more` (zm) folds every directory at the shallowest
+--- still-open level; `reduce` (zr) opens every directory at the shallowest
+--- folded level — deeper folded directories are invisible until their
+--- ancestors open, so each press peels one level. Pure.
+function M.fold_level_targets(rows, effective, mode)
+  local depth_of = function(path)
+    if path == "." then return 0 end
+    return select(2, path:gsub("/", "")) + 1
+  end
+  local candidates = {}
+  for _, row in ipairs(rows) do
+    local path = row_path(row)
+    if path and row.directory then
+      local ancestors_open = true
+      for _, ancestor in ipairs(ancestor_paths(path)) do
+        if effective[ancestor] then ancestors_open = false break end
+      end
+      if ancestors_open then
+        candidates[#candidates + 1] = { path = path, folded = effective[path] ~= nil, depth = depth_of(path) }
+      end
+    end
+  end
+  local min_open, min_folded = nil, nil
+  for _, candidate in ipairs(candidates) do
+    if candidate.folded then
+      if not min_folded or candidate.depth < min_folded then min_folded = candidate.depth end
+    else
+      if not min_open or candidate.depth < min_open then min_open = candidate.depth end
+    end
+  end
+  local targets = { fold = {}, open = {} }
+  for _, candidate in ipairs(candidates) do
+    if mode == "more" and not candidate.folded and candidate.depth == min_open then
+      targets.fold[candidate.path] = true
+    elseif mode == "reduce" and candidate.folded and candidate.depth == min_folded then
+      targets.open[candidate.path] = true
+    end
+  end
+  return targets
+end
+
 --- Which rows render: a row is visible when no ancestor directory is folded
 --- and, in plan-only mode, when it (or a descendant) carries plan state.
 --- `rows` come from the shim with `directory` and `repositoryOnly` flags.
@@ -690,6 +731,40 @@ function M.toggle_fold(mode)
       end
     end
   end
+end
+
+--- zm/zr/zM/zR: fold by level rather than by directory.
+function M.fold_level(mode)
+  if not state or not state.frame then return end
+  local rows = state.frame.tree.rows or {}
+  if mode == "all-open" then
+    for _, row in ipairs(rows) do
+      local path = row_path(row)
+      if path and row.directory then
+        state.explicit_open[path] = true
+        state.folded[path] = nil
+      end
+    end
+  elseif mode == "all-closed" then
+    for _, row in ipairs(rows) do
+      local path = row_path(row)
+      if path and row.directory then
+        state.folded[path] = true
+        state.explicit_open[path] = nil
+      end
+    end
+  else
+    local targets = M.fold_level_targets(rows, effective_folded(rows), mode)
+    for path in pairs(targets.fold) do
+      state.folded[path] = true
+      state.explicit_open[path] = nil
+    end
+    for path in pairs(targets.open) do
+      state.folded[path] = nil
+      state.explicit_open[path] = true
+    end
+  end
+  M.render(state.frame)
 end
 
 --- Hides repository-only paths: only planned paths and their ancestors stay.
