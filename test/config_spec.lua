@@ -57,4 +57,13 @@ return {
       t:ok(root and root:match("/neolit%.nvim$"), "plugin root ends with the plugin directory: " .. tostring(root))
     end,
   },
+  {
+    name = "panel geometry clamps sidebar and detail widths",
+    run = function(t)
+      t:eq(config.geometry(120, {}), { sidebar = 42, detail = 54 })
+      t:eq(config.geometry(200, {}), { sidebar = 42, detail = 90 }, "detail is capped")
+      t:eq(config.geometry(80, {}), { sidebar = 42, detail = 40 }, "detail keeps its floor at 80 columns")
+      t:eq(config.geometry(50, { sidebar_width = 60 }), { sidebar = 20, detail = 40 }, "sidebar degrades on narrow editors")
+    end,
+  },
 }

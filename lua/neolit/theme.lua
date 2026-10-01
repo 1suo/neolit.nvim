@@ -56,8 +56,6 @@ function M.apply(api)
   end
   api.nvim_set_hl(0, "NeolitSelected", { bg = M.colors.selected, default = true })
   api.nvim_set_hl(0, "NeolitCursorLine", { bg = M.colors.selected, default = true })
-  api.nvim_set_hl(0, "NeolitFloatBorderActive", { fg = M.colors.border_active, default = true })
-  api.nvim_set_hl(0, "NeolitFloatBorder", { fg = M.colors.border, default = true })
 end
 
 return M

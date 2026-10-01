@@ -19,10 +19,10 @@ M.defaults = {
   --- Persist the active task to disk and resume the newest one on open
   --- (AUGMENT_TUI_TASKS semantics; the TUI default is on).
   persist_tasks = true,
-  --- Frame geometry, mirroring the TUI: one cell of root padding and a 42%
-  --- tree pane.
-  margin = 1,
-  tree_ratio = 0.42,
+  --- Panel geometry: sidebar width in columns, detail split width
+  --- (nil = 45% of the editor, clamped to 40–90).
+  sidebar_width = 42,
+  detail_width = nil,
   --- Test seam: { input = function(opts, cb) end, select = function(items, opts, cb) end }
   --- overriding vim.ui.input / vim.ui.select.
   hooks = nil,
@@ -39,6 +39,16 @@ function M.merge(user)
     merged[key] = value
   end
   return merged
+end
+
+--- Panel window widths for an editor `columns` cells wide. Pure arithmetic.
+function M.geometry(columns, cfg)
+  cfg = cfg or {}
+  local sidebar = cfg.sidebar_width or M.defaults.sidebar_width
+  sidebar = math.max(20, math.min(sidebar, math.max(20, columns - 30)))
+  local detail = cfg.detail_width or math.floor(columns * 0.45)
+  detail = math.max(40, math.min(detail, 90, math.max(20, columns - sidebar)))
+  return { sidebar = sidebar, detail = detail }
 end
 
 --- Lexically normalizes a path: collapses `.` and `seg/..` pairs without

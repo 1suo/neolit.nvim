@@ -15,7 +15,6 @@ vim.opt.runtimepath:prepend(base .. "/..")
 local spec_files = {
   "config_spec",
   "theme_spec",
-  "layout_spec",
   "framing_spec",
   "keys_spec",
   "ui_smoke_spec",

@@ -48,36 +48,35 @@ root.
 
 ## Layout
 
-One operational plane composed of editor-relative floats:
+Native editor windows, no floating chrome:
 
 ```text
-NEOLIT [COLLAPSED] [PLANNED CHANGE] …            OPENCODE
-╭─ FILES ───────────────────╮ ╭──────────────────────────╮
-│ ◆ repo/            78%    │ │ DESCRIPTION              │
-│ ├─ src/                   │ │  make retries bounded    │
-│ │  └─ auth/session.ts  +  │ │ CHANGES                  │
-│ └─ package.json    #      │ │  +gamma                  │
-╰───────────────────────────╯ ╰──────────────────────────╯
-[Enter] prompt/regenerate · [1-7] choose approach · [D] develop · …
-╭──────────────────────────────────────────────────────────╮
-│ ⠋ Generating approaches…                                 │
-╰──────────────────────────────────────────────────────────╯
+┌─ FILES ────────────────┬─ session.ts ───────────────┐
+│ ◆ repo/            78% │ DESCRIPTION                 │
+│ ├─ src/                │  make retries bounded       │
+│ │  └─ auth/session.ts +│ CHANGES                     │
+│ └─ package.json    #   │  +gamma                     │
+└────────────────────────┴─────────────────────────────┘
+ (your editor windows stay untouched to the right)
 ```
 
-- Header, legend, and the message panel are `focusable=false` floats — the
-  cursor can never walk into them.
-- The tree and detail panes carry identical buffer-local keymaps (the analog
-  of the TUI's global input handler), so every key behaves the same in both;
-  `Tab` switches pane focus programmatically.
-- The tree selection is the cursor line (`cursorline` highlight, window-local
-  `scrolloff` keeps it centered like the TUI's view window); the detail pane
-  wraps and scrolls with `j`/`k` while focused.
-- The geometry mirrors the TUI's `frameLayout()`: fixed chrome is subtracted
-  from the editor size first and the panes degrade to one row
-  (`lua/neolit/layout.lua`).
+- `:Neolit` opens a **left sidebar split** with the planned tree and a
+  **detail split** with DESCRIPTION/CHANGES — real windows, so standard
+  `<C-w>` motion, resizing, and `:q` behave normally. Closing the sidebar
+  ends the panel; the detail split closes independently and `Tab` recreates
+  it.
+- Status, revision, and model chips live in the sidebar's **winbar**; while
+  an operation runs, the winbar shows the spinner and operation instead.
+  Messages and errors go through **`vim.notify`**.
+- Both panes carry identical buffer-local keymaps (the analog of the TUI's
+  global input handler), so every key behaves the same in either pane.
+- The tree selection is the cursor line (`cursorline` highlight,
+  window-local `scrolloff` keeps it centered); the detail pane wraps and
+  scrolls with `j`/`k` while focused.
 - Indicators (`◆ ~ + - ✓ ! # ● ?` …) and the two-section detail pane come from
   the TUI's view model; their meaning is canonical in
   [neolit's TUI README](https://github.com/1suo/neolit/blob/main/src/tui/README.md).
+- All panel keymaps carry `desc` fields, so which-key lists them natively.
 
 ## Keys
 
@@ -119,8 +118,8 @@ require("neolit").setup({
   directory = nil,      -- repository root; default: working directory at open
   no_model = false,     -- force NO MODEL mode (AUGMENT_TUI_NO_MODEL=1)
   persist_tasks = true, -- persist and resume the active task (AUGMENT_TUI_TASKS)
-  margin = 1,           -- frame padding around the float grid
-  tree_ratio = 0.42,    -- tree pane share of the width
+  sidebar_width = 42,   -- tree sidebar width in columns
+  detail_width = nil,   -- detail split width (default 45% of the editor, 40–90)
   host_args = nil,      -- extra argv for host.mjs (advanced/tests)
   hooks = nil,          -- { input = …, select = … } test seams
 })
@@ -135,12 +134,11 @@ Authentication belongs to each backend's CLI.
 
 ```text
 ┌─ Neovim ─────────────────────────────┐      ┌─ node host/host.mjs ─────────┐
-│ lua/neolit/ui.lua      float grid    │      │ AugmentTuiController        │
+│ lua/neolit/ui.lua      panel splits  │      │ AugmentTuiController        │
 │ lua/neolit/keys.lua    key routing   │◄────►│ CliAgentRuntime (opencode/  │
 │ lua/neolit/host.lua    JSON-RPC job  │ stdio│   claude/codex)             │
 │ lua/neolit/render.lua  extmarks      │ JSON │ detail.js view model        │
-│ lua/neolit/layout.lua  frame budget  │      │ apply/commit transactions   │
-│ lua/neolit/{theme,config,framing}    │      │ (from neolit's dist/)       │
+│ lua/neolit/{theme,config,framing}    │      │ apply/commit transactions   │
 └──────────────────────────────────────┘      └─────────────────────────────┘
 ```
 
@@ -161,8 +159,9 @@ Authentication belongs to each backend's CLI.
 
 Known divergences from the TUI: `M` lists the backend's model catalog when
 available and falls back to typing a model id; the input line is
-`vim.ui.input` instead of the embedded panel input; and pane titles use float
-borders (the detail pane therefore has no title, like the TUI).
+`vim.ui.input` instead of the embedded panel input; status lives in the
+winbar and feedback in `vim.notify` instead of the TUI's header and message
+panel.
 
 ## Validation
 

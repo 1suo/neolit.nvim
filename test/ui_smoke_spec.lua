@@ -74,11 +74,23 @@ return {
       t:ok(state, "UI state exists")
       t:eq(state.model.available, true)
       t:eq(state.model.label, "STUB")
+      t:ok(vim.api.nvim_win_is_valid(state.wins.tree), "sidebar window is a real split")
+      t:ok(vim.api.nvim_win_is_valid(state.wins.detail), "detail window is a real split")
       local tree_text = table.concat(vim.api.nvim_buf_get_lines(state.bufs.tree, 0, -1, false), "\n")
       t:ok(tree_text:find("session%.ts", 1) ~= nil, "tree shows the repository file")
-      local header_text = table.concat(vim.api.nvim_buf_get_lines(state.bufs.header, 0, -1, false), " ")
-      t:ok(header_text:find("NEOLIT", 1, true) ~= nil, "header renders")
-      t:ok(header_text:find("STUB", 1, true) ~= nil, "model label renders")
+
+      -- The winbar carries chips only when idle; while an operation runs it
+      -- shows the spinner instead, so wait for the idle form.
+      wait_for(t, "winbar carries the status chips", function()
+        local s = ui._state()
+        return s and vim.api.nvim_win_is_valid(s.wins.tree)
+          and (vim.api.nvim_win_get_option(s.wins.tree, "winbar") or ""):find("NEOLIT", 1, true) ~= nil
+      end)
+      wait_for(t, "winbar carries the plan status", function()
+        local s = ui._state()
+        return s and vim.api.nvim_win_is_valid(s.wins.tree)
+          and (vim.api.nvim_win_get_option(s.wins.tree, "winbar") or ""):find("COLLAPSED", 1, true) ~= nil
+      end)
 
       handlers.d() -- develop: refine the chosen approach into files
       wait_for(t, "refine selects the first planned child", frame_matches(function(frame)
@@ -87,6 +99,8 @@ return {
       local state_after_refine = ui._state()
       local detail_text = table.concat(vim.api.nvim_buf_get_lines(state_after_refine.bufs.detail, 0, -1, false), "\n")
       t:ok(detail_text:find("apply the edit", 1, true) ~= nil, "detail explains the planned child")
+      local detail_winbar = vim.api.nvim_win_get_option(state_after_refine.wins.detail, "winbar") or ""
+      t:ok(detail_winbar:find("session%.ts", 1) ~= nil, "detail winbar carries the selected path")
 
       handlers.d() -- develop: draft the file's exact patch
       wait_for(t, "patch is drafted", frame_matches(function(frame)

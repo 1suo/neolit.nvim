@@ -14,7 +14,6 @@ function M.setup(user)
   theme.apply()
 
   local group = vim.api.nvim_create_augroup("Neolit", { clear = true })
-  vim.api.nvim_create_autocmd("VimResized", { group = group, callback = function() ui.relayout() end })
   vim.api.nvim_create_autocmd("VimLeavePre", { group = group, callback = function() ui.close() end })
   vim.api.nvim_create_user_command("Neolit", function(options)
     local objective = options.args ~= "" and options.args or nil

@@ -1,14 +1,13 @@
---- The Neovim frame: a grid of editor-relative floats laid out like the
---- TUI frame (header, FILES tree pane, detail pane, legend, message panel).
---- One operational plane: identical buffer-local keys on the two focusable
---- panes (the analog of Ink's global useInput), chrome that cannot receive
---- focus, and Tab switching pane focus programmatically. The controller,
---- model runtime, apply/commit transactions, and the pane view model all
---- live in the host shim; this module renders frames and routes keys.
+--- The Neovim panel: a left sidebar split holding the planned tree and a
+--- detail split for DESCRIPTION/CHANGES — real editor windows, no floating
+--- chrome. Status, revision, model, and the busy spinner live in the
+--- sidebar's winbar (native); messages and errors go through vim.notify.
+--- The controller, model runtime, apply/commit transactions, and the pane
+--- view model all stay in the host shim; this module renders frames and
+--- routes keys.
 
 local config = require("neolit.config")
 local theme = require("neolit.theme")
-local layout = require("neolit.layout")
 local hostmod = require("neolit.host")
 local render = require("neolit.render")
 local keys = require("neolit.keys")
@@ -65,34 +64,65 @@ local function message_title()
 end
 
 --------------------------------------------------------------------------
--- Panel and spinner
+-- Winbar (native chrome) and notifications
 --------------------------------------------------------------------------
 
-local function panel_winhl(group)
-  pcall(vim.api.nvim_win_set_option, state.wins.panel, "winhl", "FloatBorder:" .. group)
+local function escape_statusline(text)
+  return text:gsub("%%", "%%%%")
 end
 
-local function render_panel()
-  if not state then return end
-  local frame = state.frame
-  local line, color, border = "", theme.colors.muted, "NeolitFloatBorder"
+--- Chips from the shim's header, as a statusline-format string.
+local function winbar_text()
+  local segments = {}
   if busy_now() then
-    if state.cancel_requested then
-      line, color, border = "Cancelling the running operation…", theme.colors.warning, "NeolitWarning"
-    else
-      local operation = (frame and frame.panel and frame.panel.operation) or (state.pending and state.pending.label) or "Working"
-      line, color, border = spinner() .. " " .. operation .. "…", theme.colors.warning, "NeolitWarning"
-    end
+    local label = state.cancel_requested and "Cancelling…" or (
+      (state.frame and state.frame.panel and state.frame.panel.operation)
+      or (state.pending and state.pending.label) or "Working"
+    )
+    segments[#segments + 1] = { text = spinner() .. " " .. label .. "…", group = "NeolitWarningBold" }
   else
+    local frame = state.frame
     local error_text = state.local_error or (frame and frame.panel and frame.panel.error)
-    if error_text and error_text ~= "" then
-      line, color, border = error_text, theme.colors.error, "NeolitError"
-    elseif frame and frame.panel then
-      line = frame.panel.message or ""
+    for _, chip in ipairs(frame and frame.header and frame.header.left or {}) do
+      local group = chip.text == "[IDLE]" and "NeolitMuted" or nil
+      if error_text and chip.text:find("^%[") then group = "NeolitError" end
+      segments[#segments + 1] = {
+        text = chip.text,
+        group = group or theme.group_for(chip.color, chip.bold),
+      }
     end
   end
-  render.render_lines(vim.api, state.ns, state.bufs.panel, theme, { { text = line, color = color } })
-  panel_winhl(border)
+  local parts = {}
+  for _, segment in ipairs(segments) do
+    local prefix = segment.group and ("%#" .. segment.group .. "#") or ""
+    parts[#parts + 1] = prefix .. escape_statusline(segment.text)
+  end
+  parts[#parts + 1] = "%#Normal#"
+  return table.concat(parts, " ")
+end
+
+local function update_winbars()
+  if not state then return end
+  if vim.api.nvim_win_is_valid(state.wins.tree) then
+    vim.api.nvim_win_set_option(state.wins.tree, "winbar", winbar_text())
+  end
+  if vim.api.nvim_win_is_valid(state.wins.detail) then
+    local path = selected_path() or "repository"
+    vim.api.nvim_win_set_option(state.wins.detail, "winbar", "%#NeolitMuted#" .. escape_statusline(path) .. "%#Normal#")
+  end
+end
+
+--- Panel messages become notifications — once per distinct text, only when
+--- idle (the winbar carries the live state while an operation runs).
+local function notify_panel()
+  if not state or busy_now() then return end
+  local frame = state.frame
+  local error_text = state.local_error or (frame and frame.panel and frame.panel.error)
+  local text = error_text and ("✗ " .. error_text) or (frame and frame.panel and frame.panel.message)
+  if text and text ~= "" and text ~= state.last_notice then
+    state.last_notice = text
+    vim.notify(text, error_text and vim.log.levels.ERROR or vim.log.levels.INFO)
+  end
 end
 
 local function ensure_timer()
@@ -101,15 +131,20 @@ local function ensure_timer()
   state.timer = uv.new_timer()
   state.timer:start(120, 120, vim.schedule_wrap(function()
     if not state then return end
+    if not vim.api.nvim_win_is_valid(state.wins.tree) then
+      M.close()
+      return
+    end
     if not busy_now() then
       if state.timer then state.timer:stop() end
       state.timer = nil
       state.cancel_requested = false
-      render_panel()
+      update_winbars()
+      notify_panel()
       return
     end
     state.spinner_i = state.spinner_i + 1
-    render_panel()
+    update_winbars()
     if not state.frame_in_flight and state.host and not state.host.dead then
       state.frame_in_flight = true
       state.host:request("frame", { spinner = spinner() }, function(msg)
@@ -125,45 +160,15 @@ end
 -- Rendering
 --------------------------------------------------------------------------
 
-local function chips_to_segments(chips, joiner)
-  local segments = {}
-  for index, chip in ipairs(chips or {}) do
-    if index > 1 then segments[#segments + 1] = { text = joiner } end
-    segments[#segments + 1] = { text = chip.text, color = chip.color, bold = chip.bold }
-  end
-  return segments
-end
-
-local function render_header(header)
-  local joiner = "  "
-  local left = chips_to_segments(header and header.left, joiner)
-  local right = chips_to_segments(header and header.right, joiner)
-  local left_text = vim.fn.join(vim.tbl_map(function(segment) return segment.text end, left), joiner)
-  local right_text = vim.fn.join(vim.tbl_map(function(segment) return segment.text end, right), joiner)
-  local width = state.boxes.header.width
-  local left_width = vim.fn.strdisplaywidth(left_text)
-  local right_width = vim.fn.strdisplaywidth(right_text)
-  local segments
-  if left_width + right_width + 1 <= width then
-    local padding = width - left_width - right_width
-    local all = {}
-    for _, segment in ipairs(left) do all[#all + 1] = segment end
-    all[#all + 1] = { text = string.rep(" ", padding) }
-    for _, segment in ipairs(right) do all[#all + 1] = segment end
-    segments = all
-  else
-    segments = left
-  end
-  render.render_lines(vim.api, state.ns, state.bufs.header, theme, { { segments = segments } })
-end
-
 function M.render(frame)
   if not state or not frame then return end
+  if not vim.api.nvim_win_is_valid(state.wins.tree) then
+    M.close()
+    return
+  end
   state.frame = frame
   state.local_error = nil
   state.cancel_requested = false
-
-  render_header(frame.header)
 
   local tree_lines = {}
   local row_ids = {}
@@ -178,11 +183,11 @@ function M.render(frame)
   for index, id in ipairs(row_ids) do
     if id == frame.tree.selectedRowId then selected = index break end
   end
-  if vim.api.nvim_win_is_valid(state.wins.tree) then
-    pcall(vim.api.nvim_win_set_cursor, state.wins.tree, { selected, 0 })
-  end
+  pcall(vim.api.nvim_win_set_cursor, state.wins.tree, { selected, 0 })
 
-  render.render_lines(vim.api, state.ns, state.bufs.detail, theme, frame.detail or {})
+  if vim.api.nvim_buf_is_valid(state.bufs.detail) then
+    render.render_lines(vim.api, state.ns, state.bufs.detail, theme, frame.detail or {})
+  end
   if state.last_selected ~= frame.tree.selectedRowId then
     state.last_selected = frame.tree.selectedRowId
     if vim.api.nvim_win_is_valid(state.wins.detail) then
@@ -190,112 +195,96 @@ function M.render(frame)
     end
   end
 
-  render_panel()
+  update_winbars()
+  notify_panel()
   ensure_timer()
 end
 
 --------------------------------------------------------------------------
--- Windows
+-- Windows: two honest splits
 --------------------------------------------------------------------------
 
-local function open_box(box, buf, enter)
-  local bordered = box.border ~= "none"
-  local options = {
-    relative = "editor",
-    row = box.row,
-    col = box.col,
-    width = math.max(1, box.width - (bordered and 2 or 0)),
-    height = math.max(1, box.height - (bordered and 2 or 0)),
-    focusable = box.focusable ~= false,
-    style = "minimal",
-    zindex = 50,
-    noautocmd = true,
-  }
-  if bordered then
-    options.border = box.border
-    if box.title then
-      options.title = box.title
-      options.title_pos = "left"
-    end
-  end
-  return vim.api.nvim_open_win(buf, enter or false, options)
+local function prepare_buffer(name)
+  local buf = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_option(buf, "buftype", "nofile")
+  vim.api.nvim_buf_set_option(buf, "swapfile", false)
+  vim.api.nvim_buf_set_option(buf, "bufhidden", "hide")
+  vim.api.nvim_buf_set_name(buf, "neolit://" .. name)
+  return buf
 end
 
-local function legend_segments()
-  local primary, muted = theme.colors.primary, theme.colors.muted
-  local function key(text, color) return { { text = "[" .. text .. "]", color = color, bold = true }, { text = " ", color = color } } end
-  local parts = {
-    key("Enter", primary), { text = "prompt/regenerate · ", color = primary },
-    key("1-7", primary), { text = "choose approach · ", color = primary },
-    key("D", primary), { text = "develop · ", color = primary },
-    key("A", primary), { text = "apply · ", color = primary },
-    key("C", primary), { text = "commit · ", color = primary },
-    key("L", primary), { text = "lock · ", color = primary },
-    key("W", primary), { text = "allow · ", color = primary },
-    key("M", primary), { text = "models · ", color = primary },
-    key("E", primary), { text = "explain · ", color = primary },
-    key("N", primary), { text = "new · ", color = primary },
-    key("Tab", muted), { text = "pane · ", color = muted },
-    key("Q", muted), { text = "quit", color = muted },
-  }
-  local segments = {}
-  for _, part in ipairs(parts) do
-    for _, segment in ipairs(part) do segments[#segments + 1] = segment end
-  end
-  return segments
+local function set_up_tree_window(win, buf)
+  vim.api.nvim_win_set_buf(win, buf)
+  local scope = vim.wo[win]
+  scope.number = false
+  scope.relativenumber = false
+  scope.signcolumn = "no"
+  scope.foldcolumn = "0"
+  scope.wrap = false
+  scope.cursorline = true
+  scope.scrolloff = 999
+  scope.winfixwidth = true
+  scope.list = false
+  scope.winbar = "NEOLIT"
+end
+
+local function set_up_detail_window(win, buf, width)
+  vim.api.nvim_win_set_buf(win, buf)
+  local scope = vim.wo[win]
+  scope.number = false
+  scope.relativenumber = false
+  scope.signcolumn = "no"
+  scope.foldcolumn = "0"
+  scope.wrap = true
+  scope.scrolloff = 0
+  scope.winfixwidth = true
+  scope.list = false
+  scope.winbar = "repository"
+  vim.api.nvim_win_set_width(win, width)
+end
+
+local function create_detail_window()
+  if not state or vim.api.nvim_win_is_valid(state.wins.detail) then return end
+  local tree = state.wins.tree
+  if not vim.api.nvim_win_is_valid(tree) then return end
+  vim.api.nvim_win_call(tree, function()
+    vim.cmd("rightbelow vertical split")
+    -- nvim_win_call restores the previous current window afterwards, so the
+    -- new split must be captured here, inside the call.
+    state.wins.detail = vim.api.nvim_get_current_win()
+  end)
+  set_up_detail_window(state.wins.detail, state.bufs.detail, config.geometry(vim.o.columns).detail)
+  vim.api.nvim_set_current_win(state.wins.tree)
 end
 
 local function create_windows()
-  local api = vim.api
-  state.boxes = layout.compute(vim.o.columns, vim.o.lines, { margin = state.cfg.margin, tree_ratio = state.cfg.tree_ratio })
-  state.bufs = {}
-  state.wins = {}
-  for name, box in pairs(state.boxes) do
-    local buf = api.nvim_create_buf(false, true)
-    api.nvim_buf_set_option(buf, "buftype", "nofile")
-    api.nvim_buf_set_option(buf, "filetype", "neolit-" .. name)
-    api.nvim_buf_set_option(buf, "swapfile", false)
-    state.bufs[name] = buf
-    state.wins[name] = open_box(box, buf, false)
-  end
+  state.bufs = { tree = prepare_buffer("tree"), detail = prepare_buffer("detail") }
 
-  local tree_window, detail_window = state.wins.tree, state.wins.detail
-  api.nvim_win_set_option(tree_window, "cursorline", true)
-  api.nvim_win_set_option(tree_window, "wrap", false)
-  api.nvim_win_set_option(tree_window, "scrolloff", 999)
-  api.nvim_win_set_option(detail_window, "wrap", true)
-  api.nvim_win_set_option(detail_window, "scrolloff", 0)
+  vim.cmd("topleft vertical split")
+  state.wins = { tree = vim.api.nvim_get_current_win(), detail = -1 }
+  set_up_tree_window(state.wins.tree, state.bufs.tree)
+  vim.api.nvim_win_set_width(state.wins.tree, config.geometry(vim.o.columns).sidebar)
 
-  render.render_lines(api, state.ns, state.bufs.legend, theme, { { segments = legend_segments() } })
-  render.render_lines(api, state.ns, state.bufs.header, theme,
-    { { segments = { { text = "NEOLIT", color = theme.colors.primary, bold = true } } } })
-  render.render_lines(api, state.ns, state.bufs.tree, theme,
+  create_detail_window()
+
+  render.render_lines(vim.api, state.ns, state.bufs.tree, theme,
     { { text = "Starting the neolit host…", color = theme.colors.muted } })
-  render.render_lines(api, state.ns, state.bufs.panel, theme,
-    { { text = "…", color = theme.colors.muted } })
 
   keys.attach(M, state.bufs.tree)
   keys.attach(M, state.bufs.detail)
-end
 
-function M.relayout()
-  if not state then return end
-  state.boxes = layout.compute(vim.o.columns, vim.o.lines, { margin = state.cfg.margin, tree_ratio = state.cfg.tree_ratio })
-  for name, box in pairs(state.boxes) do
-    local win = state.wins[name]
-    if win and vim.api.nvim_win_is_valid(win) then
-      local bordered = box.border ~= "none"
-      vim.api.nvim_win_set_config(win, {
-        relative = "editor",
-        row = box.row,
-        col = box.col,
-        width = math.max(1, box.width - (bordered and 2 or 0)),
-        height = math.max(1, box.height - (bordered and 2 or 0)),
-        border = box.border ~= "none" and box.border or nil,
-      })
-    end
-  end
-  if state.frame then M.render(state.frame) end
+  -- Closing the sidebar ends the panel; closing the detail split just hides it.
+  state.autocmds = {}
+  state.autocmds[#state.autocmds + 1] = vim.api.nvim_create_autocmd("WinClosed", {
+    pattern = tostring(state.wins.tree),
+    callback = function() M.close() end,
+  })
+  state.autocmds[#state.autocmds + 1] = vim.api.nvim_create_autocmd("WinClosed", {
+    pattern = tostring(state.wins.detail),
+    callback = function()
+      if state then state.wins.detail = -1 end
+    end,
+  })
 end
 
 --------------------------------------------------------------------------
@@ -339,14 +328,16 @@ function M.open(opts)
     pane = "tree",
     spinner_i = 1,
     row_ids = {},
-    frame = nil,
-    pending = nil,
-    local_error = nil,
-    cancel_requested = false,
-    closing = false,
+    last_notice = nil,
     ns = vim.api.nvim_create_namespace("neolit"),
   }
-  create_windows()
+
+  local geometry_ok = pcall(create_windows)
+  if not geometry_ok then
+    state = nil
+    vim.notify("neolit: could not create the panel windows.", vim.log.levels.ERROR)
+    return
+  end
 
   local directory = cfg.directory or vim.fn.getcwd()
   state.directory = directory
@@ -376,10 +367,7 @@ function M.open(opts)
       -- Only a crash of THIS state's host tears the UI down; an exit from a
       -- previous session's shutting-down host must never close a fresh panel.
       if state and state.host == spawned and not state.closing then
-        local was_state = state
-        state = nil
-        for _, win in pairs(was_state.wins) do pcall(vim.api.nvim_win_close, win, true) end
-        for _, buf in pairs(was_state.bufs) do pcall(vim.api.nvim_buf_delete, buf, { force = true }) end
+        M.close()
         vim.notify("neolit host exited unexpectedly (code " .. code .. ").", vim.log.levels.WARN)
       end
     end,
@@ -411,7 +399,10 @@ function M.close()
   state = nil
   current.closing = true
   if current.timer then current.timer:stop() end
-  for _, win in pairs(current.wins) do pcall(vim.api.nvim_win_close, win, true) end
+  for _, id in ipairs(current.autocmds or {}) do pcall(vim.api.nvim_del_autocmd, id) end
+  for _, win in pairs(current.wins) do
+    if win ~= -1 then pcall(vim.api.nvim_win_close, win, true) end
+  end
   for _, buf in pairs(current.bufs) do pcall(vim.api.nvim_buf_delete, buf, { force = true }) end
   if current.host then current.host:shutdown() end
 end
@@ -427,12 +418,14 @@ function M.dispatch(method, params, label)
     state.cancel_requested = false
   end
   ensure_timer()
+  update_winbars()
   state.host:request(method, params or {}, function(msg)
     if not state then return end
     state.pending = nil
     if msg.error then
       state.local_error = msg.error.message or "host error"
-      render_panel()
+      update_winbars()
+      notify_panel()
     else
       M.render(msg.result and msg.result.frame or msg.result)
     end
@@ -446,14 +439,11 @@ end
 function M.set_pane(pane)
   if not state then return end
   state.pane = pane or (state.pane == "tree" and "detail" or "tree")
-  local active = state.pane == "tree"
-  pcall(vim.api.nvim_win_set_option, state.wins.tree, "winhl",
-    "CursorLine:NeolitCursorLine,FloatBorder:" .. (active and "NeolitFloatBorderActive" or "NeolitFloatBorder")
-    .. ",FloatTitle:" .. (active and "NeolitPrimary" or "NeolitMuted"))
-  pcall(vim.api.nvim_win_set_option, state.wins.detail, "winhl",
-    "FloatBorder:" .. (active and "NeolitFloatBorder" or "NeolitFloatBorderActive"))
+  if state.pane == "detail" then create_detail_window() end
   local target = state.wins[state.pane]
-  if target and vim.api.nvim_win_is_valid(target) then pcall(vim.api.nvim_set_current_win, target) end
+  if target and target ~= -1 and vim.api.nvim_win_is_valid(target) then
+    pcall(vim.api.nvim_set_current_win, target)
+  end
 end
 
 function M.move(delta)
@@ -475,7 +465,7 @@ end
 function M.scroll_detail(delta)
   if not state then return end
   local win = state.wins.detail
-  if not vim.api.nvim_win_is_valid(win) then return end
+  if win == -1 or not vim.api.nvim_win_is_valid(win) then return end
   local count = vim.api.nvim_buf_line_count(state.bufs.detail)
   local cursor = vim.api.nvim_win_get_cursor(win)
   local next_line = math.max(1, math.min(count, cursor[1] + delta))
@@ -514,8 +504,7 @@ end
 function M.prompt_message()
   if not state then return end
   if not (state.frame and state.frame.hasTask) then
-    state.local_error = "No task is active. Press [N] for a change or [E] for an explanation."
-    render_panel()
+    vim.notify("No task is active. Press [N] for a change or [E] for an explanation.", vim.log.levels.WARN)
     return
   end
   prompt_input(message_title(), function(value)
@@ -557,8 +546,7 @@ function M.switch_model()
   state.host:request("agent", {}, function(agent_message)
     if not state then return end
     if agent_message.error or not agent_message.result then
-      state.local_error = (agent_message.error and agent_message.error.message) or "No model runtime is active."
-      render_panel()
+      vim.notify((agent_message.error and agent_message.error.message) or "No model runtime is active.", vim.log.levels.WARN)
       return
     end
     local roles = {
@@ -592,7 +580,7 @@ function M.cancel_op()
   if busy_now() then
     state.cancel_requested = true
     state.host:request("cancel", {}, function() end)
-    render_panel()
+    update_winbars()
   end
 end
 

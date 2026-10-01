@@ -8,6 +8,30 @@ local M = {}
 
 M.DIGITS = { "1", "2", "3", "4", "5", "6", "7", "8", "9" }
 
+--- which-key descriptions for the panel keymaps.
+M.descriptions = {
+  ["j"] = "neolit: move selection / scroll detail",
+  ["k"] = "neolit: move selection / scroll detail",
+  ["<Down>"] = "neolit: move selection / scroll detail",
+  ["<Up>"] = "neolit: move selection / scroll detail",
+  ["<Tab>"] = "neolit: switch pane",
+  ["<Right>"] = "neolit: switch pane",
+  ["<Left>"] = "neolit: focus tree",
+  ["<CR>"] = "neolit: message / regenerate this path",
+  ["n"] = "neolit: new change plan",
+  ["e"] = "neolit: explain selected path",
+  ["d"] = "neolit: develop selected path",
+  ["a"] = "neolit: apply drafted patch",
+  ["c"] = "neolit: commit applied paths",
+  ["l"] = "neolit: mark path locked",
+  ["w"] = "neolit: mark path allowed",
+  ["m"] = "neolit: switch models",
+  ["o"] = "neolit: reopen selected node",
+  ["s"] = "neolit: mark path changed outside the plan",
+  ["q"] = "neolit: quit panel",
+  ["<Esc>"] = "neolit: cancel running operation",
+}
+
 --- Returns the key → handler table against the ui module. Pure: handlers
 --- only call ui methods, so tests drive them with a recording stub.
 function M.handlers(ui)
@@ -52,7 +76,12 @@ end
 
 function M.attach(ui, buf)
   for lhs, rhs in pairs(M.handlers(ui)) do
-    vim.keymap.set("n", lhs, rhs, { buffer = buf, nowait = true, silent = true })
+    vim.keymap.set("n", lhs, rhs, {
+      buffer = buf,
+      nowait = true,
+      silent = true,
+      desc = M.descriptions[lhs],
+    })
   end
 end
 
