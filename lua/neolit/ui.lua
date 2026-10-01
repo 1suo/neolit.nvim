@@ -390,6 +390,11 @@ function M.open(opts)
     M.render(msg.result.frame)
     if vim.api.nvim_win_is_valid(state.wins.tree) then vim.api.nvim_set_current_win(state.wins.tree) end
     if cfg.objective then M.dispatch("start", { objective = cfg.objective }, OP_LABELS.start) end
+    if cfg.on_ready then
+      local callback = cfg.on_ready
+      cfg.on_ready = nil
+      vim.schedule(callback)
+    end
   end)
 end
 

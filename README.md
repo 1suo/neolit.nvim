@@ -105,6 +105,13 @@ Esc    cancel the running operation
 Q      quit (cancels, closes the panel, shuts the host down)
 ```
 
+Every operation key is also reachable globally as `<leader>n<key>` (same key
+as the TUI — `<leader>nn`, `<leader>nd`, `<leader>n1`–`n9`, `<leader>n<CR>`,
+…): `require("neolit").key("<key>")` opens the panel when closed and then
+acts, so the maps work from any buffer. Motion keys (`j`/`k`, arrows) stay
+pane-local. For plugin managers without lazy key specs, set
+`keymap_prefix = "<leader>n"` and the plugin binds them itself.
+
 Prompts (`N`, `E`, `Enter`, `O`, `S`) go through `vim.ui.input`, so
 `dressing.nvim`/`snacks.nvim` style pickers work if installed.
 
@@ -120,6 +127,7 @@ require("neolit").setup({
   persist_tasks = true, -- persist and resume the active task (AUGMENT_TUI_TASKS)
   sidebar_width = 42,   -- tree sidebar width in columns
   detail_width = nil,   -- detail split width (default 45% of the editor, 40–90)
+  keymap_prefix = nil,  -- e.g. "<leader>n": bind every TUI operation key globally
   host_args = nil,      -- extra argv for host.mjs (advanced/tests)
   hooks = nil,          -- { input = …, select = … } test seams
 })

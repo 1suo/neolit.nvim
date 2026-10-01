@@ -162,4 +162,40 @@ return {
       system({ "rm", "-rf", directory, state_home })
     end,
   },
+  {
+    name = "neolit.key drives the real panel from a closed state",
+    run = function(t)
+      local neolit_dir = config.find_neolit_dir({}, {
+        env = vim.env,
+        plugin_root = config.plugin_root(),
+        readable = function(path) return vim.fn.filereadable(path) == 1 end,
+      })
+      if not neolit_dir then
+        print("  (skipped: no neolit dist found)")
+        return
+      end
+
+      local state_home = vim.fn.resolve(vim.fn.trim(vim.fn.system({ "mktemp", "-d", "/tmp/opencode/neolit-state-XXXXXX" })))
+      vim.fn.setenv("XDG_STATE_HOME", state_home)
+      local directory = fixture_repo()
+      neolit.setup({ neolit_dir = neolit_dir, directory = directory, persist_tasks = false, host_args = { "--stub-runtime" } })
+
+      -- d on a closed panel: opens it, then develops (which errors politely
+      -- with no task — the panel still opened and the action still ran).
+      local notified = {}
+      local real_notify = vim.notify
+      vim.notify = function(text, level) notified[#notified + 1] = text end
+      neolit.key("d")
+      t:ok(vim.wait(10000, function() return ui._state() ~= nil end, 50), "key opened the panel")
+      t:ok(vim.wait(10000, function()
+        return ui._state() ~= nil and ui._state().frame ~= nil
+      end, 50), "panel rendered its first frame")
+      neolit.key("q")
+      t:ok(vim.wait(5000, function() return ui._state() == nil end), "key quit the panel")
+      vim.notify = real_notify
+      t:ok(#notified >= 1, "the no-task develop surfaced as a notification")
+      vim.fn.setenv("XDG_STATE_HOME", nil)
+      system({ "rm", "-rf", directory, state_home })
+    end,
+  },
 }

@@ -6,6 +6,8 @@
 
 local M = {}
 
+local unpack_table = unpack or table.unpack
+
 M.DIGITS = { "1", "2", "3", "4", "5", "6", "7", "8", "9" }
 
 --- which-key descriptions for the panel keymaps.
@@ -81,6 +83,52 @@ function M.attach(ui, buf)
       nowait = true,
       silent = true,
       desc = M.descriptions[lhs],
+    })
+  end
+end
+
+--- Global access to the panel actions under a prefix (e.g. "<leader>n"):
+--- the same TUI operation keys, callable from anywhere. Motion keys (j/k,
+--- arrows) stay pane-local; everything else — including 1-9, <CR>, <Tab>,
+--- and <Esc> — is bound. `dispatcher(key)` decides what a key does (see
+--- `require("neolit").key`), so map creation stays separate from policy.
+M.global_actions = {
+  ["n"] = { "prompt_objective" },
+  ["e"] = { "prompt_explanation" },
+  ["<CR>"] = { "prompt_message" },
+  ["d"] = { "develop" },
+  ["a"] = { "apply_selected" },
+  ["c"] = { "commit_applied" },
+  ["l"] = { "restrict", "lock" },
+  ["w"] = { "restrict", "allow" },
+  ["m"] = { "switch_model" },
+  ["o"] = { "prompt_reopen" },
+  ["s"] = { "prompt_stale" },
+  ["q"] = { "quit" },
+  ["<Tab>"] = { "set_pane" },
+  ["<Esc>"] = { "cancel_op" },
+}
+
+local function global_action_map()
+  local map = {}
+  for key, action in pairs(M.global_actions) do
+    map[key] = action
+  end
+  for _, digit in ipairs(M.DIGITS) do
+    map[digit] = { "choose", tonumber(digit) }
+  end
+  return map
+end
+
+M.global_action_map = global_action_map
+
+function M.bind_global(prefix, dispatcher)
+  for key in pairs(global_action_map()) do
+    vim.keymap.set("n", prefix .. key, function()
+      dispatcher(key)
+    end, {
+      noremap = true,
+      desc = M.descriptions[key] or ("neolit: choose approach " .. key),
     })
   end
 end

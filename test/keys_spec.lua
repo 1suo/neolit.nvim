@@ -75,4 +75,75 @@ return {
       t:eq(calls[2], { name = "restrict", args = { "allow" } })
     end,
   },
+  {
+    name = "global action map covers every TUI operation key",
+    run = function(t)
+      local map = keys.global_action_map()
+      for _, key in ipairs({
+        "n", "e", "<CR>", "d", "a", "c", "l", "w", "m", "o", "s", "q", "<Tab>", "<Esc>",
+        "1", "2", "3", "4", "5", "6", "7", "8", "9",
+      }) do
+        t:ok(map[key], "global action for " .. key)
+      end
+      t:eq(map.l, { "restrict", "lock" })
+      t:eq(map["3"], { "choose", 3 })
+      t:eq(map.j, nil, "motion keys stay pane-local")
+    end,
+  },
+  {
+    name = "bind_global routes every prefix map through the dispatcher",
+    run = function(t)
+      local captured = {}
+      local original = vim.keymap.set
+      local function restore() vim.keymap.set = original end
+      vim.keymap.set = function(_, lhs, rhs, opts)
+        captured[lhs] = { rhs = rhs, opts = opts }
+      end
+      local dispatched = {}
+      local ok, err = pcall(keys.bind_global, "<leader>n", function(key) dispatched[#dispatched + 1] = key end)
+      restore()
+      t:ok(ok, err)
+      local expected = keys.global_action_map()
+      local count = 0
+      for lhs, binding in pairs(captured) do
+        count = count + 1
+        local key = lhs:sub(#"<leader>n" + 1)
+        t:ok(expected[key], "map " .. lhs .. " matches a TUI key")
+        t:ok(binding.opts and binding.opts.desc, "map " .. lhs .. " carries a desc")
+        binding.rhs()
+      end
+      t:eq(count, vim.tbl_count(expected), "one map per TUI key")
+      table.sort(dispatched)
+      t:eq(#dispatched, count, "each map dispatches its key")
+    end,
+  },
+  {
+    name = "neolit.key runs the action and opens a closed panel first",
+    run = function(t)
+      local neolit = require("neolit.init")
+      local ui = require("neolit.ui")
+      local opened = false
+      local acted = false
+      -- Stub the panel: open records and runs on_ready; develop records.
+      local real_open, real_state, real_develop = neolit.open, ui._state, ui.develop
+      neolit.open = function(objective, on_ready)
+        opened = true
+        if on_ready then on_ready() end
+      end
+      ui._state = function() return nil end
+      ui.develop = function() acted = true end
+      local ok, err = pcall(function() neolit.key("d") end)
+      t:ok(ok, err)
+      t:ok(opened, "key on a closed panel opens it first")
+      t:ok(acted, "the action runs after open")
+
+      neolit.open = function() opened = "reopened" end
+      ui._state = function() return { frame = true } end
+      neolit.key("q")
+      t:ok(opened ~= "reopened", "quit on a closed panel never opens it")
+      t:eq(pcall(neolit.key, "j"), true, "unknown keys are ignored")
+
+      neolit.open, ui._state, ui.develop = real_open, real_state, real_develop
+    end,
+  },
 }
