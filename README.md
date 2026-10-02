@@ -92,8 +92,10 @@ j k    move selection (tree pane) or scroll detail (detail pane)
 Enter  prompt for the selected path — text becomes a message that regenerates
        its subtree; empty submit rethinks it
 1-9    choose the numbered approach
-D      develop selected path (expand into files; on a refined folder, draft
-       its next undrafted file)
+D      develop the selected path and everything under it — a chosen approach
+       expands into files, then every undrafted file below is drafted in ONE
+       batched model call (validated all-or-nothing; per-file fallback marks
+       failures × and summarizes "Drafted n/m — press D to retry")
 A      apply drafted patch to the working tree (git-apply preflighted as one
        unit; nothing is staged)
 C      commit the session-applied paths only (pathspec commit; unrelated
@@ -111,11 +113,14 @@ o      open the selected file as a real buffer (falls back to its patch
        buffer for drafted new files; directories fold)
 p      edit the selected path's drafted patch as a diff buffer — :w saves it
        back into the plan through patch/set
-za/zc/zo  toggle/close/open the directory under the cursor (o also toggles);
-       untouched folders start folded — folders touched by the plan and
-       their ancestors stay open
+za/zc/zo  toggle/close/open the directory under the cursor (o and F also
+       toggle); untouched folders start folded — folders touched by the plan
+       and their ancestors stay open; drafted paths carry +n −n line counts
 zm/zr/zM/zR  fold by level: one level closed/opened, or everything
-H      hide repository-only paths (planned paths and ancestors stay)
+H      toggle the related-only filter: planned paths and restriction-plain
+       marks with their connecting ancestors (a [RELATED] chip marks it)
+V      show/hide the agent SESSION stream pane under the tree — the live
+       steps, tool calls, and retries of the running agent session
 Tab    switch pane (also <Right>; <Left> returns to the tree)
 Esc    cancel the running operation
 Q      quit (cancels, closes the panel, shuts the host down)

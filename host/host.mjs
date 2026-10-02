@@ -54,6 +54,7 @@ const { AugmentTuiController, CliAgentRuntime, candidatesForEntry } = await from
 const { detailLines, entryName, entryState, entryTouchesNode, theme } = await fromDist("tui/detail.js");
 const { effectiveConfig } = await fromDist("tui/config.js");
 const { backendById } = await fromDist("tui/agent-backends.js");
+const { ToolSessionDriver, toolSessionSupported } = await fromDist("tui/tool-session.js");
 
 function commandAvailable(command) {
   if (!command) return false;
@@ -172,6 +173,9 @@ function buildFrame(spinner = DEFAULT_SPINNER) {
   const rows = state.rows.map((row) => {
     const activeRow = entryTouchesNode(row.entry, state.active?.nodeId);
     const failedRow = entryTouchesNode(row.entry, state.failed?.nodeId);
+    const marked = row.entry.path !== "." && (state.task
+      ? state.task.lockedPaths.some((mark) => row.entry.path === mark || row.entry.path.startsWith(`${mark}/`))
+      : state.pendingMarks.includes(row.entry.path));
     const entryViewState = entryState(state.task, row, {
       pendingMarks: state.pendingMarks,
       pendingMode: state.pendingMode,
@@ -199,6 +203,7 @@ function buildFrame(spinner = DEFAULT_SPINNER) {
       id: row.id,
       directory: row.entry.kind === "dir" || row.entry.kind === "root",
       repositoryOnly: row.repositoryOnly,
+      marked,
       segments,
       selected: row.id === state.selectedRowId,
     };
@@ -222,6 +227,14 @@ function buildFrame(spinner = DEFAULT_SPINNER) {
     ? { diffId: primaryDiff.id, path: primaryDiff.path, text: primaryDiff.patch }
     : null;
 
+  // Live agent-session stream (view-only); the pane shows while a tool
+  // session runs and the operator has not hidden it with V. socketPath is
+  // carried top-level in the frame.
+  const session = {
+    lines: state.sessionLines ?? [],
+    visible: Boolean(state.toolSession) && state.sessionView !== false,
+  };
+
   return {
     header,
     hasTask: Boolean(state.task),
@@ -231,6 +244,7 @@ function buildFrame(spinner = DEFAULT_SPINNER) {
     models: { ...runtimeModels },
     tree: { rows, selectedRowId: state.selectedRowId ?? null, count: rows.length },
     detail,
+    session,
     patch,
     panel: {
       busy: state.busy,
@@ -276,7 +290,7 @@ function newController(directory) {
     : modelInfo.available
       ? new CliAgentRuntime({ ...runtimeOptions(), directory })
       : undefined;
-  return new AugmentTuiController({
+  const controller = new AugmentTuiController({
     directory,
     runtime,
     persistTasks: process.env.AUGMENT_TUI_TASKS !== "0",
@@ -285,6 +299,20 @@ function newController(directory) {
     // this controller's server (`augmentd --mcp --connect <path>`) and their
     // mutations render here as they land. AUGMENT_TUI_NO_SOCKET=1 disables.
   });
+  // Mirror bin/augment.tsx: model ops run as prompts in one tool-using
+  // agent session per task, streaming into the session pane.
+  if (!stub && modelInfo.available && process.env.AUGMENT_TUI_NO_TOOLS !== "1" && toolSessionSupported(backend.id)) {
+    controller.useToolSession(new ToolSessionDriver({
+      directory,
+      backend,
+      command: requestedCommand,
+      model: config.model,
+      timeoutMs: config.timeoutMs,
+      server: controller.server,
+      socketPath: () => controller.snapshot().socketPath,
+    }));
+  }
+  return controller;
 }
 
 /**
@@ -453,6 +481,11 @@ const methods = {
 
   agent() {
     return controller?.runtimeAgent() ?? null;
+  },
+
+  session_toggle() {
+    controller?.toggleSessionView();
+    return buildFrame();
   },
 
   cancel() {

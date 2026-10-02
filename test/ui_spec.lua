@@ -4,6 +4,10 @@ local function row(id, directory, repository_only)
   return { id = id, directory = directory, repositoryOnly = repository_only, segments = {} }
 end
 
+local function marked_row(id, directory)
+  return { id = id, directory = directory, repositoryOnly = true, marked = true, segments = {} }
+end
+
 local rows = {
   row("entry:.", true, false),
   row("entry:src", true, false),
@@ -82,6 +86,28 @@ return {
       local new_detail = { tree = frame.tree, detail = { { text = "y" } } }
       t:ok(ui.frames_differ(frame, new_detail), "detail changes re-render")
       t:ok(ui.frames_differ(frame, nil), "a first frame renders")
+    end,
+  },
+  {
+    name = "related-only keeps restriction marks with their ancestors",
+    run = function(t)
+      local marked_rows = {
+        row("entry:.", true, false),
+        row("entry:src", true, false),
+        row("entry:src/a.ts", false, false),
+        row("entry:vendor", true, true),
+        marked_row("entry:vendor/locked.ts", false),
+        row("entry:other", true, true),
+        row("entry:other/x.ts", false, true),
+      }
+      local visible = ui.visible_rows(marked_rows, {}, true)
+      local ids = {}
+      for index, r in ipairs(visible) do ids[index] = r.id end
+      t:eq(ids, { "entry:.", "entry:src", "entry:src/a.ts", "entry:vendor", "entry:vendor/locked.ts" })
+
+      local folded = ui.default_folded(marked_rows)
+      t:eq(folded["vendor"], nil, "a marked descendant keeps its folder open")
+      t:eq(folded["other"], true, "untouched folders still fold")
     end,
   },
   {

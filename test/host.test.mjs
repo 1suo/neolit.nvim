@@ -193,6 +193,8 @@ test("restrictions mark paths and surface the lock chip", async () => {
   const locked = await client.request("select", { rowId: "entry:session.ts" }).then(() => client.request("lock"));
   assert.ok(locked.result.panel.message.includes("Locked: session.ts"), locked.result.panel.message);
   assert.ok(locked.result.header.left.some((chip) => chip.text.includes("[LOCK 1]")), "header shows the lock chip");
+  const locked_row = locked.result.tree.rows.find((row) => row.id === "entry:session.ts");
+  assert.equal(locked_row.marked, true, "locked rows carry the marked flag");
 
   const unlocked = await client.request("lock");
   assert.ok(unlocked.result.panel.message.includes("No marked paths"), unlocked.result.panel.message);
@@ -256,6 +258,21 @@ test("frame exposes runtime models and configure updates them", async () => {
   const configured = await client.request("configure", { model: "test/switched" });
   assert.equal(configured.result.models.model, "test/switched");
   assert.equal(configured.result.models.draftModel, before.draftModel, "untouched roles keep their value");
+  await client.shutdown();
+});
+
+test("session stream toggles and starts hidden without a tool session", async () => {
+  const directory = fixtureRepo();
+  const client = new HostClient(directory, { stub: true });
+  const initialized = await client.request("initialize", { directory });
+  const frame = initialized.result.frame;
+  assert.ok(frame.session, "frame carries the session pane state");
+  assert.deepEqual(frame.session.lines, [], "stream starts empty");
+  assert.equal(frame.session.visible, false, "stub runtime has no tool session");
+
+  const toggled = await client.request("session_toggle");
+  assert.ok(toggled.result.panel.message.includes("session stream"), toggled.result.panel.message);
+  assert.equal(toggled.result.session.visible, false, "still hidden without a tool session");
   await client.shutdown();
 });
 

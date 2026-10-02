@@ -89,7 +89,7 @@ function M.default_folded(rows)
   local open = { ["."] = true }
   for _, row in ipairs(rows) do
     local path = row_path(row)
-    if path and not row.repositoryOnly then
+    if path and (not row.repositoryOnly or row.marked) then
       open[path] = true
       for _, ancestor in ipairs(ancestor_paths(path)) do
         open[ancestor] = true
@@ -167,7 +167,7 @@ function M.visible_rows(rows, folded, plan_only)
     marked = { ["."] = true }
     for _, row in ipairs(rows) do
       local path = row_path(row)
-      if path and not row.repositoryOnly then
+      if path and (not row.repositoryOnly or row.marked) then
         marked[path] = true
         for _, ancestor in ipairs(ancestor_paths(path)) do
           marked[ancestor] = true
@@ -237,7 +237,7 @@ local function winbar_text()
       }
     end
     if state.plan_only then
-      segments[#segments + 1] = { text = "[PLAN-ONLY]", group = "NeolitMuted" }
+      segments[#segments + 1] = { text = "[RELATED]", group = "NeolitMuted" }
     end
   end
   local parts = {}
@@ -311,6 +311,60 @@ end
 -- Rendering
 --------------------------------------------------------------------------
 
+--- Session-stream line colors, mirroring the TUI's SESSION_COLORS.
+local SESSION_KIND_COLOR = {
+  step = "muted",
+  text = "text",
+  tool = "accent",
+  error = "error",
+}
+
+local function session_lines_pane(session)
+  local lines = {}
+  for _, line in ipairs(session and session.lines or {}) do
+    local role = SESSION_KIND_COLOR[line.kind] or "text"
+    lines[#lines + 1] = { text = line.text, color = theme.colors[role] }
+  end
+  return lines
+end
+
+local function close_session_pane()
+  if not state then return end
+  if state.wins.session and state.wins.session ~= -1 then
+    pcall(vim.api.nvim_win_close, state.wins.session, true)
+  end
+  if state.bufs.session then
+    pcall(vim.api.nvim_buf_delete, state.bufs.session, { force = true })
+  end
+  state.wins.session = -1
+  state.bufs.session = nil
+end
+
+local function ensure_session_pane(visible)
+  if not state then return end
+  if not visible then return close_session_pane() end
+  if state.wins.session and state.wins.session ~= -1 and vim.api.nvim_win_is_valid(state.wins.session) then
+    return
+  end
+  local tree = state.wins.tree
+  if not vim.api.nvim_win_is_valid(tree) then return end
+  if vim.o.lines < 20 then return end -- cramped frames drop the pane, like the TUI
+  state.bufs.session = state.bufs.session or prepare_buffer("session")
+  vim.api.nvim_win_call(tree, function()
+    vim.cmd("rightbelow 10split")
+    state.wins.session = vim.api.nvim_get_current_win()
+  end)
+  local scope = vim.wo[state.wins.session]
+  scope.wrap = true
+  scope.number = false
+  scope.scrolloff = 0
+  scope.winfixheight = true
+  scope.list = false
+  scope.winbar = "SESSION"
+  vim.api.nvim_win_set_buf(state.wins.session, state.bufs.session)
+  vim.api.nvim_set_current_win(state.wins.tree)
+end
+
 function M.render(frame, force)
   if not state or not frame then return end
   if not vim.api.nvim_win_is_valid(state.wins.tree) then
@@ -363,6 +417,24 @@ function M.render(frame, force)
 
     if vim.api.nvim_buf_is_valid(state.bufs.detail) then
       render.render_lines(vim.api, state.ns, state.bufs.detail, theme, frame.detail or {})
+    end
+  end
+
+  -- The session stream updates far more often than the tree; render it on
+  -- its own signature so streaming lines never force a tree re-render.
+  if frame.session then
+    local signature = vim.json.encode(frame.session.lines)
+    if signature ~= state.session_signature or force or frame.session.visible ~= state.session_visible then
+      state.session_signature = signature
+      state.session_visible = frame.session.visible
+      ensure_session_pane(frame.session.visible)
+      if state.bufs.session then
+        render.render_lines(vim.api, state.ns, state.bufs.session, theme, session_lines_pane(frame.session))
+        if state.wins.session and state.wins.session ~= -1 and vim.api.nvim_win_is_valid(state.wins.session) then
+          local count = vim.api.nvim_buf_line_count(state.bufs.session)
+          pcall(vim.api.nvim_win_set_cursor, state.wins.session, { math.max(1, count), 0 })
+        end
+      end
     end
   end
 
@@ -483,7 +555,7 @@ local function create_windows()
     editor_windows = editor_window_count(),
   })
   vim.cmd("topleft vertical " .. geometry.sidebar .. "split")
-  state.wins = { tree = vim.api.nvim_get_current_win(), detail = -1 }
+  state.wins = { tree = vim.api.nvim_get_current_win(), detail = -1, session = -1 }
   set_up_tree_window(state.wins.tree, state.bufs.tree)
 
   create_detail_window()
@@ -556,6 +628,8 @@ function M.open(opts)
     explicit_open = {},
     plan_only = false,
     model_catalog = nil,
+    session_signature = nil,
+    session_visible = nil,
     ns = vim.api.nvim_create_namespace("neolit"),
   }
 
@@ -945,6 +1019,7 @@ function M.develop() M.dispatch("develop", {}, OP_LABELS.develop) end
 function M.apply_selected() M.dispatch("apply", {}, OP_LABELS.apply) end
 function M.commit_applied() M.dispatch("commit", {}, OP_LABELS.commit) end
 function M.restrict(mode) M.dispatch(mode, {}, OP_LABELS[mode]) end
+function M.session_toggle() M.dispatch("session_toggle", {}, "Toggling session stream") end
 
 function M.switch_model()
   if not state or not state.host then return end
