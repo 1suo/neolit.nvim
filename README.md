@@ -61,11 +61,17 @@ Native editor windows, no floating chrome:
 ```
 
 - `:Neolit` opens a **left sidebar split** with the planned tree and a
-  **detail split** with DESCRIPTION/CHANGES — real windows, so standard
-  `<C-w>` motion, resizing, and `:q` behave normally. The detail split never
-  claims more than half the space the sidebar leaves, so user windows are
-  never squeezed out. Closing the sidebar ends the panel; the detail split
-  closes independently and `Tab` recreates it.
+  **detail split** with DESCRIPTION — plus two panes that appear when their
+  content exists: a **CHANGES diff pane** under the detail split (the
+  selected path's drafted patches as a real `filetype=diff` buffer — native
+  diff syntax, treesitter language injections once the diff parser is
+  installed — with the change summary and applied count in its winbar) and a
+  **SESSION stream pane** under the tree while an agent session runs. All
+  are real windows, so standard `<C-w>` motion, resizing, and `:q` behave
+  normally. The detail split never claims more than half the space the
+  sidebar leaves, so user windows are never squeezed out. Closing the
+  sidebar ends the panel; the detail split closes independently and `Tab`
+  recreates it.
 - Colors follow the active colorscheme by default: every group links to a
   semantic target (Special, Directory, diffAdded, WarningMsg, Comment,
   Visual for the selected row). Set `palette = "tui"` for the terminal

@@ -374,6 +374,64 @@ local function ensure_session_pane(visible)
   vim.api.nvim_set_current_win(state.wins.tree)
 end
 
+local function close_diff_pane()
+  if not state then return end
+  if state.wins.diff and state.wins.diff ~= -1 then
+    pcall(vim.api.nvim_win_close, state.wins.diff, true)
+  end
+  if state.bufs.diff then
+    pcall(vim.api.nvim_buf_delete, state.bufs.diff, { force = true })
+  end
+  state.wins.diff = -1
+  state.bufs.diff = nil
+end
+
+--- The changes as a real diff buffer: filetype=diff gives native diff
+--- syntax (and treesitter language injections once its parser exists),
+--- instead of prose-colored patch lines inside the detail pane.
+local function ensure_diff_pane(changes)
+  if not state then return end
+  if not changes or #changes.diffs == 0 then return close_diff_pane() end
+  if state.wins.diff and state.wins.diff ~= -1 and vim.api.nvim_win_is_valid(state.wins.diff) then
+    return
+  end
+  local anchor = (state.wins.detail ~= -1 and vim.api.nvim_win_is_valid(state.wins.detail)) and state.wins.detail or state.wins.tree
+  if not vim.api.nvim_win_is_valid(anchor) then return end
+  if vim.o.lines < 24 then return end
+  state.bufs.diff = state.bufs.diff or prepare_buffer("diff")
+  vim.api.nvim_win_call(anchor, function()
+    vim.cmd("rightbelow 12split")
+    state.wins.diff = vim.api.nvim_get_current_win()
+  end)
+  local scope = vim.wo[state.wins.diff]
+  scope.wrap = false
+  scope.number = false
+  scope.scrolloff = 1
+  scope.winfixheight = true
+  scope.list = false
+  state.bufs.diff_filetype = true
+  vim.api.nvim_win_set_buf(state.wins.diff, state.bufs.diff)
+  vim.api.nvim_set_current_win(state.wins.tree)
+end
+
+local function diff_pane_lines(changes)
+  local texts = {}
+  for _, change in ipairs(changes.diffs or {}) do
+    texts[#texts + 1] = change.text:gsub("\n$", "")
+  end
+  local joined = table.concat(texts, "\n\n")
+  local lines = vim.split(joined, "\n")
+  if lines[1] == "" then lines = {} end
+  return lines
+end
+
+local function diff_pane_winbar(changes)
+  local parts = { "CHANGES" }
+  if changes.summary ~= "" then parts[#parts + 1] = changes.summary end
+  if changes.applied > 0 then parts[#parts + 1] = string.format("✓ %d/%d applied", changes.applied, #changes.diffs) end
+  return "%#NeolitMuted#" .. table.concat(parts, " · ") .. "%#Normal#"
+end
+
 function M.render(frame, force)
   if not state or not frame then return end
   if not vim.api.nvim_win_is_valid(state.wins.tree) then
@@ -442,6 +500,26 @@ function M.render(frame, force)
         if state.wins.session and state.wins.session ~= -1 and vim.api.nvim_win_is_valid(state.wins.session) then
           local count = vim.api.nvim_buf_line_count(state.bufs.session)
           pcall(vim.api.nvim_win_set_cursor, state.wins.session, { math.max(1, count), 0 })
+        end
+      end
+    end
+  end
+
+  -- Drafted patches render as a real diff buffer, not prose-colored lines.
+  if frame.changes then
+    local signature = vim.json.encode({ texts = vim.tbl_map(function(change) return change.text end, frame.changes.diffs or {}), summary = frame.changes.summary })
+    if signature ~= state.diff_signature or force then
+      state.diff_signature = signature
+      ensure_diff_pane(frame.changes)
+      if state.bufs.diff then
+        vim.api.nvim_buf_set_option(state.bufs.diff, "modifiable", true)
+        vim.api.nvim_buf_set_option(state.bufs.diff, "filetype", "diff")
+        vim.api.nvim_buf_set_option(state.bufs.diff, "syntax", "ON")
+        vim.api.nvim_buf_set_lines(state.bufs.diff, 0, -1, false, diff_pane_lines(frame.changes))
+        vim.api.nvim_buf_set_option(state.bufs.diff, "modifiable", false)
+        if state.wins.diff and state.wins.diff ~= -1 and vim.api.nvim_win_is_valid(state.wins.diff) then
+          vim.api.nvim_win_set_option(state.wins.diff, "winbar", diff_pane_winbar(frame.changes))
+          pcall(vim.api.nvim_win_set_cursor, state.wins.diff, { 1, 0 })
         end
       end
     end
@@ -555,7 +633,7 @@ local function create_windows()
     editor_windows = editor_window_count(),
   })
   vim.cmd("topleft vertical " .. geometry.sidebar .. "split")
-  state.wins = { tree = vim.api.nvim_get_current_win(), detail = -1, session = -1 }
+  state.wins = { tree = vim.api.nvim_get_current_win(), detail = -1, session = -1, diff = -1 }
   set_up_tree_window(state.wins.tree, state.bufs.tree)
 
   create_detail_window()
@@ -630,6 +708,7 @@ function M.open(opts)
     model_catalog = nil,
     session_signature = nil,
     session_visible = nil,
+    diff_signature = nil,
     ns = vim.api.nvim_create_namespace("neolit"),
   }
 

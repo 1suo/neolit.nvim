@@ -216,6 +216,34 @@ function buildFrame(spinner = DEFAULT_SPINNER) {
     live,
   });
 
+  // Presentation split: with drafted diffs on the selected path, the pane
+  // shows the DESCRIPTION section only and the raw patches render in the
+  // host's real diff buffer (native diff syntax, treesitter injections).
+  // The composed CHANGES block is trimmed at its stable label line; the
+  // summary moves to the diff pane's winbar.
+  const selectedDiffs = (selectedRow?.entry.diffIds ?? [])
+    .map((id) => state.task?.diffs[id])
+    .filter(Boolean);
+  const changesLabel = detail.findIndex((line) => line.text === "CHANGES");
+  const panelDetail = selectedDiffs.length && changesLabel >= 0 ? detail.slice(0, changesLabel) : detail;
+  const changes = selectedDiffs.map((diff) => ({
+    id: diff.id,
+    path: diff.path,
+    kind: diff.kind,
+    applied: state.appliedDiffIds.includes(diff.id),
+    text: diff.patch,
+  }));
+  const kindCounts = selectedDiffs.reduce((counts, diff) => {
+    counts[diff.kind] = (counts[diff.kind] ?? 0) + 1;
+    return counts;
+  }, {});
+  const changeSummary = [
+    kindCounts.new ? `${kindCounts.new} added` : "",
+    kindCounts.modify ? `${kindCounts.modify} changed` : "",
+    kindCounts.delete ? `${kindCounts.delete} removed` : "",
+  ].filter(Boolean).join(" · ");
+  const appliedCount = changes.filter((change) => change.applied).length;
+
   const choices = candidatesForEntry(state.task, selectedRow?.entry)
     .filter((candidate) => candidate.status === "possible")
     .map((candidate, index) => ({ n: index + 1, candidateId: candidate.id, label: candidate.label }));
@@ -243,7 +271,8 @@ function buildFrame(spinner = DEFAULT_SPINNER) {
     socketPath: state.socketPath ?? null,
     models: { ...runtimeModels },
     tree: { rows, selectedRowId: state.selectedRowId ?? null, count: rows.length },
-    detail,
+    detail: panelDetail,
+    changes: { diffs: changes, summary: changeSummary, applied: appliedCount },
     session,
     patch,
     panel: {

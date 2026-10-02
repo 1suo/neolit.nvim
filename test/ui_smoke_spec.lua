@@ -107,8 +107,13 @@ return {
         return frame.panel.message and frame.panel.message:find("Draft change ready", 1, true) ~= nil
       end))
       local state_after_draft = ui._state()
-      local detail_with_patch = table.concat(vim.api.nvim_buf_get_lines(state_after_draft.bufs.detail, 0, -1, false), "\n")
-      t:ok(detail_with_patch:find("%+gamma", 1) ~= nil, "detail shows the exact patch")
+      t:ok(state_after_draft.frame.changes and #state_after_draft.frame.changes.diffs == 1, "drafted diff ships as raw changes")
+      t:ok(state_after_draft.frame.changes.diffs[1].text:find("%+gamma", 1) ~= nil, "raw patch text carries the change")
+      local diff_buf = state_after_draft.bufs.diff
+      t:ok(diff_buf and vim.api.nvim_buf_is_valid(diff_buf), "diff pane buffer exists")
+      local diff_text = table.concat(vim.api.nvim_buf_get_lines(diff_buf, 0, -1, false), "\n")
+      t:ok(diff_text:find("%+gamma", 1) ~= nil, "diff pane renders the raw patch")
+      t:eq(vim.api.nvim_buf_get_option(diff_buf, "filetype"), "diff", "diff pane has filetype=diff")
 
       handlers.a() -- apply to the working tree
       wait_for(t, "patch is applied", frame_matches(function(frame)

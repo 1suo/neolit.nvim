@@ -163,7 +163,12 @@ test("full flow: start auto-adopts, develop refines then drafts, apply and commi
   await client.request("develop");
   await client.waitFor((frame) => frame.panel.message?.includes("Draft change ready"), { label: "patch draft" });
   const drafted = await client.request("select", { rowId: "entry:session.ts" });
-  assert.ok(drafted.result.detail.some((line) => line.text.includes("+gamma")), "detail shows the exact patch");
+  assert.ok(drafted.result.changes.diffs.length === 1, "changes carry the drafted diff");
+  assert.ok(drafted.result.changes.diffs[0].text.includes("+gamma"), "raw patch text ships for the diff buffer");
+  assert.ok(drafted.result.changes.diffs[0].applied === false, "applied flag starts false");
+  assert.ok(drafted.result.changes.summary.includes("changed"), `summary: ${drafted.result.changes.summary}`);
+  assert.ok(!drafted.result.detail.some((line) => line.text.includes("+gamma")), "detail pane is prose-only when diffs exist");
+  assert.ok(drafted.result.detail.some((line) => line.text.includes("DESCRIPTION")), "description section stays in the detail pane");
 
   // Editor round-trip: patch/set writes an edited diff back into the plan.
   assert.ok(drafted.result.patch, "frame carries the selected path's patch");
