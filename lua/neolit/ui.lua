@@ -375,41 +375,68 @@ local function ensure_session_pane(visible)
 end
 
 --------------------------------------------------------------------------
--- Diff-pane treesitter injections
+-- Diff-pane source highlighting
 --------------------------------------------------------------------------
 
---- Ships real language injection for diff buffers: upstream's
---- injections.scm only injects `comment`, so nothing colors hunks after
---- :TSInstall diff. The language comes from the `+++ b/file` header via a
---- custom directive; requires the source language's parser to be installed
---- (auto_install covers it).
-M._diff_injections = false
-function M.register_diff_injections()
-  if M._diff_injections then return end
-  M._diff_injections = true
-  pcall(vim.treesitter.query.add_directive, "neolit-lang-from-path!", function(match, _, bufnr, predicate, metadata)
-    local nodes = match[predicate[2]]
-    if not nodes or not nodes[1] then return end
-    local ok, text = pcall(vim.treesitter.get_node_text, nodes[1], bufnr)
-    if not ok or type(text) ~= "string" then return end
-    local filetype = vim.filetype.match({ filename = text:gsub("^b/", "") })
-    local language = filetype and vim.treesitter.language.get_lang(filetype)
-    if language then
-      metadata["injection.language"] = language
+--- Treesitter highlighting for added diff lines, done directly: each
+--- consecutive added block is parsed with get_string_parser in the target
+--- file's language, and its highlight captures become extmarks one column
+--- in (past the leading +). No injection-engine involvement — upstream's
+--- diff injections.scm is a comment-only stub, so this works everywhere a
+--- parser for the source language exists.
+local function language_for_path(path)
+  local filetype = vim.filetype.match({ filename = path })
+  return filetype and vim.treesitter.language.get_lang(filetype)
+end
+
+local function highlight_added_lines(buf, ns, changes)
+  local language
+  for _, change in ipairs(changes.diffs or {}) do
+    if change.path and change.path ~= "" then
+      language = language_for_path(change.path)
+      break
     end
-  end)
-  pcall(vim.treesitter.query.set_query, "diff", "injections", [=[
-    (block
-      (new_file
-        (filename) @diff.path)
-      (hunks
-        (hunk
-          (changes
-            (addition) @injection.content)))
-      (#neolit-lang-from-path! @diff.path)
-      (#offset! @injection.content 0 1 0 0)
-      (#set! injection.combined))
-  ]=])
+  end
+  if not language then return end
+  if not pcall(vim.treesitter.language.add, language) then return end
+  local ok_query, query = pcall(vim.treesitter.query.get, language, "highlights")
+  if not ok_query or not query then return end
+
+  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  local index = 1
+  while index <= #lines do
+    local line = lines[index]
+    if line:sub(1, 1) == "+" and line:sub(1, 4) ~= "+++ " then
+      local stop = index
+      while stop < #lines and lines[stop + 1]:sub(1, 1) == "+" and lines[stop + 1]:sub(1, 4) ~= "+++ " do
+        stop = stop + 1
+      end
+      local block = {}
+      for row = index, stop do block[#block + 1] = lines[row]:sub(2) end
+      local text = table.concat(block, "\n")
+      local ok_parser, parser = pcall(vim.treesitter.get_string_parser, text, language)
+      if ok_parser then
+        for _, tree in ipairs(parser:parse()) do
+          for id, node in query:iter_captures(tree:root(), text, 0, -1) do
+            local start_row, start_col, end_row, end_col = node:range()
+            for row = start_row, end_row do
+              local from = row == start_row and start_col or 0
+              local to = row == end_row and end_col or #(block[row + 1] or "")
+              if to > from then
+                pcall(vim.api.nvim_buf_set_extmark, buf, ns, index - 1 + row, from + 1, {
+                  end_col = to + 1,
+                  hl_group = "@" .. query.captures[id],
+                })
+              end
+            end
+          end
+        end
+      end
+      index = stop + 1
+    else
+      index = index + 1
+    end
+  end
 end
 
 --- Content-driven smart split of the detail column: description and diff
@@ -490,7 +517,7 @@ local function ensure_diff_pane(changes)
   scope.winfixheight = true
   scope.list = false
   state.bufs.diff_filetype = true
-  M.register_diff_injections()
+  state.diff_ns = state.diff_ns or vim.api.nvim_create_namespace("neolit-diff-hl")
   vim.api.nvim_win_set_buf(state.wins.diff, state.bufs.diff)
   vim.api.nvim_set_current_win(state.wins.tree)
 end
@@ -587,6 +614,8 @@ function M.render(frame, force)
         vim.api.nvim_buf_set_option(state.bufs.diff, "syntax", "ON")
         vim.api.nvim_buf_set_lines(state.bufs.diff, 0, -1, false, diff_pane_lines(frame.changes))
         vim.api.nvim_buf_set_option(state.bufs.diff, "modifiable", false)
+        vim.api.nvim_buf_clear_namespace(state.bufs.diff, state.diff_ns, 0, -1)
+        highlight_added_lines(state.bufs.diff, state.diff_ns, frame.changes)
         if state.wins.diff and state.wins.diff ~= -1 and vim.api.nvim_win_is_valid(state.wins.diff) then
           vim.api.nvim_win_set_option(state.wins.diff, "winbar", diff_pane_winbar(frame.changes))
           pcall(vim.api.nvim_win_set_cursor, state.wins.diff, { 1, 0 })
