@@ -513,9 +513,12 @@ function M.render(frame, force)
     end
   end
 
-  -- Auto-behavior: with no drafts the session is the only live view.
+  -- Auto-behavior: the pane follows whichever side has content — session
+  -- lines mean an agent is actually streaming (a configured driver alone
+  -- does not), drafts mean changes exist — until the user pins a view.
   local has_diffs = frame.changes and #(frame.changes.diffs or {}) > 0
-  if not has_diffs and frame.session and frame.session.visible and state.right_view ~= "session" and not state.right_view_pinned then
+  local has_session_lines = frame.session and #(frame.session.lines or {}) > 0
+  if not has_diffs and has_session_lines and state.right_view ~= "session" and not state.right_view_pinned then
     state.right_view = "session"
   elseif has_diffs and state.right_view == "session" and not state.right_view_pinned then
     state.right_view = "changes"
