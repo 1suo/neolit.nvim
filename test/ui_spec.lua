@@ -111,14 +111,16 @@ return {
     end,
   },
   {
-    name = "smart split shares the detail column by content",
+    name = "description dock height is content-driven up to half the editor",
     run = function(t)
-      t:eq(ui.smart_split(0, 0, 40), { detail = 40, diff = 0 }, "no diff: description takes everything")
-      t:eq(ui.smart_split(0, 200, 40), { detail = 3, diff = 37 }, "huge patch, no description: diff takes almost all")
-      t:eq(ui.smart_split(5, 200, 40), { detail = 3, diff = 37 }, "huge patch, short description")
-      t:eq(ui.smart_split(100, 5, 40), { detail = 35, diff = 5 }, "long description, small patch")
-      t:eq(ui.smart_split(10, 30, 40), { detail = 10, diff = 30 }, "proportional split")
-      t:eq(ui.smart_split(10, 30, 2), { detail = 2, diff = 0 }, "degenerate height keeps one pane")
+      local original_lines = vim.o.lines
+      vim.o.lines = 40
+      t:eq(ui.description_height(1), 3, "floor of three rows")
+      t:eq(ui.description_height(4), 5, "content plus the winbar row")
+      t:eq(ui.description_height(100), 20, "capped at half the editor")
+      vim.o.lines = 8
+      t:eq(ui.description_height(100), 4, "tiny editors still cap at half")
+      vim.o.lines = original_lines
     end,
   },
   {

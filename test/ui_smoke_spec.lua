@@ -75,7 +75,7 @@ return {
       t:eq(state.model.available, true)
       t:eq(state.model.label, "STUB")
       t:ok(vim.api.nvim_win_is_valid(state.wins.tree), "sidebar window is a real split")
-      t:ok(vim.api.nvim_win_is_valid(state.wins.detail), "detail window is a real split")
+      t:ok(vim.api.nvim_win_is_valid(state.wins.right), "right pane is a real split")
       local tree_text = table.concat(vim.api.nvim_buf_get_lines(state.bufs.tree, 0, -1, false), "\n")
       t:ok(tree_text:find("session%.ts", 1) ~= nil, "tree shows the repository file")
 
@@ -97,10 +97,12 @@ return {
         return frame.tree.selectedRowId == "entry:session.ts"
       end))
       local state_after_refine = ui._state()
-      local detail_text = table.concat(vim.api.nvim_buf_get_lines(state_after_refine.bufs.detail, 0, -1, false), "\n")
-      t:ok(detail_text:find("apply the edit", 1, true) ~= nil, "detail explains the planned child")
-      local detail_winbar = vim.api.nvim_win_get_option(state_after_refine.wins.detail, "winbar") or ""
-      t:ok(detail_winbar:find("session%.ts", 1) ~= nil, "detail winbar carries the selected path")
+      local detail_text = table.concat(vim.api.nvim_buf_get_lines(state_after_refine.bufs.desc, 0, -1, false), "\n")
+      t:ok(detail_text:find("apply the edit", 1, true) ~= nil, "description dock explains the planned child")
+      local detail_winbar = (state_after_refine.wins.desc ~= -1 and vim.api.nvim_win_is_valid(state_after_refine.wins.desc))
+        and (vim.api.nvim_win_get_option(state_after_refine.wins.desc, "winbar") or "")
+        or ""
+      t:ok(detail_winbar:find("DESCRIPTION", 1, true) ~= nil, "description dock carries its title")
 
       handlers.d() -- develop: draft the file's exact patch
       wait_for(t, "patch is drafted", frame_matches(function(frame)
