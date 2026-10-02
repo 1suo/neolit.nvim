@@ -541,6 +541,7 @@ function M.render(frame, force)
   local has_session_lines = frame.session and #(frame.session.lines or {}) > 0
   if not has_diffs and has_session_lines and state.right_view ~= "session" and not state.right_view_pinned then
     state.right_view = "session"
+    state.jump_tail = true
   elseif has_diffs and state.right_view == "session" and not state.right_view_pinned then
     state.right_view = "changes"
   end
@@ -568,9 +569,10 @@ function M.render(frame, force)
     if state.right_view == "session" and shown == state.bufs.session then
       vim.api.nvim_win_set_option(right, "wrap", true)
       vim.api.nvim_win_set_option(right, "linebreak", true)
-      if follow_tail then
+      if follow_tail or state.jump_tail then
         local count = vim.api.nvim_buf_line_count(state.bufs.session)
         pcall(vim.api.nvim_win_set_cursor, right, { math.max(1, count), 0 })
+        state.jump_tail = nil
       end
     else
       vim.api.nvim_win_set_option(right, "wrap", false)
@@ -1196,6 +1198,7 @@ function M.toggle_right_view()
   if not state or not state.frame then return end
   state.right_view = state.right_view == "changes" and "session" or "changes"
   state.right_view_pinned = true
+  if state.right_view == "session" then state.jump_tail = true end
   M.render(state.frame, true)
 end
 
