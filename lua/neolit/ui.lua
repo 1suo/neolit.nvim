@@ -497,9 +497,6 @@ function M.render(frame, force)
         if id == frame.tree.selectedRowId then selected = index break end
       end
       pcall(vim.api.nvim_win_set_cursor, state.wins.tree, { selected, 0 })
-      if state.wins.right ~= -1 and vim.api.nvim_win_is_valid(state.wins.right) then
-        pcall(vim.api.nvim_win_set_cursor, state.wins.right, { 1, 0 })
-      end
     end
 
     render_description(frame)
@@ -530,6 +527,12 @@ function M.render(frame, force)
         vim.api.nvim_buf_set_option(state.bufs.diff, "modifiable", false)
         vim.api.nvim_buf_clear_namespace(state.bufs.diff, state.diff_ns, 0, -1)
         highlight_added_lines(state.bufs.diff, state.diff_ns, frame.changes)
+        -- A new patch reads from the top; the session view's cursor is
+        -- never touched here — it belongs to the tail-follow.
+        if state.wins.right ~= -1 and vim.api.nvim_win_is_valid(state.wins.right)
+          and vim.api.nvim_win_get_buf(state.wins.right) == state.bufs.diff then
+          pcall(vim.api.nvim_win_set_cursor, state.wins.right, { 1, 0 })
+        end
       end
     end
   end
