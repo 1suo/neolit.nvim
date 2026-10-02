@@ -124,6 +124,17 @@ return {
     end,
   },
   {
+    name = "description rows account for wrapping at the dock width",
+    run = function(t)
+      t:eq(ui.description_rows({}, 40), 0, "no content, no rows")
+      t:eq(ui.description_rows({ { text = "short" } }, 40), 1)
+      t:eq(ui.description_rows({ { text = string.rep("x", 80) } }, 40), 2, "80 columns wrap to two rows at width 40")
+      t:eq(ui.description_rows({ { text = string.rep("x", 81) } }, 40), 3, "one column over wraps again")
+      t:eq(ui.description_rows({ { text = "" } }, 40), 1, "empty line still shows a row")
+      t:eq(ui.description_rows({ { text = "概念が混ざる" } }, 40), 1, "wide glyphs counted by display width")
+    end,
+  },
+  {
     name = "fold levels: zm folds the shallowest open level, zr opens the shallowest folded one",
     run = function(t)
       -- Default state: test/ folded; root and src/ open (src is planned).

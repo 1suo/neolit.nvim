@@ -398,9 +398,22 @@ local function highlight_added_lines(buf, ns, changes)
   end
 end
 
---- Description dock height: content-driven, up to half the editor.
-function M.description_height(count)
-  return math.max(3, math.min(count + 1, math.floor(vim.o.lines / 2)))
+--- Display rows a set of description lines occupies at a given window
+--- width: wrapped lines count once per visual row they occupy.
+function M.description_rows(lines, width)
+  width = math.max(8, width)
+  local rows = 0
+  for _, line in ipairs(lines or {}) do
+    local text = type(line) == "table" and line.text or tostring(line or "")
+    rows = rows + math.max(1, math.ceil(vim.fn.strdisplaywidth(text) / width))
+  end
+  return rows
+end
+
+--- Description dock height: content-driven (in display rows), up to half
+--- the editor.
+function M.description_height(display_rows)
+  return math.max(3, math.min(display_rows + 1, math.floor(vim.o.lines / 2)))
 end
 
 --- Renders the description dock under the tree.
@@ -409,7 +422,8 @@ local function render_description(frame)
   render.render_lines(vim.api, state.ns, state.bufs.desc, theme, frame.detail or {})
   if state.wins.desc ~= -1 and vim.api.nvim_win_is_valid(state.wins.desc) then
     vim.api.nvim_win_set_option(state.wins.desc, "winbar", "DESCRIPTION")
-    pcall(vim.api.nvim_win_set_height, state.wins.desc, M.description_height(#(frame.detail or {})))
+    local width = vim.api.nvim_win_get_width(state.wins.desc)
+    pcall(vim.api.nvim_win_set_height, state.wins.desc, M.description_height(M.description_rows(frame.detail, width)))
   end
 end
 
