@@ -49,6 +49,19 @@ if (!dist || !fs.existsSync(path.join(dist, "index.js"))) {
   process.exit(1);
 }
 
+// The nvim host serves its own socket address so a running TUI (or any
+// other panel) never starves it: the kernel's default is a single fixed
+// path, and a failed bind permanently disables tool sessions. Users can
+// still override with AUGMENT_TUI_SOCKET or disable with
+// AUGMENT_TUI_NO_SOCKET=1.
+{
+  const runtime = process.env.XDG_RUNTIME_DIR?.trim();
+  const uid = typeof process.getuid === "function" ? process.getuid() : 0;
+  process.env.AUGMENT_TUI_SOCKET ??= runtime
+    ? path.join(runtime, "neolit", "augment-nvim.sock")
+    : path.join(process.env.TMPDIR ?? "/tmp", `neolit-augment-nvim-${uid}.sock`);
+}
+
 const fromDist = (relative) => import(pathToFileURL(path.join(dist, relative)).href);
 const { AugmentTuiController, CliAgentRuntime, candidatesForEntry } = await fromDist("index.js");
 const { detailLines, entryName, entryState, entryTouchesNode, theme } = await fromDist("tui/detail.js");

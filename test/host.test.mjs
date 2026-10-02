@@ -56,6 +56,9 @@ class HostClient {
         env: {
           ...process.env,
           AUGMENT_TUI_TASKS: "0",
+          // Tests must never touch the user's real socket addresses.
+          AUGMENT_TUI_NO_SOCKET: options.socketPath ? undefined : "1",
+          ...(options.socketPath ? { AUGMENT_TUI_SOCKET: options.socketPath } : {}),
           ...(options.env ?? {}),
           ...(options.noModel ? { AUGMENT_TUI_NO_MODEL: "1" } : {}),
         },
@@ -294,7 +297,7 @@ test("shutdown exits the process cleanly", async () => {
 test("external agent mutations over the socket render live as pushed frames", async () => {
   const directory = fixtureRepo();
   const socket = path.join(directory, ".neolit-test.sock");
-  const client = new HostClient(directory, { stub: true, env: { AUGMENT_TUI_SOCKET: socket } });
+  const client = new HostClient(directory, { stub: true, socketPath: socket });
   const initialized = await client.request("initialize", { directory });
   assert.ok(initialized.result.frame, "initialize returns a frame");
   await client.request("start", { objective: "bounded retries" });

@@ -16,6 +16,11 @@ M.defaults = {
   directory = nil,
   --- Force the no-model mode (same as AUGMENT_TUI_NO_MODEL=1 in the TUI).
   no_model = false,
+  --- Serve no agent socket (AUGMENT_TUI_NO_SOCKET=1). Without this the
+  --- panel serves `$XDG_RUNTIME_DIR/neolit/augment-nvim.sock` — its own
+  --- address, so a running TUI never starves it — and external agents can
+  --- attach with `augmentd --mcp --connect`.
+  no_socket = false,
   --- Persist the active task to disk and resume the newest one on open
   --- (AUGMENT_TUI_TASKS semantics; the TUI default is on).
   persist_tasks = true,

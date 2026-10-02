@@ -162,6 +162,13 @@ require("neolit").setup({
 })
 ```
 
+The **agent socket**: while the panel is open it serves its own address,
+`$XDG_RUNTIME_DIR/neolit/augment-nvim.sock` (distinct from the TUI's
+`augment.sock`, so both can run at once), advertised in the tree winbar.
+External agents attach with `augmentd --mcp --connect <path>` and their
+mutations render live. Override with `AUGMENT_TUI_SOCKET`; disable with
+`no_socket = true` or `AUGMENT_TUI_NO_SOCKET=1`.
+
 Model configuration is shared with the TUI: `~/.config/neolit/augment.json`
 (written by `augment setup`), the same `AUGMENT_*` environment variables, and
 the same agent backends (OpenCode by default; `AUGMENT_BACKEND=claude|codex`).

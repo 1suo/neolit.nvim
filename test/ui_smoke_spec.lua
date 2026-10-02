@@ -61,6 +61,7 @@ return {
         neolit_dir = neolit_dir,
         directory = directory,
         persist_tasks = false,
+        no_socket = true,
         host_args = { "--stub-runtime" },
       })
       handlers = keys.handlers(ui)
@@ -156,7 +157,7 @@ return {
       vim.fn.setenv("XDG_STATE_HOME", state_home)
 
       local directory = fixture_repo()
-      neolit.setup({ directory = directory, host_args = { "--stub-runtime" } })
+      neolit.setup({ directory = directory, no_socket = true, host_args = { "--stub-runtime" } })
       neolit.open()
       t:ok(vim.wait(10000, function()
         local s = ui._state()
@@ -185,7 +186,7 @@ return {
       local state_home = vim.fn.resolve(vim.fn.trim(vim.fn.system({ "mktemp", "-d", "/tmp/opencode/neolit-state-XXXXXX" })))
       vim.fn.setenv("XDG_STATE_HOME", state_home)
       local directory = fixture_repo()
-      neolit.setup({ neolit_dir = neolit_dir, directory = directory, persist_tasks = false, host_args = { "--stub-runtime" } })
+      neolit.setup({ neolit_dir = neolit_dir, directory = directory, persist_tasks = false, no_socket = true, host_args = { "--stub-runtime" } })
 
       -- d on a closed panel: opens it, then develops (which errors politely
       -- with no task — the panel still opened and the action still ran).

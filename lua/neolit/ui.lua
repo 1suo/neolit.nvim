@@ -792,6 +792,7 @@ function M.open(opts)
   state.directory = directory
   local env = {}
   if cfg.no_model then env.AUGMENT_TUI_NO_MODEL = "1" end
+  if cfg.no_socket then env.AUGMENT_TUI_NO_SOCKET = "1" end
   if cfg.persist_tasks == false then env.AUGMENT_TUI_TASKS = "0" end
 
   -- env is only passed when set: an empty env table is rejected by some
