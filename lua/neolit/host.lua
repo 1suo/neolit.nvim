@@ -28,11 +28,11 @@ function M.new(opts, handlers)
     stdout_buffered = false,
     on_stdout = function(_, data) M._on_data(self, data) end,
     on_stderr = function(_, data)
-      if handlers.on_stderr then handlers.on_stderr(table.concat(data, "")) end
+      if handlers.on_stderr then handlers.on_stderr(table.concat(data, ""), self) end
     end,
     on_exit = function(_, code)
       self.dead = true
-      if handlers.on_exit then handlers.on_exit(code) end
+      if handlers.on_exit then handlers.on_exit(code, self) end
     end,
   })
   if self.chan <= 0 then
@@ -97,9 +97,9 @@ function M._dispatch(self, message)
     return
   end
   if message.method == "neolit/frame" and self.handlers.on_frame then
-    self.handlers.on_frame(message.params)
+    self.handlers.on_frame(message.params, self)
   elseif message.method == "neolit/progress" and self.handlers.on_progress then
-    self.handlers.on_progress(message.params)
+    self.handlers.on_progress(message.params, self)
   end
 end
 

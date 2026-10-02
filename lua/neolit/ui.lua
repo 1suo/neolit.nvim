@@ -581,19 +581,21 @@ function M.open(opts)
   if next(env) ~= nil then spawn_opts.env = env end
 
   local spawn_ok, spawned = pcall(hostmod.new, spawn_opts, {
-    on_frame = function(frame)
-      if state then M.render(frame) end
+    on_frame = function(frame, host)
+      -- Route by owner: a previous session's shutting-down host still pushes
+      -- frames, and they must never paint (or close) a newer panel.
+      if state and state.host == host then M.render(frame) end
     end,
-    on_progress = function(progress)
-      if state and progress and progress.operation then ensure_timer() end
+    on_progress = function(progress, host)
+      if state and state.host == host and progress and progress.operation then ensure_timer() end
     end,
-    on_stderr = function(text)
-      if text and text:find("%S") then vim.schedule(function() vim.notify("neolit host: " .. vim.trim(text), vim.log.levels.WARN) end) end
+    on_stderr = function(text, host)
+      if state and state.host == host and text and text:find("%S") then vim.schedule(function() vim.notify("neolit host: " .. vim.trim(text), vim.log.levels.WARN) end) end
     end,
-    on_exit = function(code)
+    on_exit = function(code, host)
       -- Only a crash of THIS state's host tears the UI down; an exit from a
       -- previous session's shutting-down host must never close a fresh panel.
-      if state and state.host == spawned and not state.closing then
+      if state and state.host == host and not state.closing then
         M.close()
         vim.notify("neolit host exited unexpectedly (code " .. code .. ").", vim.log.levels.WARN)
       end
@@ -607,7 +609,8 @@ function M.open(opts)
   state.host = spawned
 
   state.host:request("initialize", { directory = directory }, function(msg)
-    if not state then return end
+    -- A previous panel's late responses must never initialize this one.
+    if not state or state.host ~= spawned then return end
     if msg.error then
       vim.notify("neolit: host failed to initialize: " .. (msg.error.message or "unknown error"), vim.log.levels.ERROR)
       M.close()
