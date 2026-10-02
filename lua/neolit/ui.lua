@@ -451,6 +451,13 @@ function M.render(frame, force)
     M.close()
     return
   end
+  -- Stick-to-bottom, measured BEFORE new content lands: while the cursor
+  -- rides the last line of the stream it stays there; scrolling up to read
+  -- pauses the follow. A fresh batch from an empty stream follows too.
+  local follow_tail = state.wins.right ~= -1 and vim.api.nvim_win_is_valid(state.wins.right)
+    and state.right_view == "session"
+    and state.bufs.session and vim.api.nvim_win_get_buf(state.wins.right) == state.bufs.session
+    and vim.api.nvim_win_get_cursor(state.wins.right)[1] >= vim.api.nvim_buf_line_count(state.bufs.session) - 1
   state.frame = frame
   state.local_error = nil
   state.cancel_requested = false
@@ -555,6 +562,20 @@ function M.render(frame, force)
       end
     end
     if shown then pcall(vim.api.nvim_win_set_buf, right, shown) end
+
+    -- Window options are applied after the buffer switch: switching buffers
+    -- runs FileType machinery whose ordering must not come between the two.
+    if state.right_view == "session" and shown == state.bufs.session then
+      vim.api.nvim_win_set_option(right, "wrap", true)
+      vim.api.nvim_win_set_option(right, "linebreak", true)
+      if follow_tail then
+        local count = vim.api.nvim_buf_line_count(state.bufs.session)
+        pcall(vim.api.nvim_win_set_cursor, right, { math.max(1, count), 0 })
+      end
+    else
+      vim.api.nvim_win_set_option(right, "wrap", false)
+      vim.api.nvim_win_set_option(right, "linebreak", false)
+    end
   end
 
   update_winbars()

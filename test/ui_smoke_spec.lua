@@ -134,6 +134,33 @@ return {
       local status = vim.trim(vim.fn.system({ "git", "-C", directory, "status", "--porcelain" }))
       t:eq(status, "", "nothing is left dirty")
 
+      -- The right pane wraps per view: session prose wraps at word
+      -- boundaries (tool-call details stay readable), diffs keep nowrap.
+      local right_win = state_after_draft.wins.right
+      assert(vim.wo[right_win].wrap == false, "diff view keeps nowrap")
+      handlers.t()
+      assert(vim.wo[right_win].wrap == true and vim.wo[right_win].linebreak == true, "session view wraps")
+      handlers.t()
+      assert(vim.wo[right_win].wrap == false, "toggling back restores nowrap")
+
+      -- The stream sticks to its tail: rendering new lines keeps the
+      -- cursor on the last one while it rides the bottom.
+      handlers.t()
+      local frame = vim.deepcopy(state_after_draft.frame)
+      frame.session = vim.deepcopy(frame.session or { visible = true }) or { visible = true }
+      frame.session.lines = {}
+      for i = 1, 30 do frame.session.lines[i] = { kind = "text", text = "stream line " .. i } end
+      ui.render(frame, true)
+      local session_win = state_after_draft.wins.right
+      local cursor = vim.api.nvim_win_get_cursor(session_win)
+      assert(cursor[1] == 30, "tail-follow keeps the cursor on the last line: " .. cursor[1])
+      -- Scrolling up pauses the follow.
+      vim.api.nvim_win_set_cursor(session_win, { 5, 0 })
+      frame.session.lines[31] = { kind = "text", text = "stream line 31" }
+      ui.render(frame, true)
+      assert(vim.api.nvim_win_get_cursor(session_win)[1] == 5, "reading history pauses the follow")
+      handlers.t()
+
       handlers.q() -- quit like the TUI
       t:ok(vim.wait(5000, function() return ui._state() == nil end), "quit closes the UI")
       system({ "rm", "-rf", directory })
