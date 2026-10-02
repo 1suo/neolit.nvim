@@ -111,6 +111,17 @@ return {
     end,
   },
   {
+    name = "smart split shares the detail column by content",
+    run = function(t)
+      t:eq(ui.smart_split(0, 0, 40), { detail = 40, diff = 0 }, "no diff: description takes everything")
+      t:eq(ui.smart_split(0, 200, 40), { detail = 3, diff = 37 }, "huge patch, no description: diff takes almost all")
+      t:eq(ui.smart_split(5, 200, 40), { detail = 3, diff = 37 }, "huge patch, short description")
+      t:eq(ui.smart_split(100, 5, 40), { detail = 35, diff = 5 }, "long description, small patch")
+      t:eq(ui.smart_split(10, 30, 40), { detail = 10, diff = 30 }, "proportional split")
+      t:eq(ui.smart_split(10, 30, 2), { detail = 2, diff = 0 }, "degenerate height keeps one pane")
+    end,
+  },
+  {
     name = "fold levels: zm folds the shallowest open level, zr opens the shallowest folded one",
     run = function(t)
       -- Default state: test/ folded; root and src/ open (src is planned).

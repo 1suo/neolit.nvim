@@ -404,11 +404,43 @@ function M.register_diff_injections()
         (filename) @diff.path)
       (hunks
         (hunk
-          (addition
-            (block) @injection.content)))
+          (changes
+            (addition) @injection.content)))
       (#neolit-lang-from-path! @diff.path)
+      (#offset! @injection.content 0 1 0 0)
       (#set! injection.combined))
   ]=])
+end
+
+--- Content-driven smart split of the detail column: description and diff
+--- share the rows in proportion to their content, each keeping a floor so
+--- neither disappears. A huge patch claims most of the column; a long
+--- description with a small patch claims most of it; a missing side takes
+--- everything.
+function M.smart_split(detail_count, diff_count, total)
+  if total < 4 then return { detail = math.max(1, total), diff = 0 } end
+  if diff_count <= 0 then return { detail = total, diff = 0 } end
+  if detail_count <= 0 then
+    local floor_rows = math.min(3, total - 1)
+    return { detail = floor_rows, diff = total - floor_rows }
+  end
+  local floor_rows = math.min(3, math.floor(total / 2))
+  local share = math.floor((total - 2) * detail_count / (detail_count + diff_count) + 0.5)
+  local detail = math.max(floor_rows, math.min(share, total - 2 - floor_rows))
+  return { detail = detail, diff = total - detail }
+end
+
+local function apply_smart_layout(frame)
+  if not state then return end
+  local detail = state.wins.detail
+  local diff = state.wins.diff
+  if detail == -1 or diff == -1 then return end
+  if not (vim.api.nvim_win_is_valid(detail) and vim.api.nvim_win_is_valid(diff)) then return end
+  local total = vim.api.nvim_win_get_height(detail) + vim.api.nvim_win_get_height(diff)
+  local diff_count = state.bufs.diff and vim.api.nvim_buf_line_count(state.bufs.diff) or 0
+  local split = M.smart_split(#(frame.detail or {}), diff_count, total)
+  pcall(vim.api.nvim_win_set_height, detail, split.detail)
+  pcall(vim.api.nvim_win_set_height, diff, split.diff)
 end
 
 local function close_diff_pane()
@@ -434,14 +466,6 @@ local function diff_pane_lines(changes)
   return lines
 end
 
---- Content-driven height: as tall as the patch needs, capped at 40% of the
---- editor (never half the screen) and always leaving the description pane
---- the majority of the column.
-local function diff_pane_height(changes)
-  local cap = math.max(6, math.floor(vim.o.lines * 0.4))
-  return math.min(#diff_pane_lines(changes) + 1, cap)
-end
-
 --- The changes as a real diff buffer: filetype=diff gives native diff
 --- syntax (and treesitter language injections once its parser exists),
 --- instead of prose-colored patch lines inside the detail pane.
@@ -455,9 +479,8 @@ local function ensure_diff_pane(changes)
   if not vim.api.nvim_win_is_valid(anchor) then return end
   if vim.o.lines < 24 then return end
   state.bufs.diff = state.bufs.diff or prepare_buffer("diff")
-  local height = diff_pane_height(changes)
   vim.api.nvim_win_call(anchor, function()
-    vim.cmd("rightbelow " .. height .. "split")
+    vim.cmd("rightbelow split") -- smart layout normalizes the split right after
     state.wins.diff = vim.api.nvim_get_current_win()
   end)
   local scope = vim.wo[state.wins.diff]
@@ -567,9 +590,8 @@ function M.render(frame, force)
         if state.wins.diff and state.wins.diff ~= -1 and vim.api.nvim_win_is_valid(state.wins.diff) then
           vim.api.nvim_win_set_option(state.wins.diff, "winbar", diff_pane_winbar(frame.changes))
           pcall(vim.api.nvim_win_set_cursor, state.wins.diff, { 1, 0 })
-          -- Content-driven: grow or shrink with the patch, never past 40%.
-          pcall(vim.api.nvim_win_set_height, state.wins.diff, diff_pane_height(frame.changes))
         end
+        apply_smart_layout(frame)
       end
     end
   end
