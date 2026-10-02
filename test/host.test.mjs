@@ -268,3 +268,40 @@ test("shutdown exits the process cleanly", async () => {
   const code = await client.exitCode;
   assert.equal(code, 0);
 });
+
+test("external agent mutations over the socket render live as pushed frames", async () => {
+  const directory = fixtureRepo();
+  const socket = path.join(directory, ".neolit-test.sock");
+  const client = new HostClient(directory, { stub: true, env: { AUGMENT_TUI_SOCKET: socket } });
+  const initialized = await client.request("initialize", { directory });
+  assert.ok(initialized.result.frame, "initialize returns a frame");
+  await client.request("start", { objective: "bounded retries" });
+  // The winbar chip advertises the socket address the panel is serving.
+  const served = await client.waitFor((frame) => frame.header.left.some((chip) => chip.text.includes("⎇")), { label: "socket chip" });
+  const chip = served.header.left.find((chip2) => chip2.text.includes("⎇"));
+  assert.ok(chip.text.includes(socket), `chip names the served socket: ${chip.text}`);
+
+  // An external agent attaches to the same task store through the socket.
+  const { SocketAugmentPeer } = await import(path.join(dist, "index.js"));
+  const peer = await SocketAugmentPeer.connect(socket);
+  const frame = await client.request("frame");
+  const taskId = frame.result.taskId;
+  const revision = frame.result.revision;
+  assert.ok(taskId && revision, "frame carries the active task identity");
+  const constrained = await peer.handle({ jsonrpc: "2.0", id: 900, method: "node/constrain", params: { taskId, expectedRevision: revision, text: "External agent note." } });
+  assert.ok(constrained && !("error" in constrained), `external constrain landed: ${JSON.stringify(constrained && constrained.error)}`);
+
+  // The host pushes a frame notification without any request: the panel
+  // renders the agent's mutation as it lands.
+  const deadline = Date.now() + 10_000;
+  let landed = false;
+  while (Date.now() < deadline && !landed) {
+    landed = client.notifications.some((message) => message.method === "neolit/frame");
+    if (!landed) await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  assert.ok(landed, "external mutation pushed a neolit/frame notification");
+  const updated = await client.waitFor((current) => (current.panel?.message ?? "").includes("Agent update rendered"), { label: "agent-update message" });
+  assert.match(updated.panel.message, /Agent update rendered/);
+  peer.close();
+  await client.shutdown();
+});

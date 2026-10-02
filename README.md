@@ -156,6 +156,23 @@ Model configuration is shared with the TUI: `~/.config/neolit/augment.json`
 the same agent backends (OpenCode by default; `AUGMENT_BACKEND=claude|codex`).
 Authentication belongs to each backend's CLI.
 
+## Attaching an external agent
+
+While the panel is open it serves the same agent socket the TUI does
+(`AUGMENT_TUI_SOCKET` overrides the path, `AUGMENT_TUI_NO_SOCKET=1`
+disables it), and the sidebar winbar shows the address. Point an MCP agent
+host at it:
+
+```sh
+augmentd --mcp --connect "$XDG_RUNTIME_DIR/neolit/augment.sock" --directory .
+```
+
+Every tool call (`draft_file`, `select_approach`, `refine_plan`, …) mutates
+the task the panel is rendering: adopted changes repaint the sidebar and
+detail panes as they land, with an "Agent update rendered" notice. A write
+racing a running panel operation queues behind it and then fails the
+optimistic-concurrency check, like any other stale writer.
+
 ## Architecture
 
 ```text
@@ -172,10 +189,14 @@ Authentication belongs to each backend's CLI.
   Every state-changing request answers with a fresh **frame**: header chips,
   tree rows with colored segments, detail lines, panel state, and the numbered
   approach choices open on the selected row.
+- Host callbacks are routed by owning session: a previous panel's
+  shutting-down host still pushes frames, and they can never paint — or
+  error-close — a newer panel.
 - Long operations never block: `frame` requests carry the animated spinner
   while an operation runs; the shim pushes `neolit/progress` and `neolit/frame`
   notifications when a background follow-up (the automatic approach generation
-  after a task starts) begins or completes.
+  after a task starts) begins or completes, and when an external agent's
+  mutation over the socket lands while the panel is idle.
 - The automatic singleton adoption, develop policy, restriction plain
   semantics, apply preflight, and pathspec commit all live in the controller
   and kernel — nothing is duplicated in Lua.
