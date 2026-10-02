@@ -319,6 +319,15 @@ local SESSION_KIND_COLOR = {
   error = "error",
 }
 
+local function prepare_buffer(name)
+  local buf = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_option(buf, "buftype", "nofile")
+  vim.api.nvim_buf_set_option(buf, "swapfile", false)
+  vim.api.nvim_buf_set_option(buf, "bufhidden", "hide")
+  vim.api.nvim_buf_set_name(buf, "neolit://" .. name)
+  return buf
+end
+
 local function session_lines_pane(session)
   local lines = {}
   for _, line in ipairs(session and session.lines or {}) do
@@ -446,15 +455,6 @@ end
 --------------------------------------------------------------------------
 -- Windows: two honest splits
 --------------------------------------------------------------------------
-
-local function prepare_buffer(name)
-  local buf = vim.api.nvim_create_buf(false, true)
-  vim.api.nvim_buf_set_option(buf, "buftype", "nofile")
-  vim.api.nvim_buf_set_option(buf, "swapfile", false)
-  vim.api.nvim_buf_set_option(buf, "bufhidden", "hide")
-  vim.api.nvim_buf_set_name(buf, "neolit://" .. name)
-  return buf
-end
 
 local function set_up_tree_window(win, buf)
   vim.api.nvim_win_set_buf(win, buf)
