@@ -374,6 +374,43 @@ local function ensure_session_pane(visible)
   vim.api.nvim_set_current_win(state.wins.tree)
 end
 
+--------------------------------------------------------------------------
+-- Diff-pane treesitter injections
+--------------------------------------------------------------------------
+
+--- Ships real language injection for diff buffers: upstream's
+--- injections.scm only injects `comment`, so nothing colors hunks after
+--- :TSInstall diff. The language comes from the `+++ b/file` header via a
+--- custom directive; requires the source language's parser to be installed
+--- (auto_install covers it).
+M._diff_injections = false
+function M.register_diff_injections()
+  if M._diff_injections then return end
+  M._diff_injections = true
+  pcall(vim.treesitter.query.add_directive, "neolit-lang-from-path!", function(match, _, bufnr, predicate, metadata)
+    local nodes = match[predicate[2]]
+    if not nodes or not nodes[1] then return end
+    local ok, text = pcall(vim.treesitter.get_node_text, nodes[1], bufnr)
+    if not ok or type(text) ~= "string" then return end
+    local filetype = vim.filetype.match({ filename = text:gsub("^b/", "") })
+    local language = filetype and vim.treesitter.language.get_lang(filetype)
+    if language then
+      metadata["injection.language"] = language
+    end
+  end)
+  pcall(vim.treesitter.query.set_query, "diff", "injections", [=[
+    (block
+      (new_file
+        (filename) @diff.path)
+      (hunks
+        (hunk
+          (addition
+            (block) @injection.content)))
+      (#neolit-lang-from-path! @diff.path)
+      (#set! injection.combined))
+  ]=])
+end
+
 local function close_diff_pane()
   if not state then return end
   if state.wins.diff and state.wins.diff ~= -1 then
@@ -384,6 +421,25 @@ local function close_diff_pane()
   end
   state.wins.diff = -1
   state.bufs.diff = nil
+end
+
+local function diff_pane_lines(changes)
+  local texts = {}
+  for _, change in ipairs(changes.diffs or {}) do
+    texts[#texts + 1] = change.text:gsub("\n$", "")
+  end
+  local joined = table.concat(texts, "\n\n")
+  local lines = vim.split(joined, "\n")
+  if lines[1] == "" then lines = {} end
+  return lines
+end
+
+--- Content-driven height: as tall as the patch needs, capped at 40% of the
+--- editor (never half the screen) and always leaving the description pane
+--- the majority of the column.
+local function diff_pane_height(changes)
+  local cap = math.max(6, math.floor(vim.o.lines * 0.4))
+  return math.min(#diff_pane_lines(changes) + 1, cap)
 end
 
 --- The changes as a real diff buffer: filetype=diff gives native diff
@@ -399,8 +455,9 @@ local function ensure_diff_pane(changes)
   if not vim.api.nvim_win_is_valid(anchor) then return end
   if vim.o.lines < 24 then return end
   state.bufs.diff = state.bufs.diff or prepare_buffer("diff")
+  local height = diff_pane_height(changes)
   vim.api.nvim_win_call(anchor, function()
-    vim.cmd("rightbelow 12split")
+    vim.cmd("rightbelow " .. height .. "split")
     state.wins.diff = vim.api.nvim_get_current_win()
   end)
   local scope = vim.wo[state.wins.diff]
@@ -410,19 +467,9 @@ local function ensure_diff_pane(changes)
   scope.winfixheight = true
   scope.list = false
   state.bufs.diff_filetype = true
+  M.register_diff_injections()
   vim.api.nvim_win_set_buf(state.wins.diff, state.bufs.diff)
   vim.api.nvim_set_current_win(state.wins.tree)
-end
-
-local function diff_pane_lines(changes)
-  local texts = {}
-  for _, change in ipairs(changes.diffs or {}) do
-    texts[#texts + 1] = change.text:gsub("\n$", "")
-  end
-  local joined = table.concat(texts, "\n\n")
-  local lines = vim.split(joined, "\n")
-  if lines[1] == "" then lines = {} end
-  return lines
 end
 
 local function diff_pane_winbar(changes)
@@ -520,6 +567,8 @@ function M.render(frame, force)
         if state.wins.diff and state.wins.diff ~= -1 and vim.api.nvim_win_is_valid(state.wins.diff) then
           vim.api.nvim_win_set_option(state.wins.diff, "winbar", diff_pane_winbar(frame.changes))
           pcall(vim.api.nvim_win_set_cursor, state.wins.diff, { 1, 0 })
+          -- Content-driven: grow or shrink with the patch, never past 40%.
+          pcall(vim.api.nvim_win_set_height, state.wins.diff, diff_pane_height(frame.changes))
         end
       end
     end
