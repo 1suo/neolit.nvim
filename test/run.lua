@@ -11,6 +11,9 @@ end
 
 local base = here()
 vim.opt.runtimepath:prepend(base .. "/..")
+-- Treesitter parsers install to the site dir, which --clean's minimal
+-- runtimepath excludes; the diff-highlighting tests need them.
+vim.opt.runtimepath:prepend(vim.fn.stdpath("data") .. "/site")
 
 local spec_files = {
   "config_spec",

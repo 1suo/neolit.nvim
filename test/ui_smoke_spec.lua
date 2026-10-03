@@ -119,6 +119,16 @@ return {
       local diff_text = table.concat(vim.api.nvim_buf_get_lines(diff_buf, 0, -1, false), "\n")
       t:ok(diff_text:find("%+gamma", 1) ~= nil, "diff pane renders the raw patch")
       t:eq(vim.api.nvim_buf_get_option(diff_buf, "filetype"), "diff", "diff pane has filetype=diff")
+      t:eq(vim.api.nvim_buf_get_option(diff_buf, "syntax"), "", "built-in diff syntax is off — extmarks own the colors")
+      local marks = vim.api.nvim_buf_get_extmarks(diff_buf, state_after_draft.diff_ns, 0, -1, { details = true })
+      local backgrounds, syntaxes = 0, 0
+      for _, mark in ipairs(marks) do
+        local group = mark[4] and mark[4].hl_group
+        if group == "DiffAdd" or group == "DiffDelete" then backgrounds = backgrounds + 1 end
+        if group and group:sub(1, 1) == "@" then syntaxes = syntaxes + 1 end
+      end
+      t:ok(backgrounds > 0, "changed lines carry full-width red/green backgrounds")
+      t:ok(syntaxes > 0, "added lines carry source syntax on top")
 
       handlers.a() -- apply to the working tree
       wait_for(t, "patch is applied", frame_matches(function(frame)

@@ -387,59 +387,95 @@ end
 -- Diff-pane source highlighting
 --------------------------------------------------------------------------
 
---- Treesitter highlighting for added diff lines, done directly: each
---- consecutive added block is parsed with get_string_parser in the target
---- file's language, and its highlight captures become extmarks one column
---- in (past the leading +). No injection-engine involvement — upstream's
---- diff injections.scm is a comment-only stub, so this works everywhere a
---- parser for the source language exists.
+--- OpenCode-style diff rendering, entirely through extmarks: red/green
+--- background per line (DiffAdd/DiffDelete, hl_eol for full width) with
+--- the source language's syntax on top for added AND deleted blocks. The
+--- buffer's own diff coloring is disabled so the two never fight, and a
+--- missing source parser is reported instead of silently degrading.
 local function language_for_path(path)
   local filetype = vim.filetype.match({ filename = path })
-  return filetype and vim.treesitter.language.get_lang(filetype)
+  return filetype and vim.treesitter.language.get_lang(filetype), filetype
 end
 
-local function highlight_added_lines(buf, ns, changes)
-  local language
+local function highlight_block(buf, ns, language, start_line, lines, marker)
+  if not language then return end
+  local text = table.concat(lines, "\n")
+  local ok_parser, parser = pcall(vim.treesitter.get_string_parser, text, language)
+  if not ok_parser then return end
+  local ok_query, query = pcall(vim.treesitter.query.get, language, "highlights")
+  if not ok_query or not query then return end
+  for _, tree in ipairs(parser:parse()) do
+    for id, node in query:iter_captures(tree:root(), text, 0, -1) do
+      local start_row, start_col, end_row, end_col = node:range()
+      for row = start_row, end_row do
+        local from = row == start_row and start_col or 0
+        local to = row == end_row and end_col or #(lines[row + 1] or "")
+        if to > from then
+          pcall(vim.api.nvim_buf_set_extmark, buf, ns, start_line + row - 1, from + #marker, {
+            end_col = to + #marker,
+            hl_group = "@" .. query.captures[id],
+            priority = 100,
+          })
+        end
+      end
+    end
+  end
+end
+
+function M.highlight_diff_source(buf, ns, changes)
+  -- Deterministic coloring: no vim diff syntax, no treesitter diff query —
+  -- only our background and syntax extmarks.
+  pcall(vim.treesitter.stop, buf)
+  vim.api.nvim_buf_set_option(buf, "syntax", "")
+
+  local language, filetype
   for _, change in ipairs(changes.diffs or {}) do
     if change.path and change.path ~= "" then
-      language = language_for_path(change.path)
+      language, filetype = language_for_path(change.path)
       break
     end
   end
-  if not language then return end
-  if not pcall(vim.treesitter.language.add, language) then return end
-  local ok_query, query = pcall(vim.treesitter.query.get, language, "highlights")
-  if not ok_query or not query then return end
+  local parser_ready = false
+  if language then
+    parser_ready = pcall(vim.treesitter.language.add, language)
+    if not parser_ready then
+      if not M._missing_parsers then M._missing_parsers = {} end
+      if not M._missing_parsers[language] then
+        M._missing_parsers[language] = true
+        vim.notify(string.format("neolit: no treesitter parser for %s — :TSInstall %s to highlight diffs", filetype or language, language), vim.log.levels.WARN)
+      end
+    end
+  end
 
   local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
   local index = 1
   while index <= #lines do
     local line = lines[index]
-    if line:sub(1, 1) == "+" and line:sub(1, 4) ~= "+++ " then
+    local marker = line:sub(1, 1)
+    if (marker == "+" or marker == "-") and line:sub(1, 4) ~= "+++ " and line:sub(1, 4) ~= "--- " then
+      local sign = marker
       local stop = index
-      while stop < #lines and lines[stop + 1]:sub(1, 1) == "+" and lines[stop + 1]:sub(1, 4) ~= "+++ " do
-        stop = stop + 1
+      while stop < #lines do
+        local next_marker = lines[stop + 1]:sub(1, 1)
+        if next_marker == sign and lines[stop + 1]:sub(1, 4) ~= "+++ " and lines[stop + 1]:sub(1, 4) ~= "--- " then
+          stop = stop + 1
+        else
+          break
+        end
+      end
+      -- Background first (full width, low priority), syntax on top.
+      for row = index, stop do
+        pcall(vim.api.nvim_buf_set_extmark, buf, ns, row - 1, 0, {
+          end_col = #lines[row],
+          hl_group = sign == "+" and "DiffAdd" or "DiffDelete",
+          hl_eol = true,
+          priority = 90,
+        })
       end
       local block = {}
       for row = index, stop do block[#block + 1] = lines[row]:sub(2) end
-      local text = table.concat(block, "\n")
-      local ok_parser, parser = pcall(vim.treesitter.get_string_parser, text, language)
-      if ok_parser then
-        for _, tree in ipairs(parser:parse()) do
-          for id, node in query:iter_captures(tree:root(), text, 0, -1) do
-            local start_row, start_col, end_row, end_col = node:range()
-            for row = start_row, end_row do
-              local from = row == start_row and start_col or 0
-              local to = row == end_row and end_col or #(block[row + 1] or "")
-              if to > from then
-                pcall(vim.api.nvim_buf_set_extmark, buf, ns, index - 1 + row, from + 1, {
-                  end_col = to + 1,
-                  hl_group = "@" .. query.captures[id],
-                })
-              end
-            end
-          end
-        end
+      if parser_ready then
+        highlight_block(buf, ns, language, index, block, sign)
       end
       index = stop + 1
     else
@@ -575,11 +611,10 @@ function M.render(frame, force)
       if state.bufs.diff and vim.api.nvim_buf_is_valid(state.bufs.diff) then
         vim.api.nvim_buf_set_option(state.bufs.diff, "modifiable", true)
         vim.api.nvim_buf_set_option(state.bufs.diff, "filetype", "diff")
-        vim.api.nvim_buf_set_option(state.bufs.diff, "syntax", "ON")
         vim.api.nvim_buf_set_lines(state.bufs.diff, 0, -1, false, diff_pane_lines(frame.changes))
         vim.api.nvim_buf_set_option(state.bufs.diff, "modifiable", false)
         vim.api.nvim_buf_clear_namespace(state.bufs.diff, state.diff_ns, 0, -1)
-        highlight_added_lines(state.bufs.diff, state.diff_ns, frame.changes)
+        M.highlight_diff_source(state.bufs.diff, state.diff_ns, frame.changes)
         -- A new patch reads from the top; the session view's cursor is
         -- never touched here — it belongs to the tail-follow.
         if state.wins.right ~= -1 and vim.api.nvim_win_is_valid(state.wins.right)
