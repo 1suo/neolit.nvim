@@ -64,18 +64,19 @@ function M.new(opts, handlers)
   return self
 end
 
--- nvim job callbacks deliver stdout already split into complete lines with
--- the newline stripped (and a trailing "" per batch), so each non-empty
--- entry is fed through the decoder as one terminated line. The decoder
--- stays the single framing authority and still handles embedded newlines.
+-- nvim job callbacks split stdout into line fragments: complete lines are
+-- separate elements, a trailing "" marks data that ended with a newline,
+-- and one JSON line longer than the pipe buffer (a full repository tree
+-- frame) spans several callbacks as unterminated fragments. Re-joining the
+-- fragments with "\n" reconstructs the raw byte stream exactly, and the
+-- framing decoder stays the single authority for line boundaries — huge
+-- frames survive instead of being parsed as two broken halves whose decode
+-- silently fails.
 function M._on_data(self, data)
-  for _, chunk in ipairs(data) do
-    if chunk ~= "" then
-      local lines = framing.feed(self.decoder, chunk .. "\n")
-      for _, line in ipairs(lines) do
-        M._consume_line(self, line)
-      end
-    end
+  local chunk = table.concat(data, "\n")
+  if chunk == "" then return end
+  for _, line in ipairs(framing.feed(self.decoder, chunk)) do
+    M._consume_line(self, line)
   end
 end
 
