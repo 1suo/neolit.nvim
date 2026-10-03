@@ -5,7 +5,7 @@ local function stub_ui()
   local ui = {}
   ui.pane = function() return ui.pane_value or "tree" end
   for _, name in ipairs({
-    "set_pane", "move", "scroll_detail", "prompt_message", "prompt_objective", "prompt_explanation",
+    "set_pane", "move", "scroll_detail", "prompt_message", "prompt_objective",
     "develop", "apply_selected", "commit_applied", "restrict", "switch_model", "prompt_reopen",
     "prompt_stale", "quit", "cancel_op", "choose", "toggle_fold", "toggle_plan_only",
     "open_selected", "edit_patch", "fold_level", "session_toggle", "toggle_right_view", "show_keys",
@@ -22,7 +22,7 @@ return {
       local handlers = keys.handlers(stub_ui())
       for _, key in ipairs({
         "j", "k", "<Down>", "<Up>", "<Tab>", "<Right>", "<Left>", "<CR>",
-        "n", "e", "d", "a", "c", "l", "w", "m", "o", "O", "p", "s", "q", "<Esc>", "t", "?",
+        "n", "d", "a", "c", "l", "w", "m", "o", "O", "p", "s", "q", "<Esc>", "t", "?",
         "za", "zc", "zo", "zr", "zR", "zm", "zM", "H", "F", "V", "p",
       }) do
         t:ok(handlers[key], "key " .. key .. " is routed")
@@ -30,6 +30,7 @@ return {
       for n = 1, 9 do
         t:ok(handlers[tostring(n)], "digit " .. n .. " is routed")
       end
+      t:eq(handlers["e"], nil, "the standalone explain key is gone — Enter routes messages")
     end,
   },
   {
@@ -82,7 +83,7 @@ return {
     run = function(t)
       local map = keys.global_action_map()
       for _, key in ipairs({
-        "n", "e", "<CR>", "d", "a", "c", "l", "w", "m", "o", "O", "p", "s", "q", "<Tab>", "<Esc>",
+        "n", "<CR>", "d", "a", "c", "l", "w", "m", "o", "O", "p", "s", "q", "<Tab>", "<Esc>",
         "1", "2", "3", "4", "5", "6", "7", "8", "9",
       }) do
         t:ok(map[key], "global action for " .. key)

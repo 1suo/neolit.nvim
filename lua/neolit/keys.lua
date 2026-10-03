@@ -1,6 +1,7 @@
 --- TUI key routing: the same key set augment.tsx handles through Ink's
---- global useInput — j/k pane-aware motion, Tab pane switch, 1-9 approach
---- choice, and one key per controller operation. Identical maps are attached
+--- global useInput — j/k pane-aware motion, Tab pane switch, 1-9 choice
+--- (an offered route interpretation while one is open, else an approach),
+--- and one key per controller operation. Identical maps are attached
 --- to both focusable buffers, so the frame behaves as one plane regardless
 --- of which pane is focused.
 
@@ -19,9 +20,8 @@ M.descriptions = {
   ["<Tab>"] = "neolit: switch pane",
   ["<Right>"] = "neolit: switch pane",
   ["<Left>"] = "neolit: focus tree",
-  ["<CR>"] = "neolit: message / regenerate this path",
+  ["<CR>"] = "neolit: message the selected path (routed)",
   ["n"] = "neolit: new change plan",
-  ["e"] = "neolit: explain selected path",
   ["d"] = "neolit: develop selected path",
   ["a"] = "neolit: apply drafted patch",
   ["c"] = "neolit: commit applied paths",
@@ -72,7 +72,6 @@ function M.handlers(ui)
     ["<Left>"] = function() ui.set_pane("tree") end,
     ["<CR>"] = function() ui.prompt_message() end,
     ["n"] = function() ui.prompt_objective() end,
-    ["e"] = function() ui.prompt_explanation() end,
     ["d"] = function() ui.develop() end,
     ["a"] = function() ui.apply_selected() end,
     ["c"] = function() ui.commit_applied() end,
@@ -122,7 +121,6 @@ end
 --- same action. Motion keys (j/k, arrows) and fold keys stay pane-local.
 M.global_actions = {
   ["n"] = { "prompt_objective" },
-  ["e"] = { "prompt_explanation" },
   ["<CR>"] = { "prompt_message" },
   ["d"] = { "develop" },
   ["a"] = { "apply_selected" },

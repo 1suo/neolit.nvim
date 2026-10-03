@@ -93,6 +93,23 @@ return {
           and (vim.api.nvim_win_get_option(s.wins.tree, "winbar") or ""):find("COLLAPSED", 1, true) ~= nil
       end)
 
+      -- Enter routes messages: an ambiguous one offers interpretations in
+      -- the description dock, and the number keys pick one.
+      local real_input = vim.ui.input
+      vim.ui.input = function(_, callback) callback("this is ambiguous, what should change?") end
+      handlers["<CR>"]()
+      vim.ui.input = real_input
+      wait_for(t, "ambiguous message offers interpretations", frame_matches(function(frame)
+        return frame.routedOptions and #frame.routedOptions == 2
+      end))
+      local offered_text = table.concat(vim.api.nvim_buf_get_lines(ui._state().bufs.desc, 0, -1, false), "\n")
+      t:ok(offered_text:find("Deadline cutoff", 1, true) ~= nil, "description dock renders the offered options")
+      handlers["1"]()
+      wait_for(t, "choosing an interpretation continues the flow", frame_matches(function(frame)
+        return frame.panel.message and frame.panel.message:find("Approaches updated", 1, true) ~= nil
+          and frame.routedOptions and #frame.routedOptions == 0
+      end))
+
       handlers.d() -- develop: refine the chosen approach into files
       wait_for(t, "refine selects the first planned child", frame_matches(function(frame)
         return frame.tree.selectedRowId == "entry:session.ts"
@@ -119,7 +136,7 @@ return {
       local diff_text = table.concat(vim.api.nvim_buf_get_lines(diff_buf, 0, -1, false), "\n")
       t:ok(diff_text:find("%+gamma", 1) ~= nil, "diff pane renders the raw patch")
       t:eq(vim.api.nvim_buf_get_option(diff_buf, "filetype"), "diff", "diff pane has filetype=diff")
-      t:eq(vim.api.nvim_buf_get_option(diff_buf, "syntax"), "", "built-in diff syntax is off — extmarks own the colors")
+      t:eq(vim.api.nvim_buf_get_option(diff_buf, "syntax"), "diff", "native diff syntax colors the buffer — colors follow the colorscheme")
       local marks = vim.api.nvim_buf_get_extmarks(diff_buf, state_after_draft.diff_ns, 0, -1, { details = true })
       local backgrounds, syntaxes = 0, 0
       for _, mark in ipairs(marks) do

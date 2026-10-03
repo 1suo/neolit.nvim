@@ -24,6 +24,7 @@ local OP_LABELS = {
   lock = "Applying restriction",
   allow = "Applying restriction",
   choose = "Using selected approach",
+  message = "Sending message",
   rethink = "Rethinking selected path",
   reopen = "Reworking selected plan",
   stale = "Marking repository change",
@@ -32,7 +33,6 @@ local OP_LABELS = {
 
 local INPUT_TITLES = {
   objective = "What should change?",
-  explanation = "Explain what repository topic?",
   reopen = "Reason for reopening selected node",
   stale = "Changed repository path",
 }
@@ -153,7 +153,7 @@ end
 function M.frames_differ(a, b)
   local function signature(frame)
     if not frame then return "" end
-    return vim.json.encode({ rows = frame.tree and frame.tree.rows, detail = frame.detail })
+    return vim.json.encode({ rows = frame.tree and frame.tree.rows, detail = frame.detail, routedOptions = frame.routedOptions })
   end
   return signature(a) ~= signature(b)
 end
@@ -205,7 +205,7 @@ local function effective_folded(rows)
 end
 
 local function message_title()
-  return (selected_path() or "repo") .. " · message (empty = rethink)"
+  return (selected_path() or "repo") .. " · message (task, question, or note; empty = rethink)"
 end
 
 --------------------------------------------------------------------------
@@ -387,11 +387,15 @@ end
 -- Diff-pane source highlighting
 --------------------------------------------------------------------------
 
---- OpenCode-style diff rendering, entirely through extmarks: red/green
---- background per line (DiffAdd/DiffDelete, hl_eol for full width) with
---- the source language's syntax on top for added AND deleted blocks. The
---- buffer's own diff coloring is disabled so the two never fight, and a
---- missing source parser is reported instead of silently degrading.
+--- OpenCode-style diff rendering layered over the buffer's NATIVE diff
+--- highlighting: the filetype's own syntax (runtime `syntax/diff.vim`, or
+--- treesitter with its injections once the diff parser is installed) colors
+--- file headers, hunk markers, and added/removed lines with the active
+--- colorscheme's diff groups; on top of that, full-width red/green
+--- backgrounds (DiffAdd/DiffDelete, hl_eol) plus the source language's
+--- syntax inside added AND deleted blocks. Everything resolves through
+--- semantic highlight groups, so the pane follows the colorscheme — nothing
+--- is hard-coded.
 local function language_for_path(path)
   local filetype = vim.filetype.match({ filename = path })
   return filetype and vim.treesitter.language.get_lang(filetype), filetype
@@ -423,11 +427,10 @@ local function highlight_block(buf, ns, language, start_line, lines, marker)
 end
 
 function M.highlight_diff_source(buf, ns, changes)
-  -- Deterministic coloring: no vim diff syntax, no treesitter diff query —
-  -- only our background and syntax extmarks.
-  pcall(vim.treesitter.stop, buf)
-  vim.api.nvim_buf_set_option(buf, "syntax", "")
-
+  -- Native diff coloring (filetype=diff) stays on: headers, hunk markers,
+  -- and context lines follow the colorscheme through its own diff groups.
+  -- The extmarks below only layer the full-width semantic backgrounds and
+  -- the source-language syntax on the +/- blocks.
   local language, filetype
   for _, change in ipairs(changes.diffs or {}) do
     if change.path and change.path ~= "" then
@@ -503,13 +506,24 @@ function M.description_height(display_rows)
 end
 
 --- Renders the description dock under the tree. No winbar title: the
---- buffer name (neolit://desc) already identifies the pane.
+--- buffer name (neolit://desc) already identifies the pane. Offered route
+--- interpretations append below the detail content — the panel's analog of
+--- the TUI's under-legend option block.
 local function render_description(frame)
   if not vim.api.nvim_buf_is_valid(state.bufs.desc) then return end
-  render.render_lines(vim.api, state.ns, state.bufs.desc, theme, frame.detail or {})
+  local lines = vim.list_extend({}, frame.detail or {})
+  for index, option in ipairs(frame.routedOptions or {}) do
+    lines[#lines + 1] = {
+      segments = {
+        { text = string.format("[%d] ", index), color = theme.colors.primary, bold = true },
+        { text = option.label .. " — " .. option.description },
+      },
+    }
+  end
+  render.render_lines(vim.api, state.ns, state.bufs.desc, theme, lines)
   if state.wins.desc ~= -1 and vim.api.nvim_win_is_valid(state.wins.desc) then
     local width = vim.api.nvim_win_get_width(state.wins.desc)
-    pcall(vim.api.nvim_win_set_height, state.wins.desc, M.description_height(M.description_rows(frame.detail, width)))
+    pcall(vim.api.nvim_win_set_height, state.wins.desc, M.description_height(M.description_rows(lines, width)))
   end
 end
 
@@ -1232,24 +1246,15 @@ function M.prompt_objective()
   end)
 end
 
-function M.prompt_explanation()
-  if not state then return end
-  prompt_input(INPUT_TITLES.explanation, function(value)
-    if value == nil then return end
-    local label = (state.frame and state.frame.hasTask) and "Explaining selected path" or "Explaining repository topic"
-    M.dispatch("explain", { topic = value }, label)
-  end)
-end
-
 function M.prompt_message()
   if not state then return end
   if not (state.frame and state.frame.hasTask) then
-    vim.notify("No task is active. Press [N] for a change or [E] for an explanation.", vim.log.levels.WARN)
+    vim.notify("No task is active. Press [N] to send the first message.", vim.log.levels.WARN)
     return
   end
   prompt_input(message_title(), function(value)
     if value == nil then return end
-    M.dispatch("rethink", { message = value }, OP_LABELS.rethink)
+    M.dispatch("message", { text = value }, OP_LABELS.message)
   end)
 end
 
@@ -1271,7 +1276,9 @@ end
 
 function M.choose(n)
   if not state or not state.frame then return end
-  if (state.frame.choices or {})[n] then
+  -- Routed interpretations outrank approach candidates while open, exactly
+  -- like the TUI's number keys.
+  if (state.frame.routedOptions or {})[n] or (state.frame.choices or {})[n] then
     M.dispatch("choose", { n = n }, OP_LABELS.choose)
   end
 end

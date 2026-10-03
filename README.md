@@ -64,9 +64,12 @@ Native editor windows, no floating chrome:
   **detail split** with DESCRIPTION — plus two panes that appear when their
   content exists: a **CHANGES diff pane** under the detail split (the
   selected path's drafted patches as a real `filetype=diff` buffer — native
-  diff syntax, treesitter language injections once the diff parser is
-  installed — with the change summary and applied count in its winbar) and a
-  **SESSION stream pane** under the tree while an agent session runs. All
+  diff syntax follows your colorscheme's own diff groups, with treesitter
+  language injections once the diff parser is installed; on top, full-width
+  red/green backgrounds (`DiffAdd`/`DiffDelete`) and the source language's
+  syntax inside added and deleted blocks — with the change summary and
+  applied count in its winbar) and a **SESSION stream pane** under the tree
+  while an agent session runs. All
   are real windows, so standard `<C-w>` motion, resizing, and `:q` behave
   normally. The detail split never claims more than half the space the
   sidebar leaves, so user windows are never squeezed out. Closing the
@@ -84,7 +87,7 @@ Native editor windows, no floating chrome:
 - The tree selection is the cursor line (`cursorline` highlight,
   window-local `scrolloff` keeps it centered); the detail pane wraps and
   scrolls with `j`/`k` while focused.
-- Indicators (`◆ ~ + - ✓ ! # ● ?` …) and the two-section detail pane come from
+- Indicators (`◆ ~ + - ✓ ! # ● ? ○ ◐` …) and the two-section detail pane come from
   the TUI's view model; their meaning is canonical in
   [neolit's TUI README](https://github.com/1suo/neolit/blob/main/src/tui/README.md).
 - All panel keymaps carry `desc` fields, so which-key lists them natively.
@@ -95,9 +98,12 @@ Same operations as the TUI, with `Tab`/`Esc` added:
 
 ```text
 j k    move selection (tree pane) or scroll detail (detail pane)
-Enter  prompt for the selected path — text becomes a message that regenerates
-       its subtree; empty submit rethinks it
-1-9    choose the numbered approach
+Enter  prompt for the selected path — the message is routed by one bounded
+       model call: a task message regenerates its subtree (empty submit
+       rethinks), an explanation explains around the path, an ambiguous one
+       offers interpretations rendered in the description dock
+1-9    choose the numbered approach, or the numbered interpretation of an
+       offered route while one is open
 D      develop the selected path and everything under it — a chosen approach
        expands into files, then every undrafted file below is drafted in ONE
        batched model call (validated all-or-nothing; per-file fallback marks
@@ -111,7 +117,6 @@ L / W  mark/unmark the selected path in the restriction plain (lock / allow
 M      switch the live runtime's default/draft/challenge model — role picker
        shows current models, then provider → model steps over the backend's
        catalog (cached 5 minutes; typed fallback when no catalog)
-E      explain selected path (whole repository when no task is active)
 N      new change task
 O      reopen selected node with a reason
 S      mark a real path changed outside the plan
@@ -139,7 +144,7 @@ when closed and then acts, so the maps work from any buffer. Motion and
 folding keys stay pane-local. For plugin managers without lazy key specs,
 set `keymap_prefix = "<leader>n"` and the plugin binds them itself.
 
-Prompts (`N`, `E`, `Enter`, `O`, `S`) go through `vim.ui.input`, so
+Prompts (`N`, `Enter`, `O`, `S`) go through `vim.ui.input`, so
 `dressing.nvim`/`snacks.nvim` style pickers work if installed.
 
 ## Configuration

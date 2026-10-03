@@ -210,6 +210,34 @@ test("restrictions mark paths and surface the lock chip", async () => {
   await client.shutdown();
 });
 
+test("messages route: ambiguous ones offer options the number keys choose", async () => {
+  const directory = fixtureRepo();
+  const client = new HostClient(directory, { stub: true });
+  await client.request("initialize", { directory });
+  await client.request("start", { objective: "add gamma line" });
+  await client.waitFor((frame) => frame.panel.message?.includes("Single viable approach adopted"), { label: "adoption" });
+
+  // An ambiguous message is classified as offer-options; the frame carries
+  // the interpretations and number keys outrank approach candidates.
+  const ambiguous = await client.request("message", { text: "this is ambiguous, what should change?" });
+  assert.ok(ambiguous.result, `message failed: ${JSON.stringify(ambiguous)}`);
+  assert.deepEqual(
+    ambiguous.result.routedOptions.map((option) => option.label),
+    ["Deadline cutoff", "Fixed count"],
+  );
+
+  const chosen = await client.request("choose", { n: 1 });
+  assert.deepEqual(chosen.result.routedOptions, [], "choosing clears the offered options");
+  assert.ok(chosen.result.panel.message.includes("Approaches updated"), chosen.result.panel.message);
+
+  // A task message routes straight into the develop flow without options.
+  const developed = await client.request("message", { text: "just make the edit" });
+  assert.ok(developed.result, `message failed: ${JSON.stringify(developed)}`);
+  assert.deepEqual(developed.result.routedOptions, []);
+  assert.equal(developed.result.panel.error, null);
+  await client.shutdown();
+});
+
 test("no-model mode: start warns and rethink explains there is nothing to rethink", async () => {
   const directory = fixtureRepo();
   const client = new HostClient(directory, { noModel: true });

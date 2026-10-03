@@ -102,6 +102,20 @@ const stubRuntime = {
         return { value: { children: [{ kind: "file", path: "session.ts", lod: "hunk", reason: "apply the edit" }] } };
       case "draft-patch":
         return { value: { patch: STUB_PATCH, assumptions: [] } };
+      case "route-message":
+        // Tests: a message containing "ambiguous" is classified as an
+        // offer-options route with two interpretations; anything else
+        // develops the selected path.
+        return { value: String(request.context.message ?? "").includes("ambiguous")
+          ? {
+            intent: "offer-options",
+            topic: "rework retries",
+            options: [
+              { label: "Deadline cutoff", description: "honor a wall-clock deadline" },
+              { label: "Fixed count", description: "keep counting attempts" },
+            ],
+          }
+          : { intent: "develop", topic: "stub route", options: [] } };
       default:
         throw new Error(`stub runtime: unexpected operation ${request.operation}`);
     }
@@ -300,6 +314,7 @@ function buildFrame(spinner = DEFAULT_SPINNER) {
       message: state.message,
     },
     choices,
+    routedOptions: state.routedOptions ?? [],
   };
 }
 
@@ -420,8 +435,15 @@ const methods = {
     return buildFrame();
   },
 
-  async explain(params) {
-    await controller.explain(String(params.topic ?? ""));
+  /**
+   * The single message entry point (the TUI's Enter): one bounded
+   * message/route classification decides whether the text develops the
+   * selected path, explains around it, or offers interpretations — which
+   * `choose` then picks while `routedOptions` is open. An empty text
+   * rethinks, and without a task the text starts one.
+   */
+  async message(params) {
+    await controller.route(String(params.text ?? ""));
     return buildFrame();
   },
 
@@ -441,9 +463,17 @@ const methods = {
   },
 
   async choose(params) {
+    // Routed interpretations outrank approach candidates while they are
+    // open — the exact precedence of the TUI's number keys.
+    const routed = controller.snapshot().routedOptions ?? [];
+    const index = (Number(params.n) || 0) - 1;
+    if (routed[index]) {
+      await controller.chooseRoutedOption(routed[index].label);
+      return buildFrame();
+    }
     const row = controller.selectedRow();
     const possible = candidatesForEntry(controller.snapshot().task, row?.entry).filter((candidate) => candidate.status === "possible");
-    const candidate = possible[(Number(params.n) || 0) - 1];
+    const candidate = possible[index];
     if (!candidate) throw rpcError(-32602, `No approach ${params.n} is open on the selected path.`);
     await controller.selectCandidate(candidate.id);
     return buildFrame();
