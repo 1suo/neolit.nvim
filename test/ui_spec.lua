@@ -111,6 +111,14 @@ return {
     end,
   },
   {
+    name = "spinner glyph replacement targets the first braille frame only",
+    run = function(t)
+      t:eq(ui.replace_first_spinner("├─ ⠋ src/ 78%", "⠙"), "├─ ⠙ src/ 78%")
+      t:eq(ui.replace_first_spinner("◆ repo/", "⠙"), "◆ repo/", "no glyph, no change")
+      t:eq(ui.replace_first_spinner("⠸ deep ⠋ nesting", "⠹"), "⠹ deep ⠋ nesting", "only the first glyph moves")
+    end,
+  },
+  {
     name = "description dock height is content-driven up to half the editor",
     run = function(t)
       local original_lines = vim.o.lines

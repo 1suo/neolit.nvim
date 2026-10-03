@@ -269,6 +269,55 @@ local function notify_panel()
   end
 end
 
+--- Replaces the earliest spinner glyph in a tree line (all frames are
+--- single-width, 3-byte braille, so columns and extmarks stay put).
+function M.replace_first_spinner(line, glyph)
+  local best_start, best_length
+  for _, frame in ipairs(SPINNER_FRAMES) do
+    local start = string.find(line, frame, 1, true)
+    if start and (not best_start or start < best_start) then
+      best_start = start
+      best_length = #frame
+    end
+  end
+  if not best_start then return line end
+  return string.sub(line, 1, best_start - 1) .. glyph .. string.sub(line, best_start + best_length)
+end
+
+--- Row indices whose rendered indicator is a spinner glyph — the target of
+--- the busy animation, recomputed on every content render.
+local function record_live_rows(tree_lines)
+  local indices = {}
+  for index, line in ipairs(tree_lines) do
+    for _, segment in ipairs(line.segments or {}) do
+      if vim.tbl_contains(SPINNER_FRAMES, segment.text) then
+        indices[#indices + 1] = index
+        break
+      end
+    end
+  end
+  return indices
+end
+
+--- Animates the live rows' spinner glyph in place: one small line edit per
+--- tick, never a full re-render (which once froze the whole editor).
+function M.animate_live_rows()
+  if not state or not state.live_line_indices then return end
+  local buf = state.bufs.tree
+  if not vim.api.nvim_buf_is_valid(buf) then return end
+  vim.api.nvim_buf_set_option(buf, "modifiable", true)
+  for _, line_number in ipairs(state.live_line_indices) do
+    local line = vim.api.nvim_buf_get_lines(buf, line_number - 1, line_number, false)[1]
+    if line then
+      local updated = M.replace_first_spinner(line, spinner())
+      if updated ~= line then
+        vim.api.nvim_buf_set_lines(buf, line_number - 1, line_number, false, { updated })
+      end
+    end
+  end
+  vim.api.nvim_buf_set_option(buf, "modifiable", false)
+end
+
 local function ensure_timer()
   if not state or state.timer then return end
   local uv = vim.uv or vim.loop
@@ -289,6 +338,7 @@ local function ensure_timer()
     end
     state.spinner_i = state.spinner_i + 1
     update_winbars()
+    M.animate_live_rows()
     if not state.frame_in_flight and state.host and not state.host.dead then
       state.frame_in_flight = true
       -- No spinner parameter: identical frames skip re-rendering, which
@@ -490,6 +540,7 @@ function M.render(frame, force)
     end
     state.row_ids = row_ids
     state.rows_visible = rows_visible
+    state.live_line_indices = record_live_rows(tree_lines)
     render.render_lines(vim.api, state.ns, state.bufs.tree, theme, tree_lines)
 
     if state.last_selected ~= frame.tree.selectedRowId then
