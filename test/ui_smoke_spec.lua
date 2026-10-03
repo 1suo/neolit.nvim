@@ -176,10 +176,13 @@ return {
       -- cursor on the last one while it rides the bottom.
       local frame = vim.deepcopy(state_after_draft.frame)
       frame.session = { visible = true, lines = {} }
-      for i = 1, 30 do frame.session.lines[i] = { kind = "text", text = "stream line " .. i } end
       ui.render(frame, true)
       local session_win = ui._state().wins.session
       assert(session_win ~= -1 and vim.api.nvim_win_is_valid(session_win), "session pane split under the description")
+      local placeholder = table.concat(vim.api.nvim_buf_get_lines(ui._state().bufs.session, 0, 1, false), "\n")
+      assert(placeholder:find("waiting for the agent", 1, true), "empty stream shows the waiting placeholder")
+      for i = 1, 30 do frame.session.lines[i] = { kind = "text", text = "stream line " .. i } end
+      ui.render(frame, true)
       local cursor = vim.api.nvim_win_get_cursor(session_win)
       assert(cursor[1] == 30, "tail-follow keeps the cursor on the last line: " .. cursor[1])
       -- Scrolling up pauses the follow.

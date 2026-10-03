@@ -380,6 +380,9 @@ local function session_lines_pane(session)
     local role = SESSION_KIND_COLOR[line.kind] or "text"
     lines[#lines + 1] = { text = line.text, color = theme.colors[role] }
   end
+  if #lines == 0 then
+    lines[1] = { text = "waiting for the agent…", color = theme.colors.muted }
+  end
   return lines
 end
 
@@ -605,10 +608,10 @@ function M.render(frame, force)
     end
   end
 
-  -- The session pane under the description: present while a session is
-  -- actually streaming (a configured driver alone is not enough) and not
-  -- hidden with V.
-  local session_wanted = frame.session and frame.session.visible and #(frame.session.lines or {}) > 0
+  -- The session pane under the description: present whenever a tool session
+  -- is configured and not hidden with V — a quiet "waiting for the agent…"
+  -- placeholder when nothing has streamed yet, exactly like the TUI's pane.
+  local session_wanted = frame.session and frame.session.visible
   if session_wanted then
     create_session_window()
   elseif state.wins.session ~= -1 then
