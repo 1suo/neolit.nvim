@@ -77,9 +77,11 @@ return {
       t:eq(state.model.label, "STUB")
       t:ok(vim.api.nvim_win_is_valid(state.wins.tree), "sidebar window is a real split")
       t:ok(vim.api.nvim_win_is_valid(state.wins.desc), "description column is a real split")
-      t:eq(state.wins.right, -1, "no diff column before any draft exists")
+      t:ok(state.wins.right ~= -1 and vim.api.nvim_win_is_valid(state.wins.right), "diff column exists from the start — permanent, no churn")
       local tree_text = table.concat(vim.api.nvim_buf_get_lines(state.bufs.tree, 0, -1, false), "\n")
       t:ok(tree_text:find("session%.ts", 1) ~= nil, "tree shows the repository file")
+      local diff_placeholder = table.concat(vim.api.nvim_buf_get_lines(state.bufs.diff, 0, -1, false), "\n")
+      t:ok(diff_placeholder:find("no drafted changes", 1, true) ~= nil, "empty diff column shows a quiet placeholder")
 
       -- The winbar carries chips only when idle; while an operation runs it
       -- shows the spinner instead, so wait for the idle form.
@@ -132,7 +134,6 @@ return {
       local state_after_draft = ui._state()
       t:ok(state_after_draft.frame.changes and #state_after_draft.frame.changes.diffs == 1, "drafted diff ships as raw changes")
       t:ok(state_after_draft.frame.changes.diffs[1].text:find("%+gamma", 1) ~= nil, "raw patch text carries the change")
-      t:ok(state_after_draft.wins.right ~= -1 and vim.api.nvim_win_is_valid(state_after_draft.wins.right), "the diff column appears with the first draft")
       local diff_buf = state_after_draft.bufs.diff
       t:ok(diff_buf and vim.api.nvim_buf_is_valid(diff_buf), "diff pane buffer exists")
       local diff_text = table.concat(vim.api.nvim_buf_get_lines(diff_buf, 0, -1, false), "\n")

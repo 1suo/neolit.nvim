@@ -587,25 +587,21 @@ function M.render(frame, force)
     render_description(frame)
   end
 
-  -- The diff column: a real full-height window while drafted patches
-  -- exist; without one the description column owns all the remaining width
-  -- (diff where it exists, description everywhere else). The description
-  -- reclaims/releases the diff column's width only on this transition, so
-  -- manual resizes between frames stay.
+  -- The diff column is PERMANENT: it shows the drafted patches or a quiet
+  -- placeholder when none exist. Windows never appear or disappear with
+  -- content — only the session pane (under the description) does, while an
+  -- agent is actually streaming.
   local has_diffs = frame.changes and #(frame.changes.diffs or {}) > 0
-  if has_diffs then
-    create_right_window()
-  elseif state.wins.right ~= -1 then
-    close_panel_window("right")
-  end
+  create_right_window()
   create_desc_window()
-  if state.diff_column ~= has_diffs then
-    state.diff_column = has_diffs
-    if state.wins.desc ~= -1 and vim.api.nvim_win_is_valid(state.wins.desc)
-      and vim.api.nvim_win_is_valid(state.wins.tree) then
-      local rest = math.max(20, vim.o.columns - vim.api.nvim_win_get_width(state.wins.tree) - 2)
-      local width = has_diffs and math.max(24, rest - panel_geometry().detail) or rest
-      pcall(vim.api.nvim_win_set_width, state.wins.desc, width)
+  if not has_diffs and state.diff_signature ~= "none" then
+    state.diff_signature = "none"
+    if state.bufs.diff and vim.api.nvim_buf_is_valid(state.bufs.diff) then
+      vim.api.nvim_buf_set_option(state.bufs.diff, "modifiable", true)
+      vim.api.nvim_buf_set_option(state.bufs.diff, "filetype", "")
+      vim.api.nvim_buf_set_lines(state.bufs.diff, 0, -1, false, { "no drafted changes yet — [D] develop drafts files; [A] applies" })
+      vim.api.nvim_buf_set_option(state.bufs.diff, "modifiable", false)
+      vim.api.nvim_buf_clear_namespace(state.bufs.diff, state.diff_ns, 0, -1)
     end
   end
 
@@ -631,7 +627,9 @@ function M.render(frame, force)
     end
   end
 
-  if frame.changes then
+  -- Only real diffs render here; without drafts the placeholder above owns
+  -- the buffer and the signature stays "none".
+  if has_diffs and frame.changes then
     local signature = vim.json.encode({ texts = vim.tbl_map(function(change) return change.text end, frame.changes.diffs or {}), summary = frame.changes.summary })
     if signature ~= state.diff_signature or force then
       state.diff_signature = signature
@@ -811,8 +809,7 @@ create_right_window = function()
 end
 
 --- The description column: the rightmost full-height window, always
---- present. It widens to everything beside the tree when the diff column
---- is hidden, and the session stream splits under it while one runs.
+--- present. Its width is set once at creation — never churned by frames.
 create_desc_window = function()
   if not state or vim.api.nvim_win_is_valid(state.wins.desc) then return end
   local anchor = state.wins.right
@@ -823,6 +820,10 @@ create_desc_window = function()
     state.wins.desc = vim.api.nvim_get_current_win()
   end)
   set_up_desc_window(state.wins.desc, state.bufs.desc)
+  if vim.api.nvim_win_is_valid(state.wins.tree) then
+    local rest = math.max(24, vim.o.columns - vim.api.nvim_win_get_width(state.wins.tree) - 2)
+    pcall(vim.api.nvim_win_set_width, state.wins.desc, math.max(24, rest - panel_geometry().detail))
+  end
   vim.api.nvim_set_current_win(state.wins.tree)
 end
 
@@ -942,7 +943,6 @@ function M.open(opts)
     model_catalog = nil,
     session_signature = nil,
     diff_signature = nil,
-    diff_column = nil,
     ns = vim.api.nvim_create_namespace("neolit"),
   }
 
@@ -1079,9 +1079,7 @@ function M.set_pane(pane)
   state.pane = pane or (state.pane == "tree" and "detail" or "tree")
   if state.pane == "detail" then
     -- Recreate whichever detail-side windows the user closed with :q.
-    if state.frame and state.frame.changes and #(state.frame.changes.diffs or {}) > 0 then
-      create_right_window()
-    end
+    create_right_window()
     create_desc_window()
   end
   local target = state.pane == "detail" and (state.wins.desc ~= -1 and state.wins.desc or state.wins.right) or state.wins.tree
