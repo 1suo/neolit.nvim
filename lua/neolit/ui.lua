@@ -416,12 +416,12 @@ function M.description_height(display_rows)
   return math.max(3, math.min(display_rows + 1, math.floor(vim.o.lines / 2)))
 end
 
---- Renders the description dock under the tree.
+--- Renders the description dock under the tree. No winbar title: the
+--- buffer name (neolit://desc) already identifies the pane.
 local function render_description(frame)
   if not vim.api.nvim_buf_is_valid(state.bufs.desc) then return end
   render.render_lines(vim.api, state.ns, state.bufs.desc, theme, frame.detail or {})
   if state.wins.desc ~= -1 and vim.api.nvim_win_is_valid(state.wins.desc) then
-    vim.api.nvim_win_set_option(state.wins.desc, "winbar", "DESCRIPTION")
     local width = vim.api.nvim_win_get_width(state.wins.desc)
     pcall(vim.api.nvim_win_set_height, state.wins.desc, M.description_height(M.description_rows(frame.detail, width)))
   end
@@ -439,9 +439,11 @@ local function diff_pane_lines(changes)
 end
 
 local function diff_pane_winbar(changes)
-  local parts = { "CHANGES" }
+  -- Data only, no title: the buffer name identifies the pane.
+  local parts = {}
   if changes.summary ~= "" then parts[#parts + 1] = changes.summary end
   if changes.applied > 0 then parts[#parts + 1] = string.format("✓ %d/%d applied", changes.applied, #changes.diffs) end
+  if #parts == 0 then return "" end
   return "%#NeolitMuted#" .. table.concat(parts, " · ") .. "%#Normal#"
 end
 
@@ -555,8 +557,7 @@ function M.render(frame, force)
     if state.right_view == "session" then
       shown = (state.bufs.session and vim.api.nvim_buf_is_valid(state.bufs.session)) and state.bufs.session or nil
       if shown then
-        vim.api.nvim_win_set_option(right, "winbar",
-          (frame.session and frame.session.visible) and "SESSION" or "SESSION (hidden — V)")
+        vim.api.nvim_win_set_option(right, "winbar", "")
       end
     end
     if not shown then
@@ -620,7 +621,6 @@ local function set_up_desc_window(win, buf)
   scope.winfixheight = true
   scope.winfixwidth = true
   scope.list = false
-  scope.winbar = "DESCRIPTION"
 end
 
 local function set_up_right_window(win, buf)
@@ -634,7 +634,6 @@ local function set_up_right_window(win, buf)
   scope.scrolloff = 1
   scope.winfixwidth = true
   scope.list = false
-  scope.winbar = "CHANGES"
 end
 
 local function editor_window_count()
@@ -1203,6 +1202,56 @@ function M.toggle_right_view()
   state.right_view_pinned = true
   if state.right_view == "session" then state.jump_tail = true end
   M.render(state.frame, true)
+end
+
+--- ?: a floating cheat-sheet of the panel keys, straight from the keymap
+--- descriptions so it can never drift. Any of ?, q, or <Esc> closes it.
+function M.show_keys()
+  if not state then return end
+  if state.wins.keys and vim.api.nvim_win_is_valid(state.wins.keys) then
+    pcall(vim.api.nvim_win_close, state.wins.keys, true)
+    return
+  end
+  local entries = {}
+  for lhs, desc in pairs(require("neolit.keys").descriptions) do
+    entries[#entries + 1] = { lhs = lhs, desc = desc:gsub("^neolit: ", "") }
+  end
+  table.sort(entries, function(left, right) return left.lhs < right.lhs end)
+  local lines = {}
+  local width = 0
+  for _, entry in ipairs(entries) do
+    local line = string.format("%-8s %s", entry.lhs, entry.desc)
+    lines[#lines + 1] = { segments = {
+      { text = string.format("%-8s", entry.lhs), color = theme.colors.primary, bold = true },
+      { text = entry.desc, color = theme.colors.text },
+    } }
+    width = math.max(width, vim.fn.strdisplaywidth(line))
+  end
+  local buf = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_option(buf, "buftype", "nofile")
+  vim.api.nvim_buf_set_name(buf, "neolit://keys")
+  local height = math.min(#lines, math.floor(vim.o.lines * 0.8))
+  local row = math.floor((vim.o.lines - height) / 2)
+  local col = math.floor((vim.o.columns - (width + 4)) / 2)
+  state.bufs.keys = buf
+  state.wins.keys = vim.api.nvim_open_win(buf, true, {
+    relative = "editor",
+    row = math.max(0, row),
+    col = math.max(0, col),
+    width = math.min(width + 2, vim.o.columns - 4),
+    height = height,
+    style = "minimal",
+    border = "rounded",
+    zindex = 60,
+  })
+  render.render_lines(vim.api, state.ns, buf, theme, lines)
+  for _, key in ipairs({ "?", "q", "<Esc>" }) do
+    vim.keymap.set("n", key, function()
+      pcall(vim.api.nvim_win_close, state.wins.keys, true)
+      state.wins.keys = nil
+      if vim.api.nvim_win_is_valid(state.wins.tree) then vim.api.nvim_set_current_win(state.wins.tree) end
+    end, { buffer = buf, nowait = true, silent = true })
+  end
 end
 
 function M.session_toggle() M.dispatch("session_toggle", {}, "Toggling session stream") end

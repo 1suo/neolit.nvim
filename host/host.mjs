@@ -238,7 +238,12 @@ function buildFrame(spinner = DEFAULT_SPINNER) {
     .map((id) => state.task?.diffs[id])
     .filter(Boolean);
   const changesLabel = detail.findIndex((line) => line.text === "CHANGES");
-  const panelDetail = selectedDiffs.length && changesLabel >= 0 ? detail.slice(0, changesLabel) : detail;
+  let panelDetail = selectedDiffs.length && changesLabel >= 0 ? detail.slice(0, changesLabel) : detail;
+  // The section title is presentation, not content: hosts that label the
+  // pane themselves (nvim buffer names) would render it twice.
+  if (panelDetail.length && panelDetail[0].text === "DESCRIPTION") {
+    panelDetail = panelDetail.slice(1);
+  }
   const changes = selectedDiffs.map((diff) => ({
     id: diff.id,
     path: diff.path,

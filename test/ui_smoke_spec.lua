@@ -103,7 +103,9 @@ return {
       local detail_winbar = (state_after_refine.wins.desc ~= -1 and vim.api.nvim_win_is_valid(state_after_refine.wins.desc))
         and (vim.api.nvim_win_get_option(state_after_refine.wins.desc, "winbar") or "")
         or ""
-      t:ok(detail_winbar:find("DESCRIPTION", 1, true) ~= nil, "description dock carries its title")
+      t:eq(detail_winbar, "", "no winbar title — the buffer name identifies the pane")
+      local first_desc = (vim.api.nvim_buf_get_lines(state_after_refine.bufs.desc, 0, 1, false) or { "x" })[1]
+      t:ok(first_desc ~= "DESCRIPTION", "the core's section label is stripped from content")
 
       handlers.d() -- develop: draft the file's exact patch
       wait_for(t, "patch is drafted", frame_matches(function(frame)
