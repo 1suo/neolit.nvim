@@ -48,33 +48,33 @@ root.
 
 ## Layout
 
-Native editor windows, no floating chrome:
+The panel takes over the whole editor — your windows close for the visit and
+`Q` reopens their buffers afterwards (the panel is tree | diff | description,
+so keeping a working buffer beside it only squeezed every column):
 
 ```text
-┌─ FILES ────────────────┬─ session.ts ───────────────┐
-│ ◆ repo/            78% │ DESCRIPTION                 │
-│ ├─ src/                │  make retries bounded       │
-│ │  └─ auth/session.ts +│ CHANGES                     │
-│ └─ package.json    #   │  +gamma                     │
-└────────────────────────┴─────────────────────────────┘
- (your editor windows stay untouched to the right)
+┌─ FILES ───┬─ CHANGES ────────┬─ DESCRIPTION ─────┐
+│ ◆ repo/78%│ --- session.ts   │ make retries      │
+│ └─ src/   │ +++ session.ts   │ bounded …         │
+│           │ @@ +gamma        │───────────────────│
+│           │                  │ SESSION (stream)  │
+└───────────┴──────────────────┴───────────────────┘
 ```
 
-- `:Neolit` opens a **left sidebar split** with the planned tree and a
-  **detail split** with DESCRIPTION — plus two panes that appear when their
-  content exists: a **CHANGES diff pane** under the detail split (the
-  selected path's drafted patches as a real `filetype=diff` buffer — native
+- `:Neolit` opens the tree sidebar, a full-height **diff column** (present
+  while drafted patches exist; without one the description column owns the
+  whole remaining width — diff where it exists, description everywhere else),
+  and the **description column**, with a bounded **SESSION stream pane**
+  splitting under the description while an agent session runs. All are real
+  windows, so standard `<C-w>` motion, resizing, and `:q` behave normally —
+  manual resizes stick until the diff column (dis)appears. `Q` closes the
+  panel and restores the buffers the takeover closed; closing the sidebar
+  does the same. The diff column is a real `filetype=diff` buffer — native
   diff syntax follows your colorscheme's own diff groups, with treesitter
   language injections once the diff parser is installed; on top, full-width
   red/green backgrounds (`DiffAdd`/`DiffDelete`) and the source language's
-  syntax inside added and deleted blocks — with the change summary and
-  applied count in its winbar) and a **SESSION stream pane** under the tree
-  while an agent session runs. All
-  are real windows, so standard `<C-w>` motion, resizing, and `:q` behave
-  normally. The detail split never claims more than half the space the
-  sidebar leaves, so user windows are never squeezed out. Closing the
-  sidebar ends the panel; the detail split closes independently and `Tab`
-  recreates it.
+  syntax inside added and deleted blocks, with the change summary and
+  applied count in the diff column's winbar.
 - Colors follow the active colorscheme by default: every group links to a
   semantic target (Special, Directory, diffAdded, WarningMsg, Comment,
   Visual for the selected row). Set `palette = "tui"` for the terminal
@@ -158,7 +158,7 @@ require("neolit").setup({
   no_model = false,     -- force NO MODEL mode (AUGMENT_TUI_NO_MODEL=1)
   persist_tasks = true, -- persist and resume the active task (AUGMENT_TUI_TASKS)
   sidebar_width = 42,   -- tree sidebar width in columns
-  detail_width = nil,   -- detail split width (at most half the non-sidebar space)
+  detail_width = nil,   -- diff-column width (nil = half the non-sidebar space; the description column keeps a 24-column minimum)
   palette = "system",   -- "system": follow the colorscheme via semantic links
                         -- "tui": the terminal TUI's exact hexes
   keymap_prefix = nil,  -- e.g. "<leader>n": bind every TUI operation key globally

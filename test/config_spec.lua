@@ -58,15 +58,14 @@ return {
     end,
   },
   {
-    name = "panel geometry never starves the editor windows",
+    name = "panel geometry: the panel takes the whole editor",
     run = function(t)
-      t:eq(config.geometry(120, { editor_windows = 1 }), { sidebar = 42, detail = 54 })
-      t:eq(config.geometry(120, { editor_windows = 2 }), { sidebar = 42, detail = 54 }, "still fits with two editor windows")
-      t:eq(config.geometry(200, { editor_windows = 3 }), { sidebar = 42, detail = 90 }, "capped at 90 with room to spare")
-      t:eq(config.geometry(80, { editor_windows = 1 }), { sidebar = 40, detail = 28 })
-      t:eq(config.geometry(80, { editor_windows = 2 }), { sidebar = 40, detail = 16 }, "tight editors share the leftovers honestly")
-      t:eq(config.geometry(60, { editor_windows = 3 }), { sidebar = 30, detail = 0 }, "detail is skipped when nothing fits")
-      t:eq(config.geometry(50, { sidebar_width = 60, editor_windows = 1 }), { sidebar = 25, detail = 13 })
+      t:eq(config.geometry(120, {}), { sidebar = 42, detail = 39 }, "tree, then the rest halves between diff and description")
+      t:eq(config.geometry(200, {}), { sidebar = 42, detail = 79 }, "wide editors still halve the remainder")
+      t:eq(config.geometry(80, {}), { sidebar = 40, detail = 16 }, "sidebar clamps to half the editor; description keeps its 24")
+      t:eq(config.geometry(60, {}), { sidebar = 30, detail = 6 }, "tight editors give the description its minimum")
+      t:eq(config.geometry(50, { sidebar_width = 60 }), { sidebar = 25, detail = 1 }, "sidebar still clamps to half")
+      t:eq(config.geometry(120, { detail_width = 60 }), { sidebar = 42, detail = 54 }, "explicit diff width capped by the description minimum")
     end,
   },
 }

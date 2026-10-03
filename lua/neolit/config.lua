@@ -24,8 +24,9 @@ M.defaults = {
   --- Persist the active task to disk and resume the newest one on open
   --- (AUGMENT_TUI_TASKS semantics; the TUI default is on).
   persist_tasks = true,
-  --- Panel geometry: sidebar width in columns, detail split width
-  --- (nil = 45% of the editor, clamped to 40–90).
+  --- Panel geometry: sidebar width in columns, diff-column width
+  --- (nil = half the non-sidebar space; the description column keeps
+  --- a 24-column minimum).
   sidebar_width = 42,
   detail_width = nil,
   --- Palette for the panel: "system" links every color to the active
@@ -54,18 +55,17 @@ function M.merge(user)
   return merged
 end
 
---- Panel window widths for an editor `columns` cells wide with
---- `editor_windows` user windows already open. The panel reserves a minimum
---- of 12 columns per existing window, so opening it never squeezes a user
---- window to a sliver; detail is 0 when nothing fits.
+--- Panel window widths for an editor `columns` cells wide. The panel takes
+--- the whole editor: a fixed-width tree sidebar, then the remaining width
+--- halves between the diff column and the description column (the
+--- description keeps a 24-column minimum).
 function M.geometry(columns, cfg)
   cfg = cfg or {}
-  local editor_windows = math.max(1, cfg.editor_windows or 1)
   local sidebar = cfg.sidebar_width or M.defaults.sidebar_width
   sidebar = math.max(20, math.min(sidebar, math.floor(columns / 2)))
-  local requested = cfg.detail_width or math.floor(columns * 0.45)
-  local available = columns - sidebar - 12 * editor_windows
-  local detail = math.max(0, math.min(requested, 90, available))
+  local rest = math.max(0, columns - sidebar)
+  local detail = cfg.detail_width or math.floor(rest / 2)
+  detail = math.max(0, math.min(detail, math.max(0, rest - 24)))
   return { sidebar = sidebar, detail = detail }
 end
 

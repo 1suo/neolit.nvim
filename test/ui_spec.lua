@@ -119,30 +119,6 @@ return {
     end,
   },
   {
-    name = "description dock height is content-driven up to half the editor",
-    run = function(t)
-      local original_lines = vim.o.lines
-      vim.o.lines = 40
-      t:eq(ui.description_height(1), 3, "floor of three rows")
-      t:eq(ui.description_height(4), 5, "content plus the winbar row")
-      t:eq(ui.description_height(100), 20, "capped at half the editor")
-      vim.o.lines = 8
-      t:eq(ui.description_height(100), 4, "tiny editors still cap at half")
-      vim.o.lines = original_lines
-    end,
-  },
-  {
-    name = "description rows account for wrapping at the dock width",
-    run = function(t)
-      t:eq(ui.description_rows({}, 40), 0, "no content, no rows")
-      t:eq(ui.description_rows({ { text = "short" } }, 40), 1)
-      t:eq(ui.description_rows({ { text = string.rep("x", 80) } }, 40), 2, "80 columns wrap to two rows at width 40")
-      t:eq(ui.description_rows({ { text = string.rep("x", 81) } }, 40), 3, "one column over wraps again")
-      t:eq(ui.description_rows({ { text = "" } }, 40), 1, "empty line still shows a row")
-      t:eq(ui.description_rows({ { text = "概念が混ざる" } }, 40), 1, "wide glyphs counted by display width")
-    end,
-  },
-  {
     name = "fold levels: zm folds the shallowest open level, zr opens the shallowest folded one",
     run = function(t)
       -- Default state: test/ folded; root and src/ open (src is planned).

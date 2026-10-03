@@ -487,28 +487,14 @@ function M.highlight_diff_source(buf, ns, changes)
   end
 end
 
---- Display rows a set of description lines occupies at a given window
---- width: wrapped lines count once per visual row they occupy.
-function M.description_rows(lines, width)
-  width = math.max(8, width)
-  local rows = 0
-  for _, line in ipairs(lines or {}) do
-    local text = type(line) == "table" and line.text or tostring(line or "")
-    rows = rows + math.max(1, math.ceil(vim.fn.strdisplaywidth(text) / width))
-  end
-  return rows
-end
+-- Window factories are defined in the window section below; render drives
+-- them, so they are forward-declared here.
+local create_right_window, create_desc_window, create_session_window
+local close_panel_window, panel_geometry
 
---- Description dock height: content-driven (in display rows), up to half
---- the editor.
-function M.description_height(display_rows)
-  return math.max(3, math.min(display_rows + 1, math.floor(vim.o.lines / 2)))
-end
-
---- Renders the description dock under the tree. No winbar title: the
---- buffer name (neolit://desc) already identifies the pane. Offered route
---- interpretations append below the detail content — the panel's analog of
---- the TUI's under-legend option block.
+--- Renders the description column (detail content plus any offered route
+--- interpretations). No winbar title: the buffer name (neolit://desc)
+--- already identifies the pane.
 local function render_description(frame)
   if not vim.api.nvim_buf_is_valid(state.bufs.desc) then return end
   local lines = vim.list_extend({}, frame.detail or {})
@@ -521,10 +507,6 @@ local function render_description(frame)
     }
   end
   render.render_lines(vim.api, state.ns, state.bufs.desc, theme, lines)
-  if state.wins.desc ~= -1 and vim.api.nvim_win_is_valid(state.wins.desc) then
-    local width = vim.api.nvim_win_get_width(state.wins.desc)
-    pcall(vim.api.nvim_win_set_height, state.wins.desc, M.description_height(M.description_rows(lines, width)))
-  end
 end
 
 local function diff_pane_lines(changes)
@@ -556,10 +538,10 @@ function M.render(frame, force)
   -- Stick-to-bottom, measured BEFORE new content lands: while the cursor
   -- rides the last line of the stream it stays there; scrolling up to read
   -- pauses the follow. A fresh batch from an empty stream follows too.
-  local follow_tail = state.wins.right ~= -1 and vim.api.nvim_win_is_valid(state.wins.right)
-    and state.right_view == "session"
-    and state.bufs.session and vim.api.nvim_win_get_buf(state.wins.right) == state.bufs.session
-    and vim.api.nvim_win_get_cursor(state.wins.right)[1] >= vim.api.nvim_buf_line_count(state.bufs.session) - 1
+  local follow_tail = state.wins.session ~= -1 and vim.api.nvim_win_is_valid(state.wins.session)
+    and state.bufs.session
+    and vim.api.nvim_win_get_buf(state.wins.session) == state.bufs.session
+    and vim.api.nvim_win_get_cursor(state.wins.session)[1] >= vim.api.nvim_buf_line_count(state.bufs.session) - 1
   state.frame = frame
   state.local_error = nil
   state.cancel_requested = false
@@ -605,9 +587,40 @@ function M.render(frame, force)
     render_description(frame)
   end
 
-  -- The right panel: one window, two views (changes / session), switched by
-  -- `t`. The session stream updates far more often than the tree, so each
-  -- view renders on its own signature.
+  -- The diff column: a real full-height window while drafted patches
+  -- exist; without one the description column owns all the remaining width
+  -- (diff where it exists, description everywhere else). The description
+  -- reclaims/releases the diff column's width only on this transition, so
+  -- manual resizes between frames stay.
+  local has_diffs = frame.changes and #(frame.changes.diffs or {}) > 0
+  if has_diffs then
+    create_right_window()
+  elseif state.wins.right ~= -1 then
+    close_panel_window("right")
+  end
+  create_desc_window()
+  if state.diff_column ~= has_diffs then
+    state.diff_column = has_diffs
+    if state.wins.desc ~= -1 and vim.api.nvim_win_is_valid(state.wins.desc)
+      and vim.api.nvim_win_is_valid(state.wins.tree) then
+      local rest = math.max(20, vim.o.columns - vim.api.nvim_win_get_width(state.wins.tree) - 2)
+      local width = has_diffs and math.max(24, rest - panel_geometry().detail) or rest
+      pcall(vim.api.nvim_win_set_width, state.wins.desc, width)
+    end
+  end
+
+  -- The session pane under the description: present while a session is
+  -- actually streaming (a configured driver alone is not enough) and not
+  -- hidden with V.
+  local session_wanted = frame.session and frame.session.visible and #(frame.session.lines or {}) > 0
+  if session_wanted then
+    create_session_window()
+  elseif state.wins.session ~= -1 then
+    close_panel_window("session")
+  end
+
+  -- The session stream updates far more often than the tree, so it renders
+  -- on its own signature.
   if frame.session then
     local signature = vim.json.encode(frame.session.lines)
     if signature ~= state.session_signature or force then
@@ -639,48 +652,27 @@ function M.render(frame, force)
     end
   end
 
-  -- Auto-behavior: the pane follows whichever side has content — session
-  -- lines mean an agent is actually streaming (a configured driver alone
-  -- does not), drafts mean changes exist — until the user pins a view.
-  local has_diffs = frame.changes and #(frame.changes.diffs or {}) > 0
-  local has_session_lines = frame.session and #(frame.session.lines or {}) > 0
-  if not has_diffs and has_session_lines and state.right_view ~= "session" and not state.right_view_pinned then
-    state.right_view = "session"
-    state.jump_tail = true
-  elseif has_diffs and state.right_view == "session" and not state.right_view_pinned then
-    state.right_view = "changes"
-  end
-
+  -- Auto-behavior and window wiring: the diff column shows the diff buffer
+  -- with its summary winbar; the session pane follows its own tail.
   local right = state.wins.right
   if right ~= -1 and vim.api.nvim_win_is_valid(right) then
-    local shown
-    if state.right_view == "session" then
-      shown = (state.bufs.session and vim.api.nvim_buf_is_valid(state.bufs.session)) and state.bufs.session or nil
-      if shown then
-        vim.api.nvim_win_set_option(right, "winbar", "")
-      end
-    end
-    if not shown then
-      shown = state.bufs.diff
-      if shown and vim.api.nvim_buf_is_valid(shown) and frame.changes then
-        vim.api.nvim_win_set_option(right, "winbar", diff_pane_winbar(frame.changes))
-      end
+    local shown = state.bufs.diff
+    if shown and vim.api.nvim_buf_is_valid(shown) and frame.changes then
+      vim.api.nvim_win_set_option(right, "winbar", diff_pane_winbar(frame.changes))
     end
     if shown then pcall(vim.api.nvim_win_set_buf, right, shown) end
+    vim.api.nvim_win_set_option(right, "wrap", false)
+    vim.api.nvim_win_set_option(right, "linebreak", false)
+  end
 
-    -- Window options are applied after the buffer switch: switching buffers
-    -- runs FileType machinery whose ordering must not come between the two.
-    if state.right_view == "session" and shown == state.bufs.session then
-      vim.api.nvim_win_set_option(right, "wrap", true)
-      vim.api.nvim_win_set_option(right, "linebreak", true)
-      if follow_tail or state.jump_tail then
-        local count = vim.api.nvim_buf_line_count(state.bufs.session)
-        pcall(vim.api.nvim_win_set_cursor, right, { math.max(1, count), 0 })
-        state.jump_tail = nil
-      end
-    else
-      vim.api.nvim_win_set_option(right, "wrap", false)
-      vim.api.nvim_win_set_option(right, "linebreak", false)
+  local session = state.wins.session
+  if session ~= -1 and vim.api.nvim_win_is_valid(session) and state.bufs.session
+    and vim.api.nvim_buf_is_valid(state.bufs.session) then
+    pcall(vim.api.nvim_win_set_buf, session, state.bufs.session)
+    if follow_tail or state.jump_tail then
+      local count = vim.api.nvim_buf_line_count(state.bufs.session)
+      pcall(vim.api.nvim_win_set_cursor, session, { math.max(1, count), 0 })
+      state.jump_tail = nil
     end
   end
 
@@ -690,7 +682,7 @@ function M.render(frame, force)
 end
 
 --------------------------------------------------------------------------
--- Windows: two honest splits
+-- Windows: the full-takeover panel columns
 --------------------------------------------------------------------------
 
 local function set_up_tree_window(win, buf)
@@ -718,8 +710,21 @@ local function set_up_desc_window(win, buf)
   scope.foldcolumn = "0"
   scope.wrap = true
   scope.scrolloff = 0
-  scope.winfixheight = true
   scope.winfixwidth = true
+  scope.list = false
+end
+
+local function set_up_session_window(win, buf)
+  vim.api.nvim_win_set_buf(win, buf)
+  local scope = vim.wo[win]
+  scope.number = false
+  scope.relativenumber = false
+  scope.signcolumn = "no"
+  scope.foldcolumn = "0"
+  scope.wrap = true
+  scope.linebreak = true
+  scope.scrolloff = 0
+  scope.winfixheight = true
   scope.list = false
 end
 
@@ -736,33 +741,63 @@ local function set_up_right_window(win, buf)
   scope.list = false
 end
 
-local function editor_window_count()
-  local wins = state and state.wins or {}
-  local count = 0
+--- The panel takes the whole editor: the user's windows are captured and
+--- closed once the first panel window exists (closing the last window first
+--- would exit the editor), and Q reopens their buffers afterwards.
+local function capture_saved_windows()
+  local current = vim.api.nvim_get_current_win()
+  local saved = {}
   for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
-    if vim.api.nvim_win_get_config(win).relative == ""
-      and win ~= wins.tree and win ~= wins.right then
-      count = count + 1
+    if vim.api.nvim_win_get_config(win).relative == "" then
+      saved[#saved + 1] = {
+        win = win,
+        buf = vim.api.nvim_win_get_buf(win),
+        cursor = vim.api.nvim_win_get_cursor(win),
+        focused = win == current,
+      }
     end
   end
-  return count
+  return saved
 end
 
-local function right_pane_width()
+local function close_saved_windows(saved)
+  for _, entry in ipairs(saved) do
+    pcall(vim.api.nvim_win_close, entry.win, true)
+  end
+end
+
+--- Reopens the buffers the takeover closed, as an even split of the space
+--- the panel leaves behind, restoring each cursor and the original focus.
+local function restore_saved_windows(saved)
+  local focused
+  for index, entry in ipairs(saved) do
+    if vim.api.nvim_buf_is_valid(entry.buf) then
+      pcall(vim.cmd, index == 1 and "vsplit" or "vertical split")
+      local win = vim.api.nvim_get_current_win()
+      pcall(vim.api.nvim_win_set_buf, win, entry.buf)
+      pcall(vim.api.nvim_win_set_cursor, win, entry.cursor or { 1, 0 })
+      if entry.focused then focused = win end
+    end
+  end
+  if focused then pcall(vim.api.nvim_set_current_win, focused) end
+end
+
+panel_geometry = function()
   return config.geometry(vim.o.columns, {
     sidebar_width = state.cfg.sidebar_width,
     detail_width = state.cfg.detail_width,
-    editor_windows = editor_window_count(),
-  }).detail
+  })
 end
 
-local function create_right_window()
+--- The diff column: a full-height window beside the tree, present while
+--- drafted patches exist.
+create_right_window = function()
   if not state or vim.api.nvim_win_is_valid(state.wins.right) then return end
   local tree = state.wins.tree
   if not vim.api.nvim_win_is_valid(tree) then return end
-  local width = right_pane_width()
+  local width = panel_geometry().detail
   if width < 12 then
-    vim.notify("Not enough room for the right pane; close a window and press Tab.", vim.log.levels.INFO)
+    vim.notify("Not enough room for the diff column.", vim.log.levels.INFO)
     return
   end
   vim.api.nvim_win_call(tree, function()
@@ -775,29 +810,45 @@ local function create_right_window()
   vim.api.nvim_set_current_win(state.wins.tree)
 end
 
---- Native splits steal columns from one neighbor, not evenly, so after the
---- panel windows exist the user windows are resized to a fair share of what
---- remains — the 12-column-per-window budget from geometry() is what makes
---- that share livable.
-local function balance_editor_windows()
-  local windows = {}
-  for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
-    if vim.api.nvim_win_get_config(win).relative == ""
-      and win ~= state.wins.tree and win ~= state.wins.right then
-      windows[#windows + 1] = win
-    end
+--- The description column: the rightmost full-height window, always
+--- present. It widens to everything beside the tree when the diff column
+--- is hidden, and the session stream splits under it while one runs.
+create_desc_window = function()
+  if not state or vim.api.nvim_win_is_valid(state.wins.desc) then return end
+  local anchor = state.wins.right
+  if anchor == -1 or not vim.api.nvim_win_is_valid(anchor) then anchor = state.wins.tree end
+  if not vim.api.nvim_win_is_valid(anchor) then return end
+  vim.api.nvim_win_call(anchor, function()
+    vim.cmd("rightbelow vertical split")
+    state.wins.desc = vim.api.nvim_get_current_win()
+  end)
+  set_up_desc_window(state.wins.desc, state.bufs.desc)
+  vim.api.nvim_set_current_win(state.wins.tree)
+end
+
+--- The bounded session pane under the description column.
+create_session_window = function()
+  if not state or vim.api.nvim_win_is_valid(state.wins.session) then return end
+  local desc = state.wins.desc
+  if not (desc ~= -1) or not vim.api.nvim_win_is_valid(desc) then return end
+  local desc_height = vim.api.nvim_win_get_height(desc)
+  local height = math.min(12, math.max(3, math.floor(desc_height * 0.35)))
+  vim.api.nvim_win_call(desc, function()
+    vim.cmd("rightbelow " .. height .. "split")
+    state.wins.session = vim.api.nvim_get_current_win()
+  end)
+  set_up_session_window(state.wins.session, state.bufs.session)
+  -- A fresh pane starts at the tail; afterwards the cursor decides.
+  state.jump_tail = true
+  vim.api.nvim_set_current_win(state.wins.tree)
+end
+
+close_panel_window = function(which)
+  local win = state and state.wins[which]
+  if win and win ~= -1 and vim.api.nvim_win_is_valid(win) then
+    pcall(vim.api.nvim_win_close, win, true)
   end
-  if #windows == 0 then return end
-  -- Distribute the space the user windows actually occupy (separators
-  -- already excluded by each window's own width).
-  local remaining = 0
-  for _, win in ipairs(windows) do remaining = remaining + vim.api.nvim_win_get_width(win) end
-  local fair = math.floor(remaining / #windows)
-  local extra = remaining - fair * #windows
-  for index = #windows, 1, -1 do
-    local width = fair + (index <= extra and 1 or 0)
-    if width >= 1 then pcall(vim.api.nvim_win_set_width, windows[index], width) end
-  end
+  if state then state.wins[which] = -1 end
 end
 
 local function create_windows()
@@ -809,36 +860,27 @@ local function create_windows()
   }
   state.diff_ns = vim.api.nvim_create_namespace("neolit-diff-hl")
 
-  local geometry = config.geometry(vim.o.columns, {
-    sidebar_width = state.cfg.sidebar_width,
-    detail_width = state.cfg.detail_width,
-    editor_windows = editor_window_count(),
-  })
+  local geometry = panel_geometry()
+  -- Full takeover: remember the user's windows, then close them once the
+  -- tree exists — the panel columns fill the editor, and Q restores them.
+  state.saved_windows = capture_saved_windows()
   vim.cmd("topleft vertical " .. geometry.sidebar .. "split")
-  state.wins = { tree = vim.api.nvim_get_current_win(), desc = -1, right = -1 }
+  state.wins = { tree = vim.api.nvim_get_current_win(), desc = -1, right = -1, session = -1 }
   set_up_tree_window(state.wins.tree, state.bufs.tree)
+  close_saved_windows(state.saved_windows)
 
-  -- Right pane first (from the full-height tree), then the description dock
-  -- under the tree — a split from the tree only spans the tree's extent.
+  -- Tree | diff column | description column; the session pane splits under
+  -- the description while a session runs.
   create_right_window()
-
-  if vim.o.lines >= 20 then
-    vim.api.nvim_win_call(state.wins.tree, function()
-      vim.cmd("rightbelow " .. M.description_height(1) .. "split")
-      state.wins.desc = vim.api.nvim_get_current_win()
-    end)
-    set_up_desc_window(state.wins.desc, state.bufs.desc)
-    vim.api.nvim_set_current_win(state.wins.tree)
-  end
+  create_desc_window()
 
   render.render_lines(vim.api, state.ns, state.bufs.tree, theme,
     { { text = "Starting the neolit host…", color = theme.colors.muted } })
 
   for _, buf in pairs(state.bufs) do keys.attach(M, buf) end
 
-  balance_editor_windows()
-
-  -- Closing the sidebar ends the panel; closing the right pane just hides it.
+  -- Closing the sidebar ends the panel; closing the diff column just hides
+  -- it (Tab recreates it).
   state.autocmds = {}
   state.autocmds[#state.autocmds + 1] = vim.api.nvim_create_autocmd("WinClosed", {
     pattern = tostring(state.wins.tree),
@@ -899,10 +941,8 @@ function M.open(opts)
     plan_only = false,
     model_catalog = nil,
     session_signature = nil,
-    session_visible = nil,
     diff_signature = nil,
-    right_view = "changes",
-    right_view_pinned = false,
+    diff_column = nil,
     ns = vim.api.nvim_create_namespace("neolit"),
   }
 
@@ -983,6 +1023,14 @@ function M.close()
   current.closing = true
   if current.timer then current.timer:stop() end
   for _, id in ipairs(current.autocmds or {}) do pcall(vim.api.nvim_del_autocmd, id) end
+  -- Restore the takeover's captured buffers BEFORE the last panel window
+  -- closes: closing the final window of the tab would exit the editor.
+  if current.saved_windows and #current.saved_windows > 0 then
+    local ok = pcall(restore_saved_windows, current.saved_windows)
+    if not ok then
+      pcall(vim.cmd, "vsplit")
+    end
+  end
   for _, win in pairs(current.wins) do
     if win ~= -1 then pcall(vim.api.nvim_win_close, win, true) end
   end
@@ -1017,11 +1065,11 @@ end
 
 function M.pane()
   if not state then return "tree" end
-  -- The real focus decides, so <C-w>/mouse entry into the detail window
+  -- The real focus decides, so <C-w>/mouse entry into a detail-side window
   -- routes j/k there too; the remembered pane only covers keypresses from
   -- outside the panel entirely.
   local current = vim.api.nvim_get_current_win()
-  if current == state.wins.right then return "detail" end
+  if current == state.wins.right or current == state.wins.desc or current == state.wins.session then return "detail" end
   if current == state.wins.tree then return "tree" end
   return state.pane
 end
@@ -1029,8 +1077,14 @@ end
 function M.set_pane(pane)
   if not state then return end
   state.pane = pane or (state.pane == "tree" and "detail" or "tree")
-  if state.pane == "detail" then create_detail_window() end
-  local target = state.wins[state.pane]
+  if state.pane == "detail" then
+    -- Recreate whichever detail-side windows the user closed with :q.
+    if state.frame and state.frame.changes and #(state.frame.changes.diffs or {}) > 0 then
+      create_right_window()
+    end
+    create_desc_window()
+  end
+  local target = state.pane == "detail" and (state.wins.desc ~= -1 and state.wins.desc or state.wins.right) or state.wins.tree
   if target and target ~= -1 and vim.api.nvim_win_is_valid(target) then
     pcall(vim.api.nvim_set_current_win, target)
   end
@@ -1054,8 +1108,18 @@ end
 
 function M.scroll_detail(delta)
   if not state then return end
-  local win = state.wins.right
-  if win == -1 or not vim.api.nvim_win_is_valid(win) then return end
+  -- Scroll whichever detail-side window holds focus; the description column
+  -- is the fallback when the tree (or nothing) is focused.
+  local candidates = { vim.api.nvim_get_current_win(), state.wins.right, state.wins.desc, state.wins.session }
+  local win
+  for _, candidate in ipairs(candidates) do
+    if candidate and candidate ~= -1 and vim.api.nvim_win_is_valid(candidate)
+      and candidate ~= state.wins.tree then
+      win = candidate
+      break
+    end
+  end
+  if not win then return end
   local buf = vim.api.nvim_win_get_buf(win)
   local count = vim.api.nvim_buf_line_count(buf)
   local cursor = vim.api.nvim_win_get_cursor(win)
@@ -1149,10 +1213,12 @@ function M.toggle_plan_only()
 end
 
 --- First non-panel window in the tab, creating one beside the sidebar if
---- the panel is alone.
+--- the panel is alone (the takeover closed the user's windows; `o` brings
+--- one back on demand).
 local function panel_target_window()
   for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
-    if win ~= state.wins.tree and win ~= state.wins.right and vim.api.nvim_win_get_config(win).relative == "" then
+    if win ~= state.wins.tree and win ~= state.wins.right and win ~= state.wins.desc
+      and win ~= state.wins.session and vim.api.nvim_win_get_config(win).relative == "" then
       return win
     end
   end
@@ -1287,16 +1353,6 @@ function M.develop() M.dispatch("develop", {}, OP_LABELS.develop) end
 function M.apply_selected() M.dispatch("apply", {}, OP_LABELS.apply) end
 function M.commit_applied() M.dispatch("commit", {}, OP_LABELS.commit) end
 function M.restrict(mode) M.dispatch(mode, {}, OP_LABELS[mode]) end
---- t: switch the right pane between CHANGES and SESSION. Pinned until the
---- other side (dis)appears or t is pressed again.
-function M.toggle_right_view()
-  if not state or not state.frame then return end
-  state.right_view = state.right_view == "changes" and "session" or "changes"
-  state.right_view_pinned = true
-  if state.right_view == "session" then state.jump_tail = true end
-  M.render(state.frame, true)
-end
-
 --- ?: a floating cheat-sheet of the panel keys, straight from the keymap
 --- descriptions so it can never drift. Any of ?, q, or <Esc> closes it.
 function M.show_keys()
