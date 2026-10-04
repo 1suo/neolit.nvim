@@ -225,7 +225,7 @@ test("selecting a repository-only file previews its content in the diff column",
   await client.shutdown();
 });
 
-test("the merged view expands the drafted patch over the file body", async () => {
+test("the diff column shows the file body with the draft marked; M flips to raw", async () => {
   const directory = fixtureRepo();
   const client = new HostClient(directory, { stub: true });
   await client.request("initialize", { directory });
@@ -235,18 +235,21 @@ test("the merged view expands the drafted patch over the file body", async () =>
   await client.waitFor((frame) => frame.changes && frame.changes.diffs.length > 0, { label: "drafted" });
   await client.request("select", { rowId: "entry:session.ts" });
 
-  // Raw diff first: hunks and headers, no surrounding body.
-  const raw = await client.request("frame");
-  assert.ok(raw.result.changes.diffs.some((change) => change.text.includes("@@ -1,2 +1,3 @@")), "raw patch shows hunk headers");
-  assert.ok(!raw.result.mergedView, "merged view starts off");
+  // Default: the body with the change in place — no hunk headers, no raw text.
+  const body = await client.request("frame");
+  assert.equal(body.result.rawDiffView, false, "body view is the default");
+  const marked = body.result.changes.diffs.find((entry) => entry.path === "session.ts");
+  assert.equal(marked.merged, true, "the change is marked as merged into the body");
+  assert.ok(marked.text.includes("+gamma"), "the addition is marked in place");
+  assert.ok(marked.text.split("\n").includes("beta"), "unchanged body lines stay whole");
+  assert.ok(!marked.text.includes("@@"), "no hunk headers in the body");
 
-  const merged = await client.request("toggle_merged");
-  assert.ok(merged.result.mergedView, "toggle_merged switches the view on");
-  const change = merged.result.changes.diffs.find((entry) => entry.path === "session.ts");
-  assert.equal(change.merged, true, "the change is marked merged");
-  assert.ok(change.text.includes("+gamma"), "the addition is marked in place");
-  assert.ok(change.text.split("\n").includes("beta"), "unchanged body lines stay whole");
-  assert.ok(!change.text.includes("@@"), "no hunk headers in the merged body");
+  // M: the classic unified patch.
+  const raw = await client.request("toggle_raw");
+  assert.equal(raw.result.rawDiffView, true, "M flips to the raw patch");
+  const patch = raw.result.changes.diffs.find((entry) => entry.path === "session.ts");
+  assert.ok(patch.text.includes("@@ -1,2 +1,3 @@"), "raw patch shows hunk headers");
+  assert.equal(patch.merged, undefined, "no merged marker in raw view");
   await client.shutdown();
 });
 

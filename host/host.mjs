@@ -239,7 +239,7 @@ function buildFrame(spinner = DEFAULT_SPINNER) {
     live,
     filePreview: state.filePreview,
     fileContent: state.fileContent,
-    mergedView: state.mergedView,
+    rawDiffView: state.rawDiffView,
   });
 
   // Presentation split: with drafted diffs on the selected path, the pane
@@ -258,11 +258,12 @@ function buildFrame(spinner = DEFAULT_SPINNER) {
   if (panelDetail.length && panelDetail[0].text === "DESCRIPTION") {
     panelDetail = panelDetail.slice(1);
   }
-  // In merged view the diff buffer shows the file's own body with the
-  // drafted change expanded in place; a patch that does not read against
-  // the file keeps its raw text (the detail pane carries the note).
+  // The diff buffer shows the file's own body by default — the drafted
+  // change expanded in place (rawDiffView asks for the classic unified
+  // patch, and a patch that does not read against the file keeps its raw
+  // text; the detail pane carries the note).
   const mergedFor = (diff) => {
-    if (!state.mergedView || state.fileContent === undefined || state.fileContent === "") return undefined;
+    if (state.rawDiffView || state.fileContent === undefined || state.fileContent === "") return undefined;
     const merged = mergedLines(state.fileContent, diff.patch);
     return merged ? merged.map((line) => line.kind === "context" ? line.text : `${line.kind === "add" ? "+" : "-"}${line.text}`).join("\n") : undefined;
   };
@@ -273,7 +274,7 @@ function buildFrame(spinner = DEFAULT_SPINNER) {
       path: diff.path,
       kind: diff.kind,
       applied: state.appliedDiffIds.includes(diff.id),
-      merged: Boolean(mergedText),
+      ...(mergedText ? { merged: true } : {}),
       text: mergedText ?? diff.patch,
     };
   });
@@ -317,7 +318,7 @@ function buildFrame(spinner = DEFAULT_SPINNER) {
     agentSession: state.agentSession ?? null,
     relatedOnly: state.relatedOnly === true,
     filePreview: state.filePreview ?? null,
-    mergedView: state.mergedView === true,
+    rawDiffView: state.rawDiffView === true,
     socketPath: state.socketPath ?? null,
     models: { ...runtimeModels },
     tree: { rows, selectedRowId: state.selectedRowId ?? null, count: rows.length },
@@ -441,8 +442,8 @@ const methods = {
     return buildFrame();
   },
 
-  async toggle_merged() {
-    controller.toggleMergedView();
+  async toggle_raw() {
+    controller.toggleRawDiffView();
     return buildFrame();
   },
 
