@@ -330,10 +330,10 @@ test("external agent mutations over the socket render live as pushed frames", as
   const initialized = await client.request("initialize", { directory });
   assert.ok(initialized.result.frame, "initialize returns a frame");
   await client.request("start", { objective: "bounded retries" });
-  // The winbar chip advertises the socket address the panel is serving.
-  const served = await client.waitFor((frame) => frame.header.left.some((chip) => chip.text.includes("⎇")), { label: "socket chip" });
-  const chip = served.header.left.find((chip2) => chip2.text.includes("⎇"));
-  assert.ok(chip.text.includes(socket), `chip names the served socket: ${chip.text}`);
+  // The frame payload advertises the socket address the panel is serving.
+  const served = await client.waitFor((frame) => typeof frame.socketPath === "string" && frame.socketPath.length > 0, { label: "served socket path" });
+  const servedPath = served.socketPath;
+  assert.ok(servedPath.includes(socket), `frame names the served socket: ${servedPath}`);
 
   // An external agent attaches to the same task store through the socket.
   const { SocketAugmentPeer } = await import(path.join(dist, "index.js"));

@@ -79,8 +79,9 @@ so keeping a working buffer beside it only squeezed every column):
   semantic target (Special, Directory, diffAdded, WarningMsg, Comment,
   Visual for the selected row). Set `palette = "tui"` for the terminal
   TUI's exact colors instead.
-- Status, revision, and model chips live in the sidebar's **winbar**; while
-  an operation runs, the winbar shows the spinner and operation instead.
+- Status, directory/branch, session(task), and model chips live in the
+  sidebar's **winbar**; while an operation runs, the winbar shows the spinner
+  and operation instead.
   Messages and errors go through **`vim.notify`**.
 - Both panes carry identical buffer-local keymaps (the analog of the TUI's
   global input handler), so every key behaves the same in either pane.
@@ -169,8 +170,9 @@ require("neolit").setup({
 
 The **agent socket**: while the panel is open it serves its own address,
 `$XDG_RUNTIME_DIR/neolit/augment-nvim.sock` (distinct from the TUI's
-`augment.sock`, so both can run at once), advertised in the tree winbar.
-External agents attach with `augmentd --mcp --connect <path>` and their
+`augment.sock`, so both can run at once), reported in every pushed frame's
+`socketPath` field. External agents attach with
+`augmentd --mcp --connect <path>` and their
 mutations render live. Override with `AUGMENT_TUI_SOCKET`; disable with
 `no_socket = true` or `AUGMENT_TUI_NO_SOCKET=1`.
 

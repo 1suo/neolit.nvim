@@ -64,7 +64,7 @@ if (!dist || !fs.existsSync(path.join(dist, "index.js"))) {
 
 const fromDist = (relative) => import(pathToFileURL(path.join(dist, relative)).href);
 const { AugmentTuiController, CliAgentRuntime, candidatesForEntry } = await fromDist("index.js");
-const { detailLines, entryName, entryState, entryTouchesNode, theme } = await fromDist("tui/detail.js");
+const { detailLines, entryName, entryState, entryTouchesNode, shortSessionId, shortTaskId, theme } = await fromDist("tui/detail.js");
 const { effectiveConfig } = await fromDist("tui/config.js");
 const { backendById } = await fromDist("tui/agent-backends.js");
 const { ToolSessionDriver, toolSessionSupported } = await fromDist("tui/tool-session.js");
@@ -189,10 +189,10 @@ function buildFrame(spinner = DEFAULT_SPINNER) {
     left: [
       { text: "NEOLIT", color: theme.primary, bold: true },
       { text: `[${status}]`, color: state.error ? theme.error : status === "IDLE" ? theme.muted : theme.success },
-      { text: `[${state.task?.mode === "explanation" ? "EXPLANATION" : "PLANNED CHANGE"}]`, color: theme.secondary },
+      { text: `${path.basename(state.directory)}${state.branch ? `/${state.branch}` : ""}`, color: theme.secondary },
+      ...(state.task ? [{ text: state.agentSession ? `${shortSessionId(state.agentSession)} (${shortTaskId(state.task.id)})` : shortTaskId(state.task.id), color: theme.muted }] : []),
       ...(lockCount > 0 ? [{ text: `[${lockMode === "lock" ? "LOCK" : "ALLOW"} ${lockCount}]`, color: lockMode === "lock" ? theme.error : theme.accent }] : []),
-      ...(state.task ? [{ text: `r${state.task.revision} · ${state.task.basisRevision.slice(0, 12)}`, color: theme.muted }] : []),
-      ...(state.socketPath ? [{ text: `⎇ ${state.socketPath}`, color: theme.muted }] : []),
+      ...(state.relatedOnly ? [{ text: "[RELATED]", color: theme.secondary }] : []),
     ],
     right: [{ text: modelInfo.label, color: modelInfo.available ? theme.success : theme.warning }],
   };
@@ -300,6 +300,9 @@ function buildFrame(spinner = DEFAULT_SPINNER) {
     hasTask: Boolean(state.task),
     taskId: state.task?.id ?? null,
     revision: state.task?.revision ?? null,
+    directory: state.directory,
+    branch: state.branch ?? null,
+    agentSession: state.agentSession ?? null,
     socketPath: state.socketPath ?? null,
     models: { ...runtimeModels },
     tree: { rows, selectedRowId: state.selectedRowId ?? null, count: rows.length },
