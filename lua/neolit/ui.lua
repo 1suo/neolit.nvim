@@ -236,8 +236,11 @@ local function winbar_text()
         group = group or theme.group_for(chip.color, chip.bold),
       }
     end
-    if state.plan_only then
-      segments[#segments + 1] = { text = "[RELATED]", group = "NeolitMuted" }
+    -- The related filter belongs to the tree this winbar titles: a quiet
+    -- suffix while it hides unrelated paths, from either toggle (the host's
+    -- plan-only filter or the controller's related-only view).
+    if state.plan_only or (frame and frame.relatedOnly) then
+      segments[#segments + 1] = { text = "· related", group = "NeolitMuted" }
     end
   end
   local parts = {}

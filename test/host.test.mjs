@@ -34,7 +34,8 @@ function fixtureRepo() {
   git(["config", "user.email", "t@example.com"]);
   git(["config", "user.name", "test"]);
   fs.writeFileSync(path.join(directory, "session.ts"), "alpha\nbeta\n");
-  git(["add", "session.ts"]);
+  fs.writeFileSync(path.join(directory, "notes.md"), "# notes\nplain repository file\n");
+  git(["add", "session.ts", "notes.md"]);
   git(["commit", "-q", "-m", "init"]);
   return directory;
 }
@@ -192,8 +193,7 @@ test("full flow: start auto-adopts, develop refines then drafts, apply and commi
   await client.shutdown();
 });
 
-test("restrictions mark paths and surface the lock chip", async () => {
-  const directory = fixtureRepo();
+test("restrictions mark paths and surface the lock chip", async () => {  const directory = fixtureRepo();
   const client = new HostClient(directory, { stub: true });
   await client.request("initialize", { directory });
   await client.request("start", { objective: "lock a path" });
@@ -201,12 +201,27 @@ test("restrictions mark paths and surface the lock chip", async () => {
 
   const locked = await client.request("select", { rowId: "entry:session.ts" }).then(() => client.request("lock"));
   assert.ok(locked.result.panel.message.includes("Locked: session.ts"), locked.result.panel.message);
-  assert.ok(locked.result.header.left.some((chip) => chip.text.includes("[LOCK 1]")), "header shows the lock chip");
   const locked_row = locked.result.tree.rows.find((row) => row.id === "entry:session.ts");
   assert.equal(locked_row.marked, true, "locked rows carry the marked flag");
+  assert.ok(!locked.result.header.left.some((chip) => chip.text.includes("[LOCK")), "header carries no lock chip");
 
   const unlocked = await client.request("lock");
   assert.ok(unlocked.result.panel.message.includes("No marked paths"), unlocked.result.panel.message);
+  await client.shutdown();
+});
+
+test("selecting a repository-only file previews its content", async () => {
+  const directory = fixtureRepo();
+  const client = new HostClient(directory, { stub: true });
+  await client.request("initialize", { directory });
+  await client.request("start", { objective: "add gamma line" });
+  await client.waitFor((frame) => frame.panel.message?.includes("Single viable approach adopted"), { label: "adoption" });
+
+  // notes.md is outside the plan: the detail pane previews the file itself.
+  const selected = await client.request("select", { rowId: "entry:notes.md" });
+  assert.ok(selected.result.filePreview, "frame carries the file preview");
+  assert.ok(selected.result.filePreview.lines.some((line) => line.includes("plain repository file")), "preview holds the file's content");
+  assert.ok(selected.result.detail.some((line) => line.text === "PREVIEW"), "detail pane leads with the PREVIEW section");
   await client.shutdown();
 });
 

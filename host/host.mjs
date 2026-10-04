@@ -182,8 +182,6 @@ function buildFrame(spinner = DEFAULT_SPINNER) {
     : state.task?.mode === "explanation"
       ? Object.keys(state.task.explanations).length ? "EXPLAINED" : "EXPLAINING"
       : rootStatus ? rootStatus.toUpperCase() : "IDLE";
-  const lockCount = state.task?.lockedPaths.length ?? state.pendingMarks.length;
-  const lockMode = state.task?.restrictionMode ?? state.pendingMode;
 
   const header = {
     left: [
@@ -191,8 +189,6 @@ function buildFrame(spinner = DEFAULT_SPINNER) {
       { text: `[${status}]`, color: state.error ? theme.error : status === "IDLE" ? theme.muted : theme.success },
       { text: `${path.basename(state.directory)}${state.branch ? `/${state.branch}` : ""}`, color: theme.secondary },
       ...(state.task ? [{ text: state.agentSession ? `${shortSessionId(state.agentSession)} (${shortTaskId(state.task.id)})` : shortTaskId(state.task.id), color: theme.muted }] : []),
-      ...(lockCount > 0 ? [{ text: `[${lockMode === "lock" ? "LOCK" : "ALLOW"} ${lockCount}]`, color: lockMode === "lock" ? theme.error : theme.accent }] : []),
-      ...(state.relatedOnly ? [{ text: "[RELATED]", color: theme.secondary }] : []),
     ],
     right: [{ text: modelInfo.label, color: modelInfo.available ? theme.success : theme.warning }],
   };
@@ -241,6 +237,7 @@ function buildFrame(spinner = DEFAULT_SPINNER) {
     pendingMode: state.pendingMode,
     appliedDiffIds: state.appliedDiffIds,
     live,
+    filePreview: state.filePreview,
   });
 
   // Presentation split: with drafted diffs on the selected path, the pane
@@ -303,6 +300,8 @@ function buildFrame(spinner = DEFAULT_SPINNER) {
     directory: state.directory,
     branch: state.branch ?? null,
     agentSession: state.agentSession ?? null,
+    relatedOnly: state.relatedOnly === true,
+    filePreview: state.filePreview ?? null,
     socketPath: state.socketPath ?? null,
     models: { ...runtimeModels },
     tree: { rows, selectedRowId: state.selectedRowId ?? null, count: rows.length },

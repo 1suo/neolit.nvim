@@ -81,7 +81,8 @@ so keeping a working buffer beside it only squeezed every column):
   TUI's exact colors instead.
 - Status, directory/branch, session(task), and model chips live in the
   sidebar's **winbar**; while an operation runs, the winbar shows the spinner
-  and operation instead.
+  and operation instead, and a quiet `· related` suffix marks an active
+  related filter (either the host's plan-only toggle or the kernel's).
   Messages and errors go through **`vim.notify`**.
 - Both panes carry identical buffer-local keymaps (the analog of the TUI's
   global input handler), so every key behaves the same in either pane.
@@ -185,7 +186,8 @@ Authentication belongs to each backend's CLI.
 
 While the panel is open it serves the same agent socket the TUI does
 (`AUGMENT_TUI_SOCKET` overrides the path, `AUGMENT_TUI_NO_SOCKET=1`
-disables it), and the sidebar winbar shows the address. Point an MCP agent
+disables it); every pushed frame reports the address in its `socketPath`
+field. Point an MCP agent
 host at it:
 
 ```sh
