@@ -692,8 +692,8 @@ function M.render(frame, force)
       end
     end
     if shown then pcall(vim.api.nvim_win_set_buf, right, shown) end
-    vim.api.nvim_win_set_option(right, "wrap", false)
-    vim.api.nvim_win_set_option(right, "linebreak", false)
+    -- wrap and friends stay inherited from the user's settings; the panel
+    -- only owns the pane's existence, width, and winbar.
   end
 
   local session = state.wins.session
@@ -739,10 +739,7 @@ local function set_up_desc_window(win, buf)
   scope.relativenumber = false
   scope.signcolumn = "no"
   scope.foldcolumn = "0"
-  scope.wrap = true
-  scope.scrolloff = 0
   scope.winfixwidth = true
-  scope.list = false
 end
 
 local function set_up_session_window(win, buf)
@@ -752,11 +749,7 @@ local function set_up_session_window(win, buf)
   scope.relativenumber = false
   scope.signcolumn = "no"
   scope.foldcolumn = "0"
-  scope.wrap = true
-  scope.linebreak = true
-  scope.scrolloff = 0
   scope.winfixheight = true
-  scope.list = false
 end
 
 local function set_up_right_window(win, buf)
@@ -766,10 +759,7 @@ local function set_up_right_window(win, buf)
   scope.relativenumber = false
   scope.signcolumn = "no"
   scope.foldcolumn = "0"
-  scope.wrap = false
-  scope.scrolloff = 1
   scope.winfixwidth = true
-  scope.list = false
 end
 
 --- The panel takes the whole editor: the user's windows are captured and
@@ -838,6 +828,9 @@ create_right_window = function()
     state.wins.right = vim.api.nvim_get_current_win()
   end)
   set_up_right_window(state.wins.right, state.bufs.diff)
+  -- The split's width arithmetic drifts when the tree is not at its fixed
+  -- width yet; the panel's geometry is a fact, so enforce it.
+  pcall(vim.api.nvim_win_set_width, state.wins.right, width)
   vim.api.nvim_set_current_win(state.wins.tree)
 end
 
@@ -853,10 +846,8 @@ create_desc_window = function()
     state.wins.desc = vim.api.nvim_get_current_win()
   end)
   set_up_desc_window(state.wins.desc, state.bufs.desc)
-  if vim.api.nvim_win_is_valid(state.wins.tree) then
-    local rest = math.max(24, vim.o.columns - vim.api.nvim_win_get_width(state.wins.tree) - 2)
-    pcall(vim.api.nvim_win_set_width, state.wins.desc, math.max(24, rest - panel_geometry().detail))
-  end
+  -- Same as the diff column: the panel geometry decides, not split luck.
+  pcall(vim.api.nvim_win_set_width, state.wins.desc, math.max(12, panel_geometry().detail))
   vim.api.nvim_set_current_win(state.wins.tree)
 end
 
@@ -901,6 +892,9 @@ local function create_windows()
   vim.cmd("topleft vertical " .. geometry.sidebar .. "split")
   state.wins = { tree = vim.api.nvim_get_current_win(), desc = -1, right = -1, session = -1 }
   set_up_tree_window(state.wins.tree, state.bufs.tree)
+  -- Closing the user's windows leaves the tree alone at full width; the
+  -- sidebar width is a fact of the layout, not of split arithmetic.
+  pcall(vim.api.nvim_win_set_width, state.wins.tree, geometry.sidebar)
   close_saved_windows(state.saved_windows)
 
   -- Tree | diff column | description column; the session pane splits under
@@ -924,6 +918,23 @@ local function create_windows()
     pattern = tostring(state.wins.right),
     callback = function()
       if state then state.wins.right = -1 end
+    end,
+  })
+  -- Terminal resizes re-derive the column widths from the panel geometry —
+  -- never from whatever the resize left behind.
+  state.autocmds[#state.autocmds + 1] = vim.api.nvim_create_autocmd("VimResized", {
+    callback = function()
+      if not state then return end
+      local geo = panel_geometry()
+      if vim.api.nvim_win_is_valid(state.wins.tree) then
+        pcall(vim.api.nvim_win_set_width, state.wins.tree, geo.sidebar)
+      end
+      if state.wins.right ~= -1 and vim.api.nvim_win_is_valid(state.wins.right) then
+        pcall(vim.api.nvim_win_set_width, state.wins.right, geo.detail)
+      end
+      if state.wins.desc ~= -1 and vim.api.nvim_win_is_valid(state.wins.desc) then
+        pcall(vim.api.nvim_win_set_width, state.wins.desc, geo.detail)
+      end
     end,
   })
 end

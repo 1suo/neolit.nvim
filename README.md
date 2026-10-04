@@ -92,8 +92,11 @@ so keeping a working buffer beside it only squeezed every column):
 - Both panes carry identical buffer-local keymaps (the analog of the TUI's
   global input handler), so every key behaves the same in either pane.
 - The tree selection is the cursor line (`cursorline` highlight,
-  window-local `scrolloff` keeps it centered); the detail pane wraps and
-  scrolls with `j`/`k` while focused.
+  window-local `scrolloff` keeps it centered); the detail pane scrolls with
+  `j`/`k` while focused. Display options (`wrap`, `linebreak`, `list`, …)
+  are inherited from your settings — the panel only owns the tree widget's
+  own options (no numbers, no wrap: its rows are glyphs) and the pane
+  geometry, which is enforced explicitly on open and resize.
 - Indicators (`◆ ~ + - ✓ ! # ● ? ○ ◐` …) and the two-section detail pane come from
   the TUI's view model; their meaning is canonical in
   [neolit's TUI README](https://github.com/1suo/neolit/blob/main/src/tui/README.md).

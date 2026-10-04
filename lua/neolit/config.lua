@@ -24,9 +24,9 @@ M.defaults = {
   --- Persist the active task to disk and resume the newest one on open
   --- (AUGMENT_TUI_TASKS semantics; the TUI default is on).
   persist_tasks = true,
-  --- Panel geometry: sidebar width in columns, diff-column width
-  --- (nil = half the non-sidebar space; the description column keeps
-  --- a 24-column minimum).
+  --- Panel geometry: sidebar width in columns (default 42, capped at half
+  --- the screen), diff-column width (nil = half the non-sidebar space;
+  --- the description column keeps a 24-column minimum).
   sidebar_width = 42,
   detail_width = nil,
   --- Palette for the panel: "system" links every color to the active
