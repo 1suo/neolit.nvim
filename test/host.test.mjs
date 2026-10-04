@@ -210,18 +210,43 @@ test("restrictions mark paths and surface the lock chip", async () => {  const d
   await client.shutdown();
 });
 
-test("selecting a repository-only file previews its content", async () => {
+test("selecting a repository-only file previews its content in the diff column", async () => {
   const directory = fixtureRepo();
   const client = new HostClient(directory, { stub: true });
   await client.request("initialize", { directory });
   await client.request("start", { objective: "add gamma line" });
   await client.waitFor((frame) => frame.panel.message?.includes("Single viable approach adopted"), { label: "adoption" });
 
-  // notes.md is outside the plan: the detail pane previews the file itself.
+  // notes.md is outside the plan: the diff column becomes the content column.
   const selected = await client.request("select", { rowId: "entry:notes.md" });
   assert.ok(selected.result.filePreview, "frame carries the file preview");
   assert.ok(selected.result.filePreview.lines.some((line) => line.includes("plain repository file")), "preview holds the file's content");
-  assert.ok(selected.result.detail.some((line) => line.text === "PREVIEW"), "detail pane leads with the PREVIEW section");
+  assert.ok(!selected.result.detail.some((line) => (line.text ?? "").includes("plain repository file")), "description pane stays plan-only");
+  await client.shutdown();
+});
+
+test("the merged view expands the drafted patch over the file body", async () => {
+  const directory = fixtureRepo();
+  const client = new HostClient(directory, { stub: true });
+  await client.request("initialize", { directory });
+  await client.request("start", { objective: "add gamma line" });
+  await client.waitFor((frame) => frame.panel.message?.includes("Single viable approach adopted"), { label: "adoption" });
+  await client.request("develop");
+  await client.waitFor((frame) => frame.changes && frame.changes.diffs.length > 0, { label: "drafted" });
+  await client.request("select", { rowId: "entry:session.ts" });
+
+  // Raw diff first: hunks and headers, no surrounding body.
+  const raw = await client.request("frame");
+  assert.ok(raw.result.changes.diffs.some((change) => change.text.includes("@@ -1,2 +1,3 @@")), "raw patch shows hunk headers");
+  assert.ok(!raw.result.mergedView, "merged view starts off");
+
+  const merged = await client.request("toggle_merged");
+  assert.ok(merged.result.mergedView, "toggle_merged switches the view on");
+  const change = merged.result.changes.diffs.find((entry) => entry.path === "session.ts");
+  assert.equal(change.merged, true, "the change is marked merged");
+  assert.ok(change.text.includes("+gamma"), "the addition is marked in place");
+  assert.ok(change.text.split("\n").includes("beta"), "unchanged body lines stay whole");
+  assert.ok(!change.text.includes("@@"), "no hunk headers in the merged body");
   await client.shutdown();
 });
 

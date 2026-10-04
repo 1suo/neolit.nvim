@@ -530,6 +530,7 @@ local function diff_pane_winbar(changes)
   -- Data only, no title: the buffer name identifies the pane.
   local parts = {}
   if changes.summary ~= "" then parts[#parts + 1] = changes.summary end
+  if changes.merged then parts[#parts + 1] = "merged into file body" end
   if changes.applied > 0 then parts[#parts + 1] = string.format("✓ %d/%d applied", changes.applied, #changes.diffs) end
   if #parts == 0 then return "" end
   return "%#NeolitMuted#" .. table.concat(parts, " · ") .. "%#Normal#"
@@ -593,14 +594,34 @@ function M.render(frame, force)
     render_description(frame)
   end
 
-  -- The diff column is PERMANENT: it shows the drafted patches or a quiet
-  -- placeholder when none exist. Windows never appear or disappear with
-  -- content — only the session pane (under the description) does, while an
-  -- agent is actually streaming.
+  -- The diff column is PERMANENT: it shows the drafted patches (the file's
+  -- body when the merged view expands them, or a repository-only file's
+  -- preview) or a quiet placeholder when none exist. Windows never appear or
+  -- disappear with content — only the session pane (under the description)
+  -- does, while an agent is actually streaming.
   local has_diffs = frame.changes and #(frame.changes.diffs or {}) > 0
+  local preview = frame.filePreview
   create_right_window()
   create_desc_window()
-  if not has_diffs and state.diff_signature ~= "none" then
+  if not has_diffs and preview and preview.lines and #preview.lines > 0 then
+    -- A repository-only file: the diff column is the content column, with
+    -- the file's own syntax where nvim can detect it from the path.
+    local signature = "preview:" .. vim.json.encode({ path = preview.path, lines = preview.lines })
+    if signature ~= state.diff_signature or force then
+      state.diff_signature = signature
+      if state.bufs.diff and vim.api.nvim_buf_is_valid(state.bufs.diff) then
+        local ok, ft = pcall(vim.filetype.match, { filename = preview.path })
+        vim.api.nvim_buf_set_option(state.bufs.diff, "modifiable", true)
+        vim.api.nvim_buf_set_option(state.bufs.diff, "filetype", ok and ft or "")
+        vim.api.nvim_buf_set_lines(state.bufs.diff, 0, -1, false, preview.lines)
+        vim.api.nvim_buf_set_option(state.bufs.diff, "modifiable", false)
+        vim.api.nvim_buf_clear_namespace(state.bufs.diff, state.diff_ns, 0, -1)
+        if state.wins.right ~= -1 and vim.api.nvim_win_is_valid(state.wins.right) then
+          pcall(vim.api.nvim_win_set_cursor, state.wins.right, { 1, 0 })
+        end
+      end
+    end
+  elseif not has_diffs and state.diff_signature ~= "none" then
     state.diff_signature = "none"
     if state.bufs.diff and vim.api.nvim_buf_is_valid(state.bufs.diff) then
       vim.api.nvim_buf_set_option(state.bufs.diff, "modifiable", true)
@@ -662,7 +683,13 @@ function M.render(frame, force)
   if right ~= -1 and vim.api.nvim_win_is_valid(right) then
     local shown = state.bufs.diff
     if shown and vim.api.nvim_buf_is_valid(shown) and frame.changes then
-      vim.api.nvim_win_set_option(right, "winbar", diff_pane_winbar(frame.changes))
+      local preview = frame.filePreview
+      if not has_diffs and preview and preview.lines and #preview.lines > 0 then
+        local note = preview.truncated and string.format(" · … %d more lines", preview.totalLines - #preview.lines) or ""
+        vim.api.nvim_win_set_option(right, "winbar", "%#NeolitMuted#" .. preview.path .. " · preview" .. note .. "%#Normal#")
+      else
+        vim.api.nvim_win_set_option(right, "winbar", diff_pane_winbar(frame.changes))
+      end
     end
     if shown then pcall(vim.api.nvim_win_set_buf, right, shown) end
     vim.api.nvim_win_set_option(right, "wrap", false)

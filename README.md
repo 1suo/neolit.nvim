@@ -84,6 +84,10 @@ so keeping a working buffer beside it only squeezed every column):
   and operation instead, and a quiet `· related` suffix marks an active
   related filter (either the host's plan-only toggle or the kernel's).
   Messages and errors go through **`vim.notify`**.
+- The diff column is the content column: drafted patches with native diff
+  syntax, a repository-only file's own body (with its filetype's syntax)
+  when selected, or — with `M` — the drafted patch expanded over the whole
+  file body, marked `merged into file body` in the winbar.
 - Both panes carry identical buffer-local keymaps (the analog of the TUI's
   global input handler), so every key behaves the same in either pane.
 - The tree selection is the cursor line (`cursorline` highlight,

@@ -64,7 +64,7 @@ if (!dist || !fs.existsSync(path.join(dist, "index.js"))) {
 
 const fromDist = (relative) => import(pathToFileURL(path.join(dist, relative)).href);
 const { AugmentTuiController, CliAgentRuntime, candidatesForEntry } = await fromDist("index.js");
-const { detailLines, entryName, entryState, entryTouchesNode, shortSessionId, shortTaskId, theme } = await fromDist("tui/detail.js");
+const { detailLines, entryName, entryState, entryTouchesNode, mergedLines, shortSessionId, shortTaskId, theme } = await fromDist("tui/detail.js");
 const { effectiveConfig } = await fromDist("tui/config.js");
 const { backendById } = await fromDist("tui/agent-backends.js");
 const { ToolSessionDriver, toolSessionSupported } = await fromDist("tui/tool-session.js");
@@ -238,30 +238,45 @@ function buildFrame(spinner = DEFAULT_SPINNER) {
     appliedDiffIds: state.appliedDiffIds,
     live,
     filePreview: state.filePreview,
+    fileContent: state.fileContent,
+    mergedView: state.mergedView,
   });
 
   // Presentation split: with drafted diffs on the selected path, the pane
   // shows the DESCRIPTION section only and the raw patches render in the
   // host's real diff buffer (native diff syntax, treesitter injections).
-  // The composed CHANGES block is trimmed at its stable label line; the
-  // summary moves to the diff pane's winbar.
+  // The composed content section (CHANGES, or PREVIEW/MERGED for plain and
+  // expanded bodies) is trimmed at its stable label line; the summary moves
+  // to the diff pane's winbar.
   const selectedDiffs = (selectedRow?.entry.diffIds ?? [])
     .map((id) => state.task?.diffs[id])
     .filter(Boolean);
-  const changesLabel = detail.findIndex((line) => line.text === "CHANGES");
-  let panelDetail = selectedDiffs.length && changesLabel >= 0 ? detail.slice(0, changesLabel) : detail;
+  const changesLabel = detail.findIndex((line) => line.text === "CHANGES" || line.text === "PREVIEW" || line.text === "MERGED");
+  let panelDetail = (selectedDiffs.length || state.filePreview) && changesLabel >= 0 ? detail.slice(0, changesLabel) : detail;
   // The section title is presentation, not content: hosts that label the
   // pane themselves (nvim buffer names) would render it twice.
   if (panelDetail.length && panelDetail[0].text === "DESCRIPTION") {
     panelDetail = panelDetail.slice(1);
   }
-  const changes = selectedDiffs.map((diff) => ({
-    id: diff.id,
-    path: diff.path,
-    kind: diff.kind,
-    applied: state.appliedDiffIds.includes(diff.id),
-    text: diff.patch,
-  }));
+  // In merged view the diff buffer shows the file's own body with the
+  // drafted change expanded in place; a patch that does not read against
+  // the file keeps its raw text (the detail pane carries the note).
+  const mergedFor = (diff) => {
+    if (!state.mergedView || state.fileContent === undefined || state.fileContent === "") return undefined;
+    const merged = mergedLines(state.fileContent, diff.patch);
+    return merged ? merged.map((line) => line.kind === "context" ? line.text : `${line.kind === "add" ? "+" : "-"}${line.text}`).join("\n") : undefined;
+  };
+  const changes = selectedDiffs.map((diff) => {
+    const mergedText = diff === selectedDiffs.at(-1) ? mergedFor(diff) : undefined;
+    return {
+      id: diff.id,
+      path: diff.path,
+      kind: diff.kind,
+      applied: state.appliedDiffIds.includes(diff.id),
+      merged: Boolean(mergedText),
+      text: mergedText ?? diff.patch,
+    };
+  });
   const kindCounts = selectedDiffs.reduce((counts, diff) => {
     counts[diff.kind] = (counts[diff.kind] ?? 0) + 1;
     return counts;
@@ -302,6 +317,7 @@ function buildFrame(spinner = DEFAULT_SPINNER) {
     agentSession: state.agentSession ?? null,
     relatedOnly: state.relatedOnly === true,
     filePreview: state.filePreview ?? null,
+    mergedView: state.mergedView === true,
     socketPath: state.socketPath ?? null,
     models: { ...runtimeModels },
     tree: { rows, selectedRowId: state.selectedRowId ?? null, count: rows.length },
@@ -422,6 +438,11 @@ const methods = {
 
   async move(params) {
     controller.move(Number(params.delta) || 0);
+    return buildFrame();
+  },
+
+  async toggle_merged() {
+    controller.toggleMergedView();
     return buildFrame();
   },
 
