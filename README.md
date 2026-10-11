@@ -38,9 +38,11 @@ single-sourced in the neolit package.
 
 Run `:Neolit` inside the repository you want to plan a change for
 (`:Neolit add retry bounds` starts a task immediately, like
-`augment "add retry bounds"`). `Q` closes the panel and shuts the host down;
-with task persistence on (default), the active task is resumed on next open,
-exactly like restarting the TUI.
+`augment "add retry bounds"`). The panel opens in **its own tabpage** — the
+native full-screen unit — so your windows, layout, and focus in the current
+tab are untouched; `q` closes the tab and puts you back exactly where you
+were. With task persistence on (default), the active task is resumed on
+next open, exactly like restarting the TUI.
 
 The `neolit` package is located by trying, in order: the `neolit_dir` option,
 `$NEOLIT_DIR`, a `neolit` directory next to this plugin, then the npm global
@@ -48,9 +50,9 @@ root.
 
 ## Layout
 
-The panel takes over the whole editor — your windows close for the visit and
-`Q` reopens their buffers afterwards (the panel is tree | diff | description,
-so keeping a working buffer beside it only squeezed every column):
+The panel opens in **its own tabpage** — the native full-screen unit, not a
+takeover: your windows, layout, and focus in the current tab are untouched,
+and `q` closes the tab and puts you back exactly where you were:
 
 ```text
 ┌─ FILES ───┬─ CHANGES ────────┬─ DESCRIPTION ─────┐
@@ -61,20 +63,27 @@ so keeping a working buffer beside it only squeezed every column):
 └───────────┴──────────────────┴───────────────────┘
 ```
 
-- `:Neolit` opens the tree sidebar, a full-height **diff column** (present
-  while drafted patches exist; without one the description column owns the
-  whole remaining width — diff where it exists, description everywhere else),
-  and the **description column**, with a bounded **SESSION stream pane**
-  splitting under the description while an agent session runs. All are real
-  windows, so standard `<C-w>` motion, resizing, and `:q` behave normally —
-  manual resizes stick until the diff column (dis)appears. `Q` closes the
-  panel and restores the buffers the takeover closed; closing the sidebar
-  does the same. The diff column is a real `filetype=diff` buffer — native
-  diff syntax follows your colorscheme's own diff groups, with treesitter
-  language injections once the diff parser is installed; on top, full-width
-  red/green backgrounds (`DiffAdd`/`DiffDelete`) and the source language's
-  syntax inside added and deleted blocks, with the change summary and
-  applied count in the diff column's winbar.
+- `:Neolit` opens the tab: the tree sidebar, a full-height **diff column**
+  (present while drafted patches exist; without one the description column
+  owns the whole remaining width — diff where it exists, description
+  everywhere else), and the **description column**, with a bounded
+  **SESSION stream pane** splitting under the description while an agent
+  session runs. All are real windows, so standard `<C-w>` motion, resizing,
+  `:q`, and `gt` behave normally — manual resizes stick until the diff
+  column (dis)appears. `q` closes the panel tab; closing the sidebar does
+  the same.
+- The diff column is a **real file buffer** whenever it composes with one:
+  named after the selected file (when the name is free), carrying the
+  file's own filetype, and showing the drafted change marked in place
+  gitsigns-style — added lines get full-width `DiffAdd`, removed lines
+  render as `DiffDelete` virtual lines where they were. Because the buffer
+  is a plain code buffer with a real filename and filetype, native syntax,
+  treesitter, **and LSP diagnostics work on the drafted result**. `R` swaps
+  in the raw unified patch as a native `filetype=diff` scratch buffer
+  (colorscheme diff groups, plus `DiffAdd`/`DiffDelete` backgrounds and the
+  source language's syntax inside changed blocks); a repository-only file's
+  body renders with its own filetype's syntax too. The change summary and
+  applied count live in the diff column's winbar.
 - Colors follow the active colorscheme by default: every group links to a
   semantic target (Special, Directory, diffAdded, WarningMsg, Comment,
   Visual for the selected row). Set `palette = "tui"` for the terminal
@@ -84,19 +93,15 @@ so keeping a working buffer beside it only squeezed every column):
   and operation instead, and a quiet `· related` suffix marks an active
   related filter (either the host's plan-only toggle or the kernel's).
   Messages and errors go through **`vim.notify`**.
-- The diff column is the content column: a selected file's body always —
-  plain without a draft, the drafted change marked in place (`+`/`-`) with
-  one, native diff syntax throughout — and `R` swaps in the raw unified
-  patch. A repository-only file's body renders with its own filetype's
-  syntax.
 - Both panes carry identical buffer-local keymaps (the analog of the TUI's
   global input handler), so every key behaves the same in either pane.
 - The tree selection is the cursor line (`cursorline` highlight,
   window-local `scrolloff` keeps it centered); the detail pane scrolls with
-  `j`/`k` while focused. Display options (`wrap`, `linebreak`, `list`, …)
-  are inherited from your settings — the panel only owns the tree widget's
-  own options (no numbers, no wrap: its rows are glyphs) and the pane
-  geometry, which is enforced explicitly on open and resize.
+  `j`/`k` while focused. Display options (`wrap`, `linebreak`, `list`,
+  `number`, …) are inherited from your settings for every content pane —
+  the panel only owns the tree widget's own options (no numbers, no wrap:
+  its rows are glyphs) and the pane geometry, which is enforced explicitly
+  on open and resize.
 - Indicators (`◆ ~ + - ✓ ! # ● ? ○ ◐` …) and the two-section detail pane come from
   the TUI's view model; their meaning is canonical in
   [neolit's TUI README](https://github.com/1suo/neolit/blob/main/src/tui/README.md).
@@ -104,7 +109,8 @@ so keeping a working buffer beside it only squeezed every column):
 
 ## Keys
 
-Same operations as the TUI, with `Tab`/`Esc` added:
+Same operations and key letters as the TUI (lowercase), with nvim-native
+additions (`gf`, folds, `?`):
 
 ```text
 j k    move selection (tree pane) or scroll detail (detail pane)
@@ -114,47 +120,58 @@ Enter  prompt for the selected path — the message is routed by one bounded
        offers interpretations rendered in the description dock
 1-9    choose the numbered approach, or the numbered interpretation of an
        offered route while one is open
-D      develop the selected path and everything under it — a chosen approach
+d      develop the selected path and everything under it — a chosen approach
        expands into files, then every undrafted file below is drafted in ONE
        batched model call (validated all-or-nothing; per-file fallback marks
        failures × and summarizes "Drafted n/m — press D to retry")
-A      apply drafted patch to the working tree (git-apply preflighted as one
+a      apply drafted patch to the working tree (git-apply preflighted as one
        unit; nothing is staged)
-C      commit the session-applied paths only (pathspec commit; unrelated
+c      commit the session-applied paths only (pathspec commit; unrelated
        dirty or staged files stay untouched)
-L / W  mark/unmark the selected path in the restriction plain (lock / allow
+l / w  mark/unmark the selected path in the restriction plain (lock / allow
        polarity; the other key inverts the plain)
-M      switch the live runtime's default/draft/challenge model — role picker
-       shows current models, then provider → model steps over the backend's
-       catalog (cached 5 minutes; typed fallback when no catalog)
-N      new change task
-O      reopen selected node with a reason
-S      mark a real path changed outside the plan
-o      open the selected file as a real buffer (falls back to its patch
-       buffer for drafted new files; directories fold)
+m      switch the agent, then role, then model — provider → model steps over
+       the chosen backend's catalog (cached 5 minutes; typed fallback when
+       no catalog). Choosing another agent switches the live runtime and
+       persists the choice, exactly like `augment setup`
+t      switch task: a picker over this repository's stored tasks (newest
+       first, the active one marked); choosing one resumes it with its
+       applied set and session-stream tail
+x      send a raw message straight into the task's agent session — no
+       routing, no plan mutation; the reply streams into the SESSION pane
+n      new change task
+o      reopen selected node with a reason
+s      mark a real path changed outside the plan
+gf / o open the selected file as a real buffer (falls back to its patch
+       buffer for drafted new files; directories fold). File visits open
+       inside the panel tab — :q or gt moves on like any window
 p      edit the selected path's drafted patch as a diff buffer — :w saves it
        back into the plan through patch/set
 za/zc/zo  toggle/close/open the directory under the cursor (o and F also
        toggle); untouched folders start folded — folders touched by the plan
        and their ancestors stay open; drafted paths carry +n −n line counts
 zm/zr/zM/zR  fold by level: one level closed/opened, or everything
-H      toggle the related-only filter: planned paths and restriction-plain
+h      toggle the related-only filter: planned paths and restriction-plain
        marks with their connecting ancestors (a [RELATED] chip marks it)
-V      show/hide the agent SESSION stream pane under the tree — the live
-       steps, tool calls, and retries of the running agent session
+v      show/hide the agent SESSION stream pane under the tree — the live
+       steps, tool calls, and replies of the running agent session
+r      toggle the diff column between the composed file body and the raw
+       unified patch
 Tab    switch pane (also <Right>; <Left> returns to the tree)
 Esc    cancel the running operation
-Q      quit (cancels, closes the panel, shuts the host down)
+q      quit (cancels, closes the panel tab, shuts the host down)
+?      floating cheat-sheet of the panel keys, straight from the keymap
+       descriptions so it can never drift
 ```
 
-Every operation key is also reachable globally as `<prefix><key>` with the
+Every operation key is also reachable globally as `< prefix ><key>` with the
 key identical to the TUI (`<leader>nd`, `<leader>n1`–`n9`, `<leader>n<CR>`,
 … — or any prefix you prefer): `require("neolit").key(key)` opens the panel
 when closed and then acts, so the maps work from any buffer. Motion and
 folding keys stay pane-local. For plugin managers without lazy key specs,
 set `keymap_prefix = "<leader>n"` and the plugin binds them itself.
 
-Prompts (`N`, `Enter`, `O`, `S`) go through `vim.ui.input`, so
+Prompts (`n`, `Enter`, `o`, `s`, `x`) go through `vim.ui.input`, so
 `dressing.nvim`/`snacks.nvim` style pickers work if installed.
 
 ## Configuration
@@ -223,7 +240,15 @@ optimistic-concurrency check, like any other stale writer.
 - Requests are one JSON-RPC object per line (no batches), like `augmentd`.
   Every state-changing request answers with a fresh **frame**: header chips,
   tree rows with colored segments, detail lines, panel state, and the numbered
-  approach choices open on the selected row.
+  approach choices open on the selected row. Merged diff bodies ship as
+  **structured lines** (`text` + `context`/`add`/`remove`) so the diff
+  column composes them into a native file buffer; `text` always stays the
+  raw unified patch.
+- `backends` lists the agent catalog with the live one marked; `configure`
+  with a `backend` rebuilds the runtime, its tool session, and the persisted
+  config live (the `m` picker's agent step); `tasks` and `task_switch` back
+  the `t` picker; `chat` is the `x` key's raw message into the agent
+  session.
 - Host callbacks are routed by owning session: a previous panel's
   shutting-down host still pushes frames, and they can never paint — or
   error-close — a newer panel.
@@ -239,11 +264,12 @@ optimistic-concurrency check, like any other stale writer.
   (defined with `default = true`, so a user highlight wins); override any
   `Neolit*` group to restyle.
 
-Known divergences from the TUI: `M` lists the backend's model catalog when
-available and falls back to typing a model id; the input line is
-`vim.ui.input` instead of the embedded panel input; status lives in the
-winbar and feedback in `vim.notify` instead of the TUI's header and message
-panel.
+Known divergences from the TUI: the model picker uses `vim.ui.select`
+steps instead of the embedded picker (same agent → role → provider → model
+order and live backend switching); the input line is `vim.ui.input` instead
+of the embedded panel input; status lives in the winbar and feedback in
+`vim.notify` instead of the TUI's header and message panel; file visits
+(`gf`/`o` and `p`) are nvim-only windows inside the panel tab.
 
 ## Validation
 
