@@ -29,12 +29,15 @@ local OP_LABELS = {
   reopen = "Reworking selected plan",
   stale = "Marking repository change",
   configure = "Updating models",
+  task_switch = "Switching task",
+  chat = "Chatting with the agent session",
 }
 
 local INPUT_TITLES = {
   objective = "What should change?",
   reopen = "Reason for reopening selected node",
   stale = "Changed repository path",
+  chat = "Raw message to the agent session",
 }
 
 local state = nil
@@ -377,6 +380,144 @@ local function prepare_buffer(name)
   return buf
 end
 
+--------------------------------------------------------------------------
+-- The diff column as a native file buffer
+--------------------------------------------------------------------------
+
+-- Defined near M.render; the renderers below call it at runtime.
+local diff_pane_lines
+
+local function set_buf_lines(buf, lines)
+  vim.api.nvim_buf_set_option(buf, "modifiable", true)
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  vim.api.nvim_buf_set_option(buf, "modifiable", false)
+end
+
+local function apply_filetype(buf, filetype)
+  -- Setting the filetype (only when it changes) fires FileType, so syntax,
+  -- treesitter, and LSP attach exactly like they do for a real file buffer.
+  if vim.api.nvim_buf_get_option(buf, "filetype") ~= filetype then
+    vim.api.nvim_buf_set_option(buf, "filetype", filetype or "")
+  end
+end
+
+local function name_buffer(buf, name)
+  -- E95 when another buffer already owns the name (the real file is open):
+  -- keep the scratch name; the filetype still routes syntax and LSP.
+  if not pcall(vim.api.nvim_buf_set_name, buf, name) then
+    pcall(vim.api.nvim_buf_set_name, buf, "neolit://diff")
+  end
+end
+
+--- Presents the composed content of `absolute` as a plain file buffer:
+--- named after the path when the name is free, the path's own filetype,
+--- plain lines. Syntax, treesitter, and LSP work on the composed body.
+local function present_file_body(buf, absolute, lines)
+  local ok, ft = pcall(vim.filetype.match, { filename = absolute })
+  apply_filetype(buf, ok and ft or nil)
+  name_buffer(buf, absolute)
+  set_buf_lines(buf, lines)
+  vim.api.nvim_buf_clear_namespace(buf, state.diff_ns, 0, -1)
+end
+
+--- Pure mapping from the frame's structured merged lines to a file-shaped
+--- view: the result text as plain buffer lines, added rows marked, removed
+--- lines grouped under the kept line before them (0 = above the first).
+function M.compose_merged_lines(merged)
+  local view = { lines = {}, added_rows = {}, removed_after = {} }
+  local anchor = 0
+  for _, entry in ipairs(merged) do
+    if entry.kind == "remove" then
+      local slot = anchor
+      view.removed_after[slot] = view.removed_after[slot] or {}
+      view.removed_after[slot][#view.removed_after[slot] + 1] = entry.text
+    else
+      view.lines[#view.lines + 1] = entry.text
+      anchor = #view.lines
+      if entry.kind == "add" then view.added_rows[#view.lines] = true end
+    end
+  end
+  return view
+end
+
+--- Renders one merged diff as the file's post-patch body: DiffAdd on added
+--- lines, deletions as DiffDelete virtual lines in place — gitsigns-style,
+--- no +/- prefixes polluting the code.
+local function render_merged_body(diff)
+  local absolute = state.directory .. "/" .. diff.path
+  local view = M.compose_merged_lines(diff.lines)
+  present_file_body(state.bufs.diff, absolute, view.lines)
+  for row in pairs(view.added_rows) do
+    pcall(vim.api.nvim_buf_set_extmark, state.bufs.diff, state.diff_ns, row - 1, 0, {
+      end_col = #view.lines[row],
+      hl_group = "DiffAdd",
+      hl_eol = true,
+      priority = 90,
+    })
+  end
+  for slot, texts in pairs(view.removed_after) do
+    local virt = vim.tbl_map(function(text) return { "- " .. text, "DiffDelete" } end, texts)
+    local row = math.min(math.max(slot, 0), math.max(#view.lines - 1, 0))
+    pcall(vim.api.nvim_buf_set_extmark, state.bufs.diff, state.diff_ns, row, 0, {
+      virt_lines = virt,
+      virt_lines_above = slot == 0 and #view.lines > 0,
+      priority = 90,
+    })
+  end
+end
+
+--- Raw unified patches stay native `filetype=diff` scratch buffers.
+local function render_raw_patch(diffs)
+  name_buffer(state.bufs.diff, "neolit://diff")
+  apply_filetype(state.bufs.diff, "diff")
+  set_buf_lines(state.bufs.diff, diff_pane_lines({ diffs = diffs }))
+  vim.api.nvim_buf_clear_namespace(state.bufs.diff, state.diff_ns, 0, -1)
+  M.highlight_diff_source(state.bufs.diff, state.diff_ns, { diffs = diffs })
+end
+
+local function render_preview(preview)
+  present_file_body(state.bufs.diff, preview.path, preview.lines)
+end
+
+local function render_diff_placeholder()
+  name_buffer(state.bufs.diff, "neolit://diff")
+  apply_filetype(state.bufs.diff, "")
+  set_buf_lines(state.bufs.diff, { "no drafted changes yet — [D] develop drafts files; [A] applies" })
+  vim.api.nvim_buf_clear_namespace(state.bufs.diff, state.diff_ns, 0, -1)
+end
+
+--- Decides what the diff column shows and re-renders only on change:
+--- the merged file body when the frame carries one (the default), the raw
+--- patch in raw view or when composition is impossible, the plain file for
+--- repository-only selections, and a quiet placeholder otherwise.
+local function render_diff_column(frame, force)
+  local diffs = frame.changes and frame.changes.diffs or {}
+  local primary = diffs[#diffs]
+  local signature, render
+  if #diffs > 0 and not frame.rawDiffView and primary and primary.merged and primary.lines then
+    signature = "merged:" .. vim.json.encode({ path = primary.path, lines = primary.lines })
+    render = function() render_merged_body(primary) end
+  elseif #diffs > 0 then
+    signature = "raw:" .. vim.json.encode(vim.tbl_map(function(d) return d.text end, diffs))
+    render = function() render_raw_patch(diffs) end
+  elseif frame.filePreview and frame.filePreview.lines and #frame.filePreview.lines > 0 then
+    signature = "preview:" .. vim.json.encode({ path = frame.filePreview.path, lines = frame.filePreview.lines })
+    render = function() render_preview(frame.filePreview) end
+  else
+    signature = "none"
+    render = render_diff_placeholder
+  end
+  if signature == state.diff_signature and not force then return end
+  state.diff_signature = signature
+  render()
+  -- A new patch reads from the top; the session view's cursor is never
+  -- touched here — it belongs to the tail-follow.
+  if state.wins.right ~= -1 and vim.api.nvim_win_is_valid(state.wins.right)
+    and vim.api.nvim_win_get_buf(state.wins.right) == state.bufs.diff then
+    pcall(vim.api.nvim_win_set_cursor, state.wins.right, { 1, 0 })
+  end
+end
+
 local function session_lines_pane(session)
   local lines = {}
   for _, line in ipairs(session and session.lines or {}) do
@@ -515,7 +656,7 @@ local function render_description(frame)
   render.render_lines(vim.api, state.ns, state.bufs.desc, theme, lines)
 end
 
-local function diff_pane_lines(changes)
+diff_pane_lines = function(changes)
   local texts = {}
   for _, change in ipairs(changes.diffs or {}) do
     texts[#texts + 1] = change.text:gsub("\n$", "")
@@ -595,41 +736,16 @@ function M.render(frame, force)
   end
 
   -- The diff column is PERMANENT: it shows the drafted patches (the file's
-  -- body when the merged view expands them, or a repository-only file's
-  -- preview) or a quiet placeholder when none exist. Windows never appear or
-  -- disappear with content — only the session pane (under the description)
-  -- does, while an agent is actually streaming.
+  -- composed body by default, the raw patch in raw view) or a repository-
+  -- only file's preview, or a quiet placeholder when none exist. Windows
+  -- never appear or disappear with content — only the session pane (under
+  -- the description) does, while an agent is actually streaming.
   local has_diffs = frame.changes and #(frame.changes.diffs or {}) > 0
   local preview = frame.filePreview
   create_right_window()
   create_desc_window()
-  if not has_diffs and preview and preview.lines and #preview.lines > 0 then
-    -- A repository-only file: the diff column is the content column, with
-    -- the file's own syntax where nvim can detect it from the path.
-    local signature = "preview:" .. vim.json.encode({ path = preview.path, lines = preview.lines })
-    if signature ~= state.diff_signature or force then
-      state.diff_signature = signature
-      if state.bufs.diff and vim.api.nvim_buf_is_valid(state.bufs.diff) then
-        local ok, ft = pcall(vim.filetype.match, { filename = preview.path })
-        vim.api.nvim_buf_set_option(state.bufs.diff, "modifiable", true)
-        vim.api.nvim_buf_set_option(state.bufs.diff, "filetype", ok and ft or "")
-        vim.api.nvim_buf_set_lines(state.bufs.diff, 0, -1, false, preview.lines)
-        vim.api.nvim_buf_set_option(state.bufs.diff, "modifiable", false)
-        vim.api.nvim_buf_clear_namespace(state.bufs.diff, state.diff_ns, 0, -1)
-        if state.wins.right ~= -1 and vim.api.nvim_win_is_valid(state.wins.right) then
-          pcall(vim.api.nvim_win_set_cursor, state.wins.right, { 1, 0 })
-        end
-      end
-    end
-  elseif not has_diffs and state.diff_signature ~= "none" then
-    state.diff_signature = "none"
-    if state.bufs.diff and vim.api.nvim_buf_is_valid(state.bufs.diff) then
-      vim.api.nvim_buf_set_option(state.bufs.diff, "modifiable", true)
-      vim.api.nvim_buf_set_option(state.bufs.diff, "filetype", "")
-      vim.api.nvim_buf_set_lines(state.bufs.diff, 0, -1, false, { "no drafted changes yet — [D] develop drafts files; [A] applies" })
-      vim.api.nvim_buf_set_option(state.bufs.diff, "modifiable", false)
-      vim.api.nvim_buf_clear_namespace(state.bufs.diff, state.diff_ns, 0, -1)
-    end
+  if state.bufs.diff and vim.api.nvim_buf_is_valid(state.bufs.diff) then
+    render_diff_column(frame, force)
   end
 
   -- The session pane under the description: present whenever a tool session
@@ -654,36 +770,12 @@ function M.render(frame, force)
     end
   end
 
-  -- Only real diffs render here; without drafts the placeholder above owns
-  -- the buffer and the signature stays "none".
-  if has_diffs and frame.changes then
-    local signature = vim.json.encode({ texts = vim.tbl_map(function(change) return change.text end, frame.changes.diffs or {}), summary = frame.changes.summary })
-    if signature ~= state.diff_signature or force then
-      state.diff_signature = signature
-      if state.bufs.diff and vim.api.nvim_buf_is_valid(state.bufs.diff) then
-        vim.api.nvim_buf_set_option(state.bufs.diff, "modifiable", true)
-        vim.api.nvim_buf_set_option(state.bufs.diff, "filetype", "diff")
-        vim.api.nvim_buf_set_lines(state.bufs.diff, 0, -1, false, diff_pane_lines(frame.changes))
-        vim.api.nvim_buf_set_option(state.bufs.diff, "modifiable", false)
-        vim.api.nvim_buf_clear_namespace(state.bufs.diff, state.diff_ns, 0, -1)
-        M.highlight_diff_source(state.bufs.diff, state.diff_ns, frame.changes)
-        -- A new patch reads from the top; the session view's cursor is
-        -- never touched here — it belongs to the tail-follow.
-        if state.wins.right ~= -1 and vim.api.nvim_win_is_valid(state.wins.right)
-          and vim.api.nvim_win_get_buf(state.wins.right) == state.bufs.diff then
-          pcall(vim.api.nvim_win_set_cursor, state.wins.right, { 1, 0 })
-        end
-      end
-    end
-  end
-
   -- Auto-behavior and window wiring: the diff column shows the diff buffer
   -- with its summary winbar; the session pane follows its own tail.
   local right = state.wins.right
   if right ~= -1 and vim.api.nvim_win_is_valid(right) then
     local shown = state.bufs.diff
     if shown and vim.api.nvim_buf_is_valid(shown) and frame.changes then
-      local preview = frame.filePreview
       if not has_diffs and preview and preview.lines and #preview.lines > 0 then
         local note = preview.truncated and string.format(" · … %d more lines", preview.totalLines - #preview.lines) or ""
         vim.api.nvim_win_set_option(right, "winbar", "%#NeolitMuted#" .. preview.path .. " · preview" .. note .. "%#Normal#")
@@ -734,79 +826,91 @@ end
 
 local function set_up_desc_window(win, buf)
   vim.api.nvim_win_set_buf(win, buf)
-  local scope = vim.wo[win]
-  scope.number = false
-  scope.relativenumber = false
-  scope.signcolumn = "no"
-  scope.foldcolumn = "0"
-  scope.winfixwidth = true
+  -- A content pane, not a widget: display options (numbers, wrap, list…)
+  -- stay the user's. The panel owns only existence, geometry, and winbar.
+  vim.wo[win].winfixwidth = true
 end
 
 local function set_up_session_window(win, buf)
   vim.api.nvim_win_set_buf(win, buf)
-  local scope = vim.wo[win]
-  scope.number = false
-  scope.relativenumber = false
-  scope.signcolumn = "no"
-  scope.foldcolumn = "0"
-  scope.winfixheight = true
+  vim.wo[win].winfixheight = true
 end
 
 local function set_up_right_window(win, buf)
   vim.api.nvim_win_set_buf(win, buf)
-  local scope = vim.wo[win]
-  scope.number = false
-  scope.relativenumber = false
-  scope.signcolumn = "no"
-  scope.foldcolumn = "0"
-  scope.winfixwidth = true
+  vim.wo[win].winfixwidth = true
 end
 
---- The panel takes the whole editor: the user's windows are captured and
---- closed once the first panel window exists (closing the last window first
---- would exit the editor), and Q reopens their buffers afterwards.
-local function capture_saved_windows()
-  local current = vim.api.nvim_get_current_win()
-  local saved = {}
-  for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
-    if vim.api.nvim_win_get_config(win).relative == "" then
-      saved[#saved + 1] = {
-        win = win,
-        buf = vim.api.nvim_win_get_buf(win),
-        cursor = vim.api.nvim_win_get_cursor(win),
-        focused = win == current,
-      }
-    end
-  end
-  return saved
-end
-
-local function close_saved_windows(saved)
-  for _, entry in ipairs(saved) do
-    pcall(vim.api.nvim_win_close, entry.win, true)
-  end
-end
-
---- Reopens the buffers the takeover closed, as an even split of the space
---- the panel leaves behind, restoring each cursor and the original focus.
-local function restore_saved_windows(saved)
-  local focused
-  for index, entry in ipairs(saved) do
-    if vim.api.nvim_buf_is_valid(entry.buf) then
-      pcall(vim.cmd, index == 1 and "vsplit" or "vertical split")
-      local win = vim.api.nvim_get_current_win()
-      pcall(vim.api.nvim_win_set_buf, win, entry.buf)
-      pcall(vim.api.nvim_win_set_cursor, win, entry.cursor or { 1, 0 })
-      if entry.focused then focused = win end
-    end
-  end
-  if focused then pcall(vim.api.nvim_set_current_win, focused) end
-end
+--- The panel owns a whole tabpage — the native full-screen unit. The
+--- user's windows, layout, and focus in their own tab are never touched:
+--- `:Neolit` opens a dedicated tab, and closing the panel (Q, or closing
+--- the tree window) closes the tab and returns to exactly what was there.
 
 panel_geometry = function()
   return config.geometry(vim.o.columns, {
     sidebar_width = state.cfg.sidebar_width,
     detail_width = state.cfg.detail_width,
+  })
+end
+
+local function create_windows()
+  state.bufs = {
+    tree = prepare_buffer("tree"),
+    desc = prepare_buffer("desc"),
+    diff = prepare_buffer("diff"),
+    session = prepare_buffer("session"),
+  }
+  state.diff_ns = vim.api.nvim_create_namespace("neolit-diff-hl")
+
+  local geometry = panel_geometry()
+  -- The tab's single fresh window becomes the tree column; its throwaway
+  -- buffer goes away.
+  local scratch = vim.api.nvim_win_get_buf(0)
+  state.wins = { tree = vim.api.nvim_get_current_win(), desc = -1, right = -1, session = -1 }
+  set_up_tree_window(state.wins.tree, state.bufs.tree)
+  pcall(vim.api.nvim_buf_delete, scratch, { force = true })
+  -- The sidebar width is a fact of the layout, not of split arithmetic.
+  pcall(vim.api.nvim_win_set_width, state.wins.tree, geometry.sidebar)
+
+  -- Tree | diff column | description column; the session pane splits under
+  -- the description while a session runs.
+  create_right_window()
+  create_desc_window()
+
+  render.render_lines(vim.api, state.ns, state.bufs.tree, theme,
+    { { text = "Starting the neolit host…", color = theme.colors.muted } })
+
+  for _, buf in pairs(state.bufs) do keys.attach(M, buf) end
+
+  -- Closing the sidebar ends the panel; closing the diff column just hides
+  -- it (Tab recreates it).
+  state.autocmds = {}
+  state.autocmds[#state.autocmds + 1] = vim.api.nvim_create_autocmd("WinClosed", {
+    pattern = tostring(state.wins.tree),
+    callback = function() M.close() end,
+  })
+  state.autocmds[#state.autocmds + 1] = vim.api.nvim_create_autocmd("WinClosed", {
+    pattern = tostring(state.wins.right),
+    callback = function()
+      if state then state.wins.right = -1 end
+    end,
+  })
+  -- Terminal resizes re-derive the column widths from the panel geometry —
+  -- never from whatever the resize left behind.
+  state.autocmds[#state.autocmds + 1] = vim.api.nvim_create_autocmd("VimResized", {
+    callback = function()
+      if not state then return end
+      local geo = panel_geometry()
+      if vim.api.nvim_win_is_valid(state.wins.tree) then
+        pcall(vim.api.nvim_win_set_width, state.wins.tree, geo.sidebar)
+      end
+      if state.wins.right ~= -1 and vim.api.nvim_win_is_valid(state.wins.right) then
+        pcall(vim.api.nvim_win_set_width, state.wins.right, geo.detail)
+      end
+      if state.wins.desc ~= -1 and vim.api.nvim_win_is_valid(state.wins.desc) then
+        pcall(vim.api.nvim_win_set_width, state.wins.desc, geo.detail)
+      end
+    end,
   })
 end
 
@@ -876,69 +980,6 @@ close_panel_window = function(which)
   if state then state.wins[which] = -1 end
 end
 
-local function create_windows()
-  state.bufs = {
-    tree = prepare_buffer("tree"),
-    desc = prepare_buffer("desc"),
-    diff = prepare_buffer("diff"),
-    session = prepare_buffer("session"),
-  }
-  state.diff_ns = vim.api.nvim_create_namespace("neolit-diff-hl")
-
-  local geometry = panel_geometry()
-  -- Full takeover: remember the user's windows, then close them once the
-  -- tree exists — the panel columns fill the editor, and Q restores them.
-  state.saved_windows = capture_saved_windows()
-  vim.cmd("topleft vertical " .. geometry.sidebar .. "split")
-  state.wins = { tree = vim.api.nvim_get_current_win(), desc = -1, right = -1, session = -1 }
-  set_up_tree_window(state.wins.tree, state.bufs.tree)
-  -- Closing the user's windows leaves the tree alone at full width; the
-  -- sidebar width is a fact of the layout, not of split arithmetic.
-  pcall(vim.api.nvim_win_set_width, state.wins.tree, geometry.sidebar)
-  close_saved_windows(state.saved_windows)
-
-  -- Tree | diff column | description column; the session pane splits under
-  -- the description while a session runs.
-  create_right_window()
-  create_desc_window()
-
-  render.render_lines(vim.api, state.ns, state.bufs.tree, theme,
-    { { text = "Starting the neolit host…", color = theme.colors.muted } })
-
-  for _, buf in pairs(state.bufs) do keys.attach(M, buf) end
-
-  -- Closing the sidebar ends the panel; closing the diff column just hides
-  -- it (Tab recreates it).
-  state.autocmds = {}
-  state.autocmds[#state.autocmds + 1] = vim.api.nvim_create_autocmd("WinClosed", {
-    pattern = tostring(state.wins.tree),
-    callback = function() M.close() end,
-  })
-  state.autocmds[#state.autocmds + 1] = vim.api.nvim_create_autocmd("WinClosed", {
-    pattern = tostring(state.wins.right),
-    callback = function()
-      if state then state.wins.right = -1 end
-    end,
-  })
-  -- Terminal resizes re-derive the column widths from the panel geometry —
-  -- never from whatever the resize left behind.
-  state.autocmds[#state.autocmds + 1] = vim.api.nvim_create_autocmd("VimResized", {
-    callback = function()
-      if not state then return end
-      local geo = panel_geometry()
-      if vim.api.nvim_win_is_valid(state.wins.tree) then
-        pcall(vim.api.nvim_win_set_width, state.wins.tree, geo.sidebar)
-      end
-      if state.wins.right ~= -1 and vim.api.nvim_win_is_valid(state.wins.right) then
-        pcall(vim.api.nvim_win_set_width, state.wins.right, geo.detail)
-      end
-      if state.wins.desc ~= -1 and vim.api.nvim_win_is_valid(state.wins.desc) then
-        pcall(vim.api.nvim_win_set_width, state.wins.desc, geo.detail)
-      end
-    end,
-  })
-end
-
 --------------------------------------------------------------------------
 -- Open / close
 --------------------------------------------------------------------------
@@ -990,10 +1031,16 @@ function M.open(opts)
     ns = vim.api.nvim_create_namespace("neolit"),
   }
 
-  local geometry_ok = pcall(create_windows)
+  -- The panel is its own tabpage: the user's current tab — windows, layout,
+  -- focus — stays untouched and is exactly what Q returns to.
+  state.previous_tab = vim.api.nvim_get_current_tabpage()
+  vim.cmd("tabnew")
+  state.tab = vim.api.nvim_get_current_tabpage()
+
+  local geometry_ok, geometry_err = pcall(create_windows)
   if not geometry_ok then
-    state = nil
-    vim.notify("neolit: could not create the panel windows.", vim.log.levels.ERROR)
+    M.close()
+    vim.notify("neolit: could not create the panel tab: " .. tostring(geometry_err), vim.log.levels.ERROR)
     return
   end
 
@@ -1067,18 +1114,25 @@ function M.close()
   current.closing = true
   if current.timer then current.timer:stop() end
   for _, id in ipairs(current.autocmds or {}) do pcall(vim.api.nvim_del_autocmd, id) end
-  -- Restore the takeover's captured buffers BEFORE the last panel window
-  -- closes: closing the final window of the tab would exit the editor.
-  if current.saved_windows and #current.saved_windows > 0 then
-    local ok = pcall(restore_saved_windows, current.saved_windows)
-    if not ok then
-      pcall(vim.cmd, "vsplit")
+  -- Close the panel's own tabpage, returning to the caller's tab. Closing
+  -- the panel windows may already have closed an otherwise-empty tab, so
+  -- every step is guarded.
+  if current.tab and vim.api.nvim_tabpage_is_valid(current.tab) then
+    if vim.api.nvim_get_current_tabpage() == current.tab then
+      local fallback = current.previous_tab
+      if not (fallback and vim.api.nvim_tabpage_is_valid(fallback)) then
+        fallback = vim.api.nvim_list_tabpages()[1]
+      end
+      if fallback and vim.api.nvim_tabpage_is_valid(fallback) then
+        pcall(vim.api.nvim_set_current_tabpage, fallback)
+      end
     end
+    pcall(vim.cmd, "tabclose " .. vim.api.nvim_tabpage_get_number(current.tab))
   end
-  for _, win in pairs(current.wins) do
+  for _, win in pairs(current.wins or {}) do
     if win ~= -1 then pcall(vim.api.nvim_win_close, win, true) end
   end
-  for _, buf in pairs(current.bufs) do pcall(vim.api.nvim_buf_delete, buf, { force = true }) end
+  for _, buf in pairs(current.bufs or {}) do pcall(vim.api.nvim_buf_delete, buf, { force = true }) end
   if current.host then current.host:shutdown() end
 end
 
@@ -1254,10 +1308,15 @@ function M.toggle_plan_only()
   M.render(state.frame, true)
 end
 
---- First non-panel window in the tab, creating one beside the sidebar if
---- the panel is alone (the takeover closed the user's windows; `o` brings
---- one back on demand).
+--- First non-panel window in the panel's tab, creating one beside the
+--- sidebar if the panel is alone (file visits from `o`/`p` open inside the
+--- panel tab; :q or gt moves away from them like any window).
 local function panel_target_window()
+  -- File visits land in the panel's own tabpage, never in the user's.
+  if state.tab and vim.api.nvim_tabpage_is_valid(state.tab)
+    and vim.api.nvim_get_current_tabpage() ~= state.tab then
+    pcall(vim.api.nvim_set_current_tabpage, state.tab)
+  end
   for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
     if win ~= state.wins.tree and win ~= state.wins.right and win ~= state.wins.desc
       and win ~= state.wins.session and vim.api.nvim_win_get_config(win).relative == "" then
@@ -1447,74 +1506,147 @@ end
 
 function M.session_toggle() M.dispatch("session_toggle", {}, "Toggling session stream") end
 
-function M.switch_model()
+--- t: switch between this repository's stored tasks. The picker lists them
+--- newest first with the active one marked; choosing another resumes it
+--- (plan, applied set, and session-stream tail travel with it).
+function M.tasks()
   if not state or not state.host then return end
-  state.host:request("agent", {}, function(agent_message)
+  state.host:request("tasks", {}, function(msg)
     if not state then return end
-    if agent_message.error or not agent_message.result then
-      vim.notify((agent_message.error and agent_message.error.message) or "No model runtime is active.", vim.log.levels.WARN)
+    if msg.error then
+      vim.notify(msg.error.message, vim.log.levels.ERROR)
       return
     end
+    local tasks = msg.result and msg.result.tasks or {}
+    if #tasks == 0 then
+      vim.notify("No stored tasks for this repository yet.", vim.log.levels.INFO)
+      return
+    end
+    prompt_select(tasks, {
+      prompt = "Switch task (newest first)",
+      format_item = function(task)
+        local when = os.date("%Y-%m-%d %H:%M", math.floor((task.savedAt or 0) / 1000))
+        local tail = task.active and "  ● current" or string.format("  · %d drafted", task.drafts or 0)
+        return string.format("%s  %s%s", when, task.objective or task.id, tail)
+      end,
+    }, function(task)
+      if not task or not state or task.active then return end
+      M.dispatch("task_switch", { taskId = task.id }, OP_LABELS.task_switch)
+    end)
+  end)
+end
 
-    local function pick_model(role)
-      local catalog = state.model_catalog
-      if not catalog or #catalog.models == 0 then
-        prompt_input((catalog and catalog.source and catalog.source .. " — " or "") .. role.label .. " model id", function(model)
-          if model and model ~= "" and state then M.dispatch("configure", { [role.id] = model }, OP_LABELS.configure) end
+--- x: one raw message straight into the task's agent session — no routing,
+--- no plan mutation; the reply streams into the session pane.
+function M.prompt_chat()
+  if not state then return end
+  if not (state.frame and state.frame.hasTask) then
+    vim.notify("No task is active. Press [N] to send the first message.", vim.log.levels.WARN)
+    return
+  end
+  prompt_input(INPUT_TITLES.chat, function(value)
+    if value == nil or value == "" then return end
+    M.dispatch("chat", { text = value }, OP_LABELS.chat)
+  end)
+end
+
+--- M: agent first, then role, then provider → model over the chosen
+--- backend's catalog (cached 5 minutes; typed fallback when no catalog) —
+--- the same order `augment setup` uses. Choosing another agent switches the
+--- live runtime and persists the choice; model roles then apply to it.
+function M.switch_model()
+  if not state or not state.host then return end
+  state.host:request("backends", {}, function(backends_message)
+    if not state then return end
+    if backends_message.error or not backends_message.result then
+      vim.notify((backends_message.error and backends_message.error.message) or "No model runtime is active.", vim.log.levels.WARN)
+      return
+    end
+    local catalog = backends_message.result
+    local current = catalog.current
+
+    local function pick_model(backend_id, role)
+      local function choose_from(models, source)
+        if not models or #models == 0 then
+          prompt_input((source and source .. " — " or "") .. role.label .. " model id", function(model)
+            if model and model ~= "" and state then
+              M.dispatch("configure", { backend = backend_id, [role.id] = model }, OP_LABELS.configure)
+            end
+          end)
+          return
+        end
+
+        -- Group the catalog by provider so the picker is two short steps
+        -- instead of one flat wall of prefixed ids.
+        local by_provider = {}
+        for _, model in ipairs(models) do
+          local provider = model:match("^([^/]+)/") or "(no provider)"
+          by_provider[provider] = by_provider[provider] or {}
+          by_provider[provider][#by_provider[provider] + 1] = model
+        end
+        local current_provider = role.current and role.current:match("^([^/]+)/")
+        if role.current and current_provider and not vim.tbl_contains(by_provider[current_provider] or {}, role.current) then
+          local list = by_provider[current_provider] or {}
+          list[#list + 1] = role.current
+          by_provider[current_provider] = list
+        end
+        local providers = {}
+        for provider in pairs(by_provider) do providers[#providers + 1] = provider end
+        table.sort(providers, function(left, right)
+          if left == current_provider then return true end
+          if right == current_provider then return false end
+          return left < right
         end)
-        return
-      end
 
-      -- Group the catalog by provider so the picker is two short steps
-      -- instead of one flat wall of prefixed ids.
-      local by_provider = {}
-      for _, model in ipairs(catalog.models) do
-        local provider = model:match("^([^/]+)/") or "(no provider)"
-        by_provider[provider] = by_provider[provider] or {}
-        by_provider[provider][#by_provider[provider] + 1] = model
-      end
-      local current_provider = role.current and role.current:match("^([^/]+)/")
-      if role.current and current_provider and not vim.tbl_contains(by_provider[current_provider] or {}, role.current) then
-        local list = by_provider[current_provider] or {}
-        list[#list + 1] = role.current
-        by_provider[current_provider] = list
-      end
-      local providers = {}
-      for provider in pairs(by_provider) do providers[#providers + 1] = provider end
-      table.sort(providers, function(left, right)
-        if left == current_provider then return true end
-        if right == current_provider then return false end
-        return left < right
-      end)
-
-      prompt_select(providers, {
-        prompt = role.label .. " model · provider",
-        format_item = function(provider)
-          local mark = provider == current_provider and " ●" or ""
-          return string.format("%s (%d)%s", provider, #by_provider[provider], mark)
-        end,
-      }, function(provider)
-        if not provider or not state then return end
-        local models = by_provider[provider]
-        table.sort(models)
-        prompt_select(models, {
-          prompt = role.label .. " model",
-          format_item = function(model)
-            return model .. (model == role.current and "  ● current" or "")
+        prompt_select(providers, {
+          prompt = role.label .. " model · provider",
+          format_item = function(provider)
+            local mark = provider == current_provider and " ●" or ""
+            return string.format("%s (%d)%s", provider, #by_provider[provider], mark)
           end,
-        }, function(model)
-          if model and state then M.dispatch("configure", { [role.id] = model }, OP_LABELS.configure) end
+        }, function(provider)
+          if not provider or not state then return end
+          local models_for_provider = by_provider[provider]
+          table.sort(models_for_provider)
+          prompt_select(models_for_provider, {
+            prompt = role.label .. " model",
+            format_item = function(model)
+              return model .. (model == role.current and "  ● current" or "")
+            end,
+          }, function(model)
+            if model and state then
+              M.dispatch("configure", { backend = backend_id, [role.id] = model }, OP_LABELS.configure)
+            end
+          end)
         end)
+      end
+
+      local cached = state.model_catalog and state.model_catalog[backend_id]
+      if cached and os.time() - cached.at < 300 then
+        return choose_from(cached.models, cached.source)
+      end
+      vim.notify("Loading " .. backend_id .. " model catalog…", vim.log.levels.INFO)
+      state.host:request("models", { backend = backend_id }, function(models_message)
+        if not state then return end
+        local models, source = {}, nil
+        if models_message.result then
+          models = models_message.result.models or {}
+          source = models_message.result.source
+        elseif models_message.error then
+          source = models_message.error.message
+        end
+        state.model_catalog = state.model_catalog or {}
+        state.model_catalog[backend_id] = { models = models, source = source, at = os.time() }
+        choose_from(models, source)
       end)
     end
 
-    local function pick_role()
-      if not state then return end
-      local current = (state.frame and state.frame.models) or {}
+    local function pick_role(backend_id)
+      local current_models = (backend_id == current and state.frame and state.frame.models) or {}
       local roles = {
-        { id = "model", label = "default", current = current.model },
-        { id = "draftModel", label = "draft", current = current.draftModel },
-        { id = "challengeModel", label = "challenge", current = current.challengeModel },
+        { id = "model", label = "default", current = current_models.model },
+        { id = "draftModel", label = "draft", current = current_models.draftModel },
+        { id = "challengeModel", label = "challenge", current = current_models.challengeModel },
       }
       prompt_select(roles, {
         prompt = "Switch which model?",
@@ -1523,25 +1655,22 @@ function M.switch_model()
         end,
       }, function(role)
         if not role or not state then return end
-        pick_model(role)
+        pick_model(backend_id, role)
       end)
     end
 
-    if state.model_catalog and os.time() - state.model_catalog.at < 300 then
-      return pick_role()
-    end
-    vim.notify("Loading model catalog…", vim.log.levels.INFO)
-    state.host:request("models", {}, function(models_message)
-      if not state then return end
-      local models, source = {}, nil
-      if models_message.result then
-        models = models_message.result.models or {}
-        source = models_message.result.source
-      elseif models_message.error then
-        source = models_message.error.message
-      end
-      state.model_catalog = { models = models, source = source, at = os.time() }
-      pick_role()
+    -- Step 1 — the agent: every role routes through one backend.
+    local entries = catalog.backends or {}
+    prompt_select(entries, {
+      prompt = "Agent",
+      format_item = function(entry)
+        local mark = entry.id == current and "  ● current" or ""
+        local missing = entry.available == false and "  (not on PATH)" or ""
+        return entry.id .. missing .. mark
+      end,
+    }, function(chosen)
+      if not chosen or not state then return end
+      pick_role(chosen.id)
     end)
   end)
 end

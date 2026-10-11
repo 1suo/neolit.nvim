@@ -9,6 +9,7 @@ local function stub_ui()
     "develop", "apply_selected", "commit_applied", "restrict", "switch_model", "prompt_reopen",
     "prompt_stale", "quit", "cancel_op", "choose", "toggle_fold", "toggle_plan_only",
     "open_selected", "edit_patch", "fold_level", "session_toggle", "show_keys",
+    "tasks", "prompt_chat",
   }) do
     ui[name] = function(...) calls[#calls + 1] = { name = name, args = { ... } } end
   end
@@ -22,8 +23,8 @@ return {
       local handlers = keys.handlers(stub_ui())
       for _, key in ipairs({
         "j", "k", "<Down>", "<Up>", "<Tab>", "<Right>", "<Left>", "<CR>",
-        "n", "d", "a", "c", "l", "w", "m", "o", "O", "p", "s", "q", "<Esc>", "?",
-        "za", "zc", "zo", "zr", "zR", "zm", "zM", "H", "F", "V", "p",
+        "n", "d", "a", "c", "l", "w", "m", "t", "x", "o", "O", "p", "gf", "s", "q", "<Esc>", "?",
+        "za", "zc", "zo", "zr", "zR", "zm", "zM", "H", "F", "V",
       }) do
         t:ok(handlers[key], "key " .. key .. " is routed")
       end
@@ -79,11 +80,22 @@ return {
     end,
   },
   {
+    name = "session keys route to the task picker and raw chat",
+    run = function(t)
+      local ui, calls = stub_ui()
+      local handlers = keys.handlers(ui)
+      handlers.t()
+      handlers.x()
+      t:eq(calls[1], { name = "tasks", args = {} })
+      t:eq(calls[2], { name = "prompt_chat", args = {} })
+    end,
+  },
+  {
     name = "global action map covers every TUI operation key",
     run = function(t)
       local map = keys.global_action_map()
       for _, key in ipairs({
-        "n", "<CR>", "d", "a", "c", "l", "w", "m", "o", "O", "p", "s", "q", "<Tab>", "<Esc>",
+        "n", "<CR>", "d", "a", "c", "l", "w", "m", "t", "x", "o", "O", "p", "s", "q", "<Tab>", "<Esc>",
         "1", "2", "3", "4", "5", "6", "7", "8", "9",
       }) do
         t:ok(map[key], "global action for " .. key)
@@ -95,6 +107,8 @@ return {
       t:eq(map["3"], { "choose", 3 })
       t:eq(map.o, { "open_selected" }, "global o matches the panel's open-file")
       t:eq(map.O, { "prompt_reopen" }, "global O matches the panel's reopen")
+      t:eq(map.t, { "tasks" })
+      t:eq(map.x, { "prompt_chat" })
       t:eq(map.p, { "edit_patch" })
       t:eq(map.j, nil, "motion keys stay pane-local")
     end,

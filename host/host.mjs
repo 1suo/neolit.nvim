@@ -65,8 +65,8 @@ if (!dist || !fs.existsSync(path.join(dist, "index.js"))) {
 const fromDist = (relative) => import(pathToFileURL(path.join(dist, relative)).href);
 const { AugmentTuiController, CliAgentRuntime, candidatesForEntry } = await fromDist("index.js");
 const { detailLines, entryName, entryState, entryTouchesNode, mergedLines, shortSessionId, shortTaskId, theme } = await fromDist("tui/detail.js");
-const { effectiveConfig } = await fromDist("tui/config.js");
-const { backendById } = await fromDist("tui/agent-backends.js");
+const { effectiveConfig, saveAugmentConfig } = await fromDist("tui/config.js");
+const { agentBackends, backendById } = await fromDist("tui/agent-backends.js");
 const { ToolSessionDriver, toolSessionSupported } = await fromDist("tui/tool-session.js");
 
 function commandAvailable(command) {
@@ -125,14 +125,17 @@ const stubRuntime = {
 // Model availability mirrors bin/augment.tsx: env/flags > config file > defaults.
 const config = effectiveConfig();
 const modelDisabled = args.noModel || process.env.AUGMENT_TUI_NO_MODEL === "1";
-const backend = backendById(config.backend ?? "opencode");
-const requestedCommand = config.command ?? backend.defaultCommand;
 const stub = args.stubRuntime;
-const modelInfo = stub
+// Mutable wiring: `configure` with a backend rebuilds the runtime, its tool
+// session, and the persisted config live (the M picker's agent step).
+let backend = backendById(config.backend ?? "opencode");
+let requestedCommand = config.command ?? backend.defaultCommand;
+let toolDriver; // the live ToolSessionDriver, if any
+const modelInfo = () => stub
   ? { available: true, label: "STUB" }
   : {
     available: !modelDisabled && commandAvailable(requestedCommand),
-    label: config.model ?? `${backend.id} DEFAULT`.toUpperCase(),
+    label: runtimeModels.model ?? `${backend.id} DEFAULT`.toUpperCase(),
   };
 
 // What each role currently routes to, for pickers. Kept in sync by configure.
@@ -171,6 +174,7 @@ function notify(method, params) {
  */
 function buildFrame(spinner = DEFAULT_SPINNER) {
   const state = controller.snapshot();
+  const info = modelInfo();
   const selectedRow = controller.selectedRow();
   const live = state.active || state.failed
     ? { spinner, active: state.active, failed: state.failed }
@@ -190,7 +194,7 @@ function buildFrame(spinner = DEFAULT_SPINNER) {
       { text: `${path.basename(state.directory)}${state.branch ? `/${state.branch}` : ""}`, color: theme.secondary },
       ...(state.task ? [{ text: state.agentSession ? `${shortSessionId(state.agentSession)} (${shortTaskId(state.task.id)})` : shortTaskId(state.task.id), color: theme.muted }] : []),
     ],
-    right: [{ text: modelInfo.label, color: modelInfo.available ? theme.success : theme.warning }],
+    right: [{ text: info.label, color: info.available ? theme.success : theme.warning }],
   };
 
   const rows = state.rows.map((row) => {
@@ -259,23 +263,27 @@ function buildFrame(spinner = DEFAULT_SPINNER) {
     panelDetail = panelDetail.slice(1);
   }
   // The diff buffer shows the file's own body by default — the drafted
-  // change expanded in place (rawDiffView asks for the classic unified
+  // change expanded over it (rawDiffView asks for the classic unified
   // patch, and a patch that does not read against the file keeps its raw
-  // text; the detail pane carries the note).
+  // text; the detail pane carries the note). Merged bodies ship as
+  // structured lines (text + context/add/remove) so native hosts compose
+  // them into a real file buffer — named after the file, its filetype,
+  // additions marked, deletions as virtual lines — where LSP and
+  // treesitter work. `text` always stays the raw unified patch.
   const mergedFor = (diff) => {
     if (state.rawDiffView || state.fileContent === undefined || state.fileContent === "") return undefined;
     const merged = mergedLines(state.fileContent, diff.patch);
-    return merged ? merged.map((line) => line.kind === "context" ? line.text : `${line.kind === "add" ? "+" : "-"}${line.text}`).join("\n") : undefined;
+    return merged ? merged : undefined;
   };
   const changes = selectedDiffs.map((diff) => {
-    const mergedText = diff === selectedDiffs.at(-1) ? mergedFor(diff) : undefined;
+    const merged = diff === selectedDiffs.at(-1) ? mergedFor(diff) : undefined;
     return {
       id: diff.id,
       path: diff.path,
       kind: diff.kind,
       applied: state.appliedDiffIds.includes(diff.id),
-      ...(mergedText ? { merged: true } : {}),
-      text: mergedText ?? diff.patch,
+      ...(merged ? { merged: true, lines: merged } : {}),
+      text: diff.patch,
     };
   });
   const kindCounts = selectedDiffs.reduce((counts, diff) => {
@@ -354,7 +362,7 @@ async function maybeAutoGenerate() {
   const snapshot = controller.snapshot();
   const task = snapshot.task;
   const root = task?.nodes[task.rootNodeId];
-  if (!modelInfo.available || !task || task.mode !== "change" || !root || root.status !== "unresolved" || root.candidateIds.length || snapshot.busy || autoGenerated.has(task.id)) return;
+  if (!modelInfo().available || !task || task.mode !== "change" || !root || root.status !== "unresolved" || root.candidateIds.length || snapshot.busy || autoGenerated.has(task.id)) return;
   autoGenerated.add(task.id);
   notify("neolit/progress", { operation: "Generating approaches", busy: true });
   try {
@@ -365,10 +373,40 @@ async function maybeAutoGenerate() {
   notify("neolit/frame", buildFrame());
 }
 
+// CliAgentRuntime options are computed from the LIVE wiring (mirroring
+// bin/augment.tsx): after a backend switch they reflect the new backend
+// and the roles configure has set since.
+function runtimeOptions() {
+  return {
+    backend,
+    command: requestedCommand,
+    model: runtimeModels.model ?? undefined,
+    draftModel: runtimeModels.draftModel ?? undefined,
+    challengeModel: runtimeModels.challengeModel ?? undefined,
+    server: config.server,
+    agent: config.agent,
+    timeoutMs: config.timeoutMs,
+  };
+}
+
+function makeDriver(owner) {
+  return process.env.AUGMENT_TUI_NO_TOOLS !== "1" && toolSessionSupported(backend.id)
+    ? new ToolSessionDriver({
+      directory: owner.directory,
+      backend,
+      command: requestedCommand,
+      model: runtimeModels.model ?? undefined,
+      timeoutMs: config.timeoutMs,
+      server: owner.server,
+      socketPath: () => owner.snapshot().socketPath,
+    })
+    : undefined;
+}
+
 function newController(directory) {
   const runtime = stub
     ? stubRuntime
-    : modelInfo.available
+    : modelInfo().available
       ? new CliAgentRuntime({ ...runtimeOptions(), directory })
       : undefined;
   const controller = new AugmentTuiController({
@@ -382,16 +420,9 @@ function newController(directory) {
   });
   // Mirror bin/augment.tsx: model ops run as prompts in one tool-using
   // agent session per task, streaming into the session pane.
-  if (!stub && modelInfo.available && process.env.AUGMENT_TUI_NO_TOOLS !== "1" && toolSessionSupported(backend.id)) {
-    controller.useToolSession(new ToolSessionDriver({
-      directory,
-      backend,
-      command: requestedCommand,
-      model: config.model,
-      timeoutMs: config.timeoutMs,
-      server: controller.server,
-      socketPath: () => controller.snapshot().socketPath,
-    }));
+  if (!stub && modelInfo().available) {
+    toolDriver = makeDriver(controller);
+    if (toolDriver) controller.useToolSession(toolDriver);
   }
   return controller;
 }
@@ -408,20 +439,6 @@ function watchController() {
   });
 }
 
-// CliAgentRuntime options are computed once here (mirroring bin/augment.tsx).
-function runtimeOptions() {
-  return {
-    backend,
-    command: requestedCommand,
-    model: config.model,
-    draftModel: config.draftModel,
-    challengeModel: config.challengeModel,
-    server: config.server,
-    agent: config.agent,
-    timeoutMs: config.timeoutMs,
-  };
-}
-
 const methods = {
   async initialize(params) {
     const directory = params.directory ?? args.directory ?? process.cwd();
@@ -430,7 +447,7 @@ const methods = {
     autoGenerated = new Set();
     watchController();
     void maybeAutoGenerate();
-    return { frame: buildFrame(), model: modelInfo, agent: controller.runtimeAgent() ?? null, directory };
+    return { frame: buildFrame(), model: modelInfo(), agent: controller.runtimeAgent() ?? null, directory };
   },
 
   frame(params) {
@@ -528,7 +545,29 @@ const methods = {
     return buildFrame();
   },
 
+  /**
+   * Live model (and agent backend) reconfiguration. A backend change is the
+   * setup picker's agent step over the wire: the runtime, its tool session,
+   * and the persisted config rebuild around the new backend without losing
+   * the task store; model roles then apply to the new runtime.
+   */
   async configure(params) {
+    if (typeof params.backend === "string" && params.backend !== backend.id) {
+      if (stub) throw rpcError(-32000, "The stub runtime cannot switch backends.");
+      if (!agentBackends[params.backend]) throw rpcError(-32602, `Unknown backend '${params.backend}'. Available: ${Object.keys(agentBackends).join(", ")}.`);
+      backend = backendById(params.backend);
+      requestedCommand = backend.defaultCommand;
+      saveAugmentConfig({ backend: backend.id });
+      // Roles do not carry across backends: a provider-scoped model id from
+      // one agent is meaningless on another.
+      runtimeModels.model = null;
+      runtimeModels.draftModel = null;
+      runtimeModels.challengeModel = null;
+      controller.setRuntime(
+        modelInfo().available ? new CliAgentRuntime({ ...runtimeOptions(), directory: controller.directory }) : undefined,
+        modelInfo().available ? makeDriver(controller) : undefined,
+      );
+    }
     const update = {
       model: typeof params.model === "string" && params.model ? params.model : undefined,
       draftModel: typeof params.draftModel === "string" && params.draftModel ? params.draftModel : undefined,
@@ -539,6 +578,18 @@ const methods = {
       if (update[role] !== undefined) runtimeModels[role] = update[role];
     }
     return buildFrame();
+  },
+
+  /** The agent backends the M picker offers, with the live one marked. */
+  backends() {
+    return {
+      current: backend.id,
+      stub: Boolean(stub),
+      backends: Object.values(agentBackends).map((entry) => ({
+        id: entry.id,
+        available: stub ? false : commandAvailable(entry.defaultCommand),
+      })),
+    };
   },
 
   /**
@@ -569,12 +620,20 @@ const methods = {
     return buildFrame();
   },
 
-  async models() {
+  /**
+   * Model catalog for a backend's picker step. The live backend uses its
+   * configured command; other backends (the agent-first picker may ask
+   * before switching) use their default command.
+   */
+  async models(params) {
+    if (stub) throw rpcError(-32000, "The stub runtime has no model catalog.");
     const agent = controller?.runtimeAgent();
-    if (!modelInfo.available || !agent) throw rpcError(-32000, "No model runtime is active.");
+    const backendId = typeof params.backend === "string" && agentBackends[params.backend] ? params.backend : agent?.backendId;
+    if (!backendId) throw rpcError(-32000, "No model runtime is active and no known backend was given.");
+    const command = backendId === backend.id ? requestedCommand : backendById(backendId).defaultCommand;
     try {
       const { availableModels } = await fromDist("tui/setup.js");
-      return await availableModels(agent.backendId, agent.command);
+      return await availableModels(backendId, command);
     } catch (error) {
       return { models: [], source: `catalog unavailable (${firstLine(error?.message ?? error)}) — type a model id` };
     }
@@ -582,6 +641,23 @@ const methods = {
 
   agent() {
     return controller?.runtimeAgent() ?? null;
+  },
+
+  /** Stored tasks for this repository (the t picker), newest first. */
+  tasks() {
+    return { tasks: controller ? controller.listTasks() : [] };
+  },
+
+  async task_switch(params) {
+    if (typeof params.taskId !== "string" || !params.taskId) throw rpcError(-32602, "task_switch requires taskId.");
+    await controller.switchTask(params.taskId);
+    return buildFrame();
+  },
+
+  /** One raw message into the task's agent session (x); the reply streams. */
+  async chat(params) {
+    await controller.chat(String(params.text ?? ""));
+    return buildFrame();
   },
 
   session_toggle() {

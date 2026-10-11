@@ -235,21 +235,91 @@ test("the diff column shows the file body with the draft marked; M flips to raw"
   await client.waitFor((frame) => frame.changes && frame.changes.diffs.length > 0, { label: "drafted" });
   await client.request("select", { rowId: "entry:session.ts" });
 
-  // Default: the body with the change in place — no hunk headers, no raw text.
+  // Default: the composed body — structured lines (text + kind) so hosts
+  // render a native file buffer; `text` stays the raw unified patch.
   const body = await client.request("frame");
   assert.equal(body.result.rawDiffView, false, "body view is the default");
   const marked = body.result.changes.diffs.find((entry) => entry.path === "session.ts");
   assert.equal(marked.merged, true, "the change is marked as merged into the body");
-  assert.ok(marked.text.includes("+gamma"), "the addition is marked in place");
-  assert.ok(marked.text.split("\n").includes("beta"), "unchanged body lines stay whole");
-  assert.ok(!marked.text.includes("@@"), "no hunk headers in the body");
+  assert.deepEqual(
+    marked.lines.map((line) => line.kind),
+    ["context", "context", "add"],
+    "the body is the file's own lines with the addition marked",
+  );
+  assert.equal(marked.lines[2].text, "gamma");
+  assert.ok(marked.text.includes("@@ -1,2 +1,3 @@"), "text always carries the raw patch");
 
-  // M: the classic unified patch.
+  // M: the classic unified patch, no composed body.
   const raw = await client.request("toggle_raw");
   assert.equal(raw.result.rawDiffView, true, "M flips to the raw patch");
   const patch = raw.result.changes.diffs.find((entry) => entry.path === "session.ts");
   assert.ok(patch.text.includes("@@ -1,2 +1,3 @@"), "raw patch shows hunk headers");
   assert.equal(patch.merged, undefined, "no merged marker in raw view");
+  assert.equal(patch.lines, undefined, "no composed lines in raw view");
+  await client.shutdown();
+});
+
+test("backends lists the agent catalog; the stub refuses live switches", async () => {
+  const directory = fixtureRepo();
+  const client = new HostClient(directory, { stub: true });
+  await client.request("initialize", { directory });
+  const listed = await client.request("backends");
+  assert.deepEqual(
+    listed.result.backends.map((entry) => entry.id).sort(),
+    ["claude", "codex", "opencode"],
+  );
+  assert.equal(listed.result.current, "opencode");
+  assert.equal(listed.result.stub, true, "the stub marks itself so pickers can explain");
+  const switched = await client.request("configure", { backend: "claude", model: "claude/x" });
+  assert.ok(switched.error, "the stub runtime cannot rebuild around another backend");
+  await client.shutdown();
+});
+
+test("tasks list stored sessions and task_switch resumes one", async () => {
+  const directory = fixtureRepo();
+  const state = fs.mkdtempSync(path.join(os.tmpdir(), "neolit-tasks-"));
+  temporaryDirectories.push(state);
+  const client = new HostClient(directory, { stub: true, env: { AUGMENT_TUI_TASKS: "1", XDG_STATE_HOME: state } });
+  await client.request("initialize", { directory });
+  await client.request("start", { objective: "first task" });
+  await client.waitFor((frame) => frame.panel.message?.includes("Single viable approach adopted"), { label: "first adoption" });
+  await client.request("start", { objective: "second task" });
+  await client.waitFor((frame) => frame.panel.message?.includes("Single viable approach adopted"), { label: "second adoption" });
+
+  const listed = await client.request("tasks");
+  const tasks = listed.result.tasks;
+  assert.ok(tasks.length >= 2, "both tasks are stored");
+  assert.equal(tasks[0].objective, "second task", "newest first");
+  assert.equal(tasks[0].active, true, "the running task is marked active");
+  const first = tasks.find((entry) => entry.objective === "first task");
+  assert.ok(first, "the earlier task is still stored");
+
+  const switched = await client.request("task_switch", { taskId: first.id });
+  assert.equal(switched.result.taskId, first.id, "the panel now renders the resumed task");
+  assert.ok(switched.result.panel.message.includes("Resumed task: first task"), switched.result.panel.message);
+  const again = await client.request("tasks");
+  assert.equal(again.result.tasks.find((entry) => entry.active).objective, "first task");
+  await client.shutdown();
+});
+
+test("chat sends raw messages and needs a tool session", async () => {
+  const directory = fixtureRepo();
+  const client = new HostClient(directory, { stub: true });
+  await client.request("initialize", { directory });
+  await client.request("start", { objective: "add gamma line" });
+  await client.waitFor((frame) => frame.panel.message?.includes("Single viable approach adopted"), { label: "adoption" });
+
+  // The stub runtime has no agent session to talk to: a typed, visible
+  // refusal — not a protocol error.
+  const refused = await client.request("chat", { text: "why did the draft fail?" });
+  assert.ok(refused.result.panel.error.includes("Raw chat needs the agent session"), refused.result.panel.error);
+
+  // Without a task there is nothing to anchor the conversation to.
+  const fresh = new HostClient(directory, { stub: true });
+  await fresh.request("initialize", { directory });
+  const noTask = await fresh.request("chat", { text: "hello?" });
+  assert.ok(noTask.result.panel.error.includes("No task is active"), noTask.result.panel.error);
+  await fresh.shutdown();
   await client.shutdown();
 });
 

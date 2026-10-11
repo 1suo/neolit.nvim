@@ -75,6 +75,9 @@ return {
       t:ok(state, "UI state exists")
       t:eq(state.model.available, true)
       t:eq(state.model.label, "STUB")
+      t:eq(#vim.api.nvim_list_tabpages(), 2, "the panel opens its own tabpage")
+      t:eq(state.tab, vim.api.nvim_get_current_tabpage(), "the panel tab is focused")
+      t:ok(vim.api.nvim_tabpage_is_valid(state.previous_tab), "the user's tab is untouched")
       t:ok(vim.api.nvim_win_is_valid(state.wins.tree), "sidebar window is a real split")
       t:ok(vim.api.nvim_win_is_valid(state.wins.desc), "description column is a real split")
       t:ok(state.wins.right ~= -1 and vim.api.nvim_win_is_valid(state.wins.right), "diff column exists from the start — permanent, no churn")
@@ -136,19 +139,34 @@ return {
       t:ok(state_after_draft.frame.changes.diffs[1].text:find("%+gamma", 1) ~= nil, "raw patch text carries the change")
       local diff_buf = state_after_draft.bufs.diff
       t:ok(diff_buf and vim.api.nvim_buf_is_valid(diff_buf), "diff pane buffer exists")
-      local diff_text = table.concat(vim.api.nvim_buf_get_lines(diff_buf, 0, -1, false), "\n")
-      t:ok(diff_text:find("%+gamma", 1) ~= nil, "diff pane renders the raw patch")
-      t:eq(vim.api.nvim_buf_get_option(diff_buf, "filetype"), "diff", "diff pane has filetype=diff")
-      t:eq(vim.api.nvim_buf_get_option(diff_buf, "syntax"), "diff", "native diff syntax colors the buffer — colors follow the colorscheme")
+
+      -- The composed body is a NATIVE file buffer: named after the file,
+      -- the file's own filetype (LSP/treesitter attach), the drafted change
+      -- marked in place — additions as DiffAdd, deletions as DiffDelete
+      -- virtual lines — never +/- prefixes or hunk headers.
+      wait_for(t, "merged body composes into the diff buffer", function()
+        return vim.api.nvim_buf_is_valid(diff_buf) and vim.api.nvim_buf_get_lines(diff_buf, 0, -1, false)[3] == "gamma"
+      end)
+      local body_lines = vim.api.nvim_buf_get_lines(diff_buf, 0, -1, false)
+      t:eq(body_lines, { "alpha", "beta", "gamma" }, "the body is the file's post-patch content, plain")
+      t:eq(vim.api.nvim_buf_get_option(diff_buf, "filetype"), "typescript", "the composed body carries the file's own filetype")
+      t:eq(vim.api.nvim_buf_get_name(diff_buf), directory .. "/session.ts", "the composed buffer is named after the real file")
       local marks = vim.api.nvim_buf_get_extmarks(diff_buf, state_after_draft.diff_ns, 0, -1, { details = true })
-      local backgrounds, syntaxes = 0, 0
+      local added_rows = {}
       for _, mark in ipairs(marks) do
-        local group = mark[4] and mark[4].hl_group
-        if group == "DiffAdd" or group == "DiffDelete" then backgrounds = backgrounds + 1 end
-        if group and group:sub(1, 1) == "@" then syntaxes = syntaxes + 1 end
+        if mark[4] and mark[4].hl_group == "DiffAdd" then added_rows[#added_rows + 1] = mark[2] + 1 end
       end
-      t:ok(backgrounds > 0, "changed lines carry full-width red/green backgrounds")
-      t:ok(syntaxes > 0, "added lines carry source syntax on top")
+      t:eq(added_rows, { 3 }, "exactly the added line carries a DiffAdd background")
+
+      -- R flips to the classic unified patch: a filetype=diff scratch buffer.
+      handlers.R()
+      wait_for(t, "raw patch view renders", function()
+        return vim.api.nvim_buf_get_option(diff_buf, "filetype") == "diff"
+      end)
+      local raw_text = table.concat(vim.api.nvim_buf_get_lines(diff_buf, 0, -1, false), "\n")
+      t:ok(raw_text:find("@@ %-1,2 %+1,3 @@", 1) ~= nil, "raw patch shows hunk headers")
+      t:eq(vim.api.nvim_buf_get_name(diff_buf), "neolit://diff", "the raw patch view is a scratch buffer")
+      handlers.R() -- back to the body
 
       handlers.a() -- apply to the working tree
       wait_for(t, "patch is applied", frame_matches(function(frame)
@@ -166,11 +184,12 @@ return {
       local status = vim.trim(vim.fn.system({ "git", "-C", directory, "status", "--porcelain" }))
       t:eq(status, "", "nothing is left dirty")
 
-      -- Per-view wrapping: description prose wraps at word boundaries, the
-      -- diff column keeps nowrap.
+      -- Display options are inherited, not imposed: content panes follow the
+      -- user's `wrap` (and friends) exactly like any editor window.
       local right_win = state_after_draft.wins.right
-      assert(vim.wo[right_win].wrap == false, "diff view keeps nowrap")
-      assert(vim.wo[state_after_draft.wins.desc].wrap == true, "description column wraps")
+      assert(vim.wo[right_win].wrap == vim.o.wrap, "diff column inherits the user's wrap setting")
+      assert(vim.wo[state_after_draft.wins.desc].wrap == vim.o.wrap, "description column inherits the user's wrap setting")
+      assert(vim.wo[state_after_draft.wins.desc].number == vim.o.number, "description column inherits the user's number setting")
 
       -- The stream sticks to its tail: rendering new lines keeps the
       -- cursor on the last one while it rides the bottom.
@@ -193,6 +212,7 @@ return {
 
       handlers.q() -- quit like the TUI
       t:ok(vim.wait(5000, function() return ui._state() == nil end), "quit closes the UI")
+      t:eq(#vim.api.nvim_list_tabpages(), 1, "quit closes the panel's tabpage")
       system({ "rm", "-rf", directory })
     end,
   },

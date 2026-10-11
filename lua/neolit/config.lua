@@ -34,7 +34,7 @@ M.defaults = {
   --- hexes (with an xterm-256 fallback for termguicolors=off).
   palette = "system",
   --- Global prefix (e.g. "<leader>n") binding the TUI operation keys
-  --- (n e <CR> 1-9 d a c l w m o s q <Tab> <Esc>) from any buffer. Motion
+  --- (n e <CR> 1-9 d a c l w m t x o s q <Tab> <Esc>) from any buffer. Motion
   --- keys stay pane-local. nil disables global maps.
   keymap_prefix = nil,
   --- Test seam: { input = function(opts, cb) end, select = function(items, opts, cb) end }
