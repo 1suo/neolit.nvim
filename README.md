@@ -96,12 +96,17 @@ and `q` closes the tab and puts you back exactly where you were:
 - Both panes carry identical buffer-local keymaps (the analog of the TUI's
   global input handler), so every key behaves the same in either pane.
 - The tree selection is the cursor line (`cursorline` highlight,
-  window-local `scrolloff` keeps it centered); the detail pane scrolls with
-  `j`/`k` while focused. Display options (`wrap`, `linebreak`, `list`,
-  `number`, …) are inherited from your settings for every content pane —
-  the panel only owns the tree widget's own options (no numbers, no wrap:
-  its rows are glyphs) and the pane geometry, which is enforced explicitly
-  on open and resize.
+  window-local `scrolloff` keeps it centered). Window settings are
+  **contractual, not decorative**: the tree alone is a widget (no numbers,
+  no wrap, centered selection — local to its window), every content pane
+  (diff, description, session) resets the widget's options back to **your
+  global settings** whenever it is created or recreated (`:q` + `Tab`, the
+  session pane toggling), and the panel never writes a global option. The
+  composed diff buffer goes further — real filename and filetype — so your
+  ftplugins and per-filetype settings apply to it natively; the description
+  and session panes keep stable buffer names (`neolit://desc`,
+  `neolit://session`) as autocmd targets. The panel also owns pane
+  geometry, enforced explicitly on open and resize.
 - Indicators (`◆ ~ + - ✓ ! # ● ? ○ ◐` …) and the two-section detail pane come from
   the TUI's view model; their meaning is canonical in
   [neolit's TUI README](https://github.com/1suo/neolit/blob/main/src/tui/README.md).

@@ -65,6 +65,20 @@ return {
         host_args = { "--stub-runtime" },
       })
       handlers = keys.handlers(ui)
+      -- Window-settings contract, baselined BEFORE the panel exists: the
+      -- panel must never write global window options, content panes carry
+      -- the user's global settings (not the tree widget's), and the tree
+      -- keeps its widget options locally. Strict-scope reads only —
+      -- `vim.o` reflects the focused window's locals and hides leaks.
+      local global_of = function(name)
+        return vim.api.nvim_get_option_value(name, { scope = "global" })
+      end
+      local baseline = {
+        wrap = global_of("wrap"),
+        scrolloff = global_of("scrolloff"),
+        cursorline = global_of("cursorline"),
+        winhl = global_of("winhl"),
+      }
       neolit.open("add gamma line")
 
       wait_for(t, "singleton approach is auto-adopted", frame_matches(function(frame)
@@ -184,12 +198,27 @@ return {
       local status = vim.trim(vim.fn.system({ "git", "-C", directory, "status", "--porcelain" }))
       t:eq(status, "", "nothing is left dirty")
 
-      -- Display options are inherited, not imposed: content panes follow the
-      -- user's `wrap` (and friends) exactly like any editor window.
-      local right_win = state_after_draft.wins.right
-      assert(vim.wo[right_win].wrap == vim.o.wrap, "diff column inherits the user's wrap setting")
-      assert(vim.wo[state_after_draft.wins.desc].wrap == vim.o.wrap, "description column inherits the user's wrap setting")
-      assert(vim.wo[state_after_draft.wins.desc].number == vim.o.number, "description column inherits the user's number setting")
+      -- Content panes carry the USER's global window settings — never the
+      -- tree widget's — and survive pane recreation; the tree keeps its
+      -- widget options on its own window; no global option ever changes.
+      local win_of = function(win, name)
+        return vim.api.nvim_win_get_option(win, name)
+      end
+      for _, entry in ipairs({
+        { name = "diff column", win = state_after_draft.wins.right },
+        { name = "description column", win = state_after_draft.wins.desc },
+      }) do
+        assert(win_of(entry.win, "wrap") == baseline.wrap, entry.name .. " carries the user's global wrap")
+        assert(win_of(entry.win, "cursorline") == baseline.cursorline, entry.name .. " carries the user's global cursorline")
+        assert(win_of(entry.win, "scrolloff") == baseline.scrolloff, entry.name .. " carries the user's global scrolloff, not the tree's 999")
+        assert(win_of(entry.win, "winhl") == baseline.winhl, entry.name .. " has no leaked winhl from the tree widget")
+      end
+      assert(win_of(state_after_draft.wins.tree, "wrap") == false, "the tree widget keeps nowrap")
+      assert(win_of(state_after_draft.wins.tree, "scrolloff") == 999, "the tree widget keeps its centered scrolloff")
+      assert(win_of(state_after_draft.wins.tree, "winhl") == "CursorLine:NeolitCursorLine", "the tree widget keeps its winhl")
+      for _, name in ipairs({ "wrap", "scrolloff", "cursorline", "winhl" }) do
+        assert(global_of(name) == baseline[name], "global " .. name .. " is untouched by the panel")
+      end
 
       -- The stream sticks to its tail: rendering new lines keeps the
       -- cursor on the last one while it rides the bottom.
@@ -198,6 +227,8 @@ return {
       ui.render(frame, true)
       local session_win = ui._state().wins.session
       assert(session_win ~= -1 and vim.api.nvim_win_is_valid(session_win), "session pane split under the description")
+      assert(win_of(session_win, "scrolloff") == baseline.scrolloff and win_of(session_win, "winhl") == baseline.winhl,
+        "the session pane carries the user's global settings, not the tree widget's")
       local placeholder = table.concat(vim.api.nvim_buf_get_lines(ui._state().bufs.session, 0, 1, false), "\n")
       assert(placeholder:find("waiting for the agent", 1, true), "empty stream shows the waiting placeholder")
       for i = 1, 30 do frame.session.lines[i] = { kind = "text", text = "stream line " .. i } end

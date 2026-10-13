@@ -44,6 +44,15 @@ local state = nil
 
 local unpack_table = unpack or table.unpack
 
+-- Window options are ALWAYS written through this: explicitly local to one
+-- window. Without scope="local" a win-scoped set on the CURRENT window
+-- behaves like `:set` and writes the global value too — which once leaked
+-- the tree widget's wrap/scrolloff/cursorline/winbar into every window of
+-- the user's editor.
+local function win_setoption(win, name, value)
+  vim.api.nvim_set_option_value(name, value, { win = win, scope = "local" })
+end
+
 local function spinner()
   return SPINNER_FRAMES[((state and state.spinner_i or 1) - 1) % #SPINNER_FRAMES + 1]
 end
@@ -258,7 +267,7 @@ end
 local function update_winbars()
   if not state then return end
   if vim.api.nvim_win_is_valid(state.wins.tree) then
-    vim.api.nvim_win_set_option(state.wins.tree, "winbar", winbar_text())
+    win_setoption(state.wins.tree, "winbar", winbar_text())
   end
 end
 
@@ -778,9 +787,9 @@ function M.render(frame, force)
     if shown and vim.api.nvim_buf_is_valid(shown) and frame.changes then
       if not has_diffs and preview and preview.lines and #preview.lines > 0 then
         local note = preview.truncated and string.format(" · … %d more lines", preview.totalLines - #preview.lines) or ""
-        vim.api.nvim_win_set_option(right, "winbar", "%#NeolitMuted#" .. preview.path .. " · preview" .. note .. "%#Normal#")
+        win_setoption(right, "winbar", "%#NeolitMuted#" .. preview.path .. " · preview" .. note .. "%#Normal#")
       else
-        vim.api.nvim_win_set_option(right, "winbar", diff_pane_winbar(frame.changes))
+        win_setoption(right, "winbar", diff_pane_winbar(frame.changes))
       end
     end
     if shown then pcall(vim.api.nvim_win_set_buf, right, shown) end
@@ -808,37 +817,62 @@ end
 -- Windows: the full-takeover panel columns
 --------------------------------------------------------------------------
 
+-- (win_setoption lives at the top of the module: update_winbars needs it
+-- too.) Options the tree widget owns. Content panes reset them to the
+-- user's GLOBAL values whenever they are (re)created — a pane behaves
+-- exactly like a plain split made with the user's own settings, both at
+-- panel open and on every recreation (:q + Tab, the session pane
+-- toggling), instead of inheriting the widget's options from the tree
+-- they split from. Defaults are read strictly scoped: `vim.o` reflects the
+-- CURRENT window's local value for global-local options (the tree's, while
+-- the panel is focused), which would write the widget options right back.
+local WIDGET_WINDOW_OPTIONS = {
+  "number", "relativenumber", "signcolumn", "foldcolumn",
+  "wrap", "list", "cursorline", "scrolloff", "winhl",
+}
+
+local function adopt_global_window_options(win)
+  for _, name in ipairs(WIDGET_WINDOW_OPTIONS) do
+    win_setoption(win, name, vim.api.nvim_get_option_value(name, { scope = "global" }))
+  end
+end
+
 local function set_up_tree_window(win, buf)
   vim.api.nvim_win_set_buf(win, buf)
-  local scope = vim.wo[win]
-  scope.number = false
-  scope.relativenumber = false
-  scope.signcolumn = "no"
-  scope.foldcolumn = "0"
-  scope.wrap = false
-  scope.cursorline = true
-  scope.winhl = "CursorLine:NeolitCursorLine"
-  scope.scrolloff = 999
-  scope.winfixwidth = true
-  scope.list = false
-  scope.winbar = "NEOLIT"
+  -- The tree is a widget: these stay LOCAL to its window (win-scoped
+  -- writes, never the global values) — glyph rows carry no numbers or
+  -- wrapping, and the selected row stays centered.
+  win_setoption(win, "number", false)
+  win_setoption(win, "relativenumber", false)
+  win_setoption(win, "signcolumn", "no")
+  win_setoption(win, "foldcolumn", "0")
+  win_setoption(win, "wrap", false)
+  win_setoption(win, "cursorline", true)
+  win_setoption(win, "winhl", "CursorLine:NeolitCursorLine")
+  win_setoption(win, "scrolloff", 999)
+  win_setoption(win, "list", false)
+  win_setoption(win, "winfixwidth", true)
+  win_setoption(win, "winbar", "NEOLIT")
 end
 
 local function set_up_desc_window(win, buf)
   vim.api.nvim_win_set_buf(win, buf)
-  -- A content pane, not a widget: display options (numbers, wrap, list…)
-  -- stay the user's. The panel owns only existence, geometry, and winbar.
-  vim.wo[win].winfixwidth = true
+  -- A content pane, not a widget: it carries the user's global window
+  -- settings; the panel owns only its existence, geometry, and winbar.
+  adopt_global_window_options(win)
+  win_setoption(win, "winfixwidth", true)
 end
 
 local function set_up_session_window(win, buf)
   vim.api.nvim_win_set_buf(win, buf)
-  vim.wo[win].winfixheight = true
+  adopt_global_window_options(win)
+  win_setoption(win, "winfixheight", true)
 end
 
 local function set_up_right_window(win, buf)
   vim.api.nvim_win_set_buf(win, buf)
-  vim.wo[win].winfixwidth = true
+  adopt_global_window_options(win)
+  win_setoption(win, "winfixwidth", true)
 end
 
 --- The panel owns a whole tabpage — the native full-screen unit. The
