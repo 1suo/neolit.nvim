@@ -260,7 +260,8 @@ optimistic-concurrency check, like any other stale writer.
 - Long operations never block: `frame` requests carry the animated spinner
   while an operation runs; the shim pushes `neolit/progress` and `neolit/frame`
   notifications when a background follow-up (the automatic approach generation
-  after a task starts) begins or completes, and when an external agent's
+  after a task starts in this host — a task resumed from the store never
+  auto-generates) begins or completes, and when an external agent's
   mutation over the socket lands while the panel is idle.
 - The automatic singleton adoption, develop policy, restriction plain
   semantics, apply preflight, and pathspec commit all live in the controller

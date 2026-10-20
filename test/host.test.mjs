@@ -302,6 +302,32 @@ test("tasks list stored sessions and task_switch resumes one", async () => {
   await client.shutdown();
 });
 
+test("opening on a persisted unresolved task never auto-generates", async () => {
+  const directory = fixtureRepo();
+  const state = fs.mkdtempSync(path.join(os.tmpdir(), "neolit-tasks-"));
+  temporaryDirectories.push(state);
+  // Seed: started with no model, so the stored task keeps an unresolved root
+  // with no candidates — exactly the state that used to auto-fire generation
+  // the moment a panel with a model opened on it.
+  const seeder = new HostClient(directory, { noModel: true, env: { AUGMENT_TUI_TASKS: "1", XDG_STATE_HOME: state } });
+  await seeder.request("initialize", { directory });
+  await seeder.request("start", { objective: "paused before generation" });
+  await seeder.shutdown();
+
+  const client = new HostClient(directory, { stub: true, env: { AUGMENT_TUI_TASKS: "1", XDG_STATE_HOME: state } });
+  const opened = await client.request("initialize", { directory });
+  assert.ok(opened.result.frame.panel.message.includes("Resumed task: paused before generation"), opened.result.frame.panel.message);
+  assert.ok(opened.result.frame.panel.message.includes("approaches not generated yet"), opened.result.frame.panel.message);
+
+  // The resumed task stays untouched: no background crystallize lands even
+  // after the operation would long since have finished.
+  await new Promise((resolve) => setTimeout(resolve, 250));
+  const settled = await client.request("frame");
+  assert.ok(settled.result.panel.message.includes("Resumed task: paused before generation"), `generation auto-fired: ${settled.result.panel.message}`);
+  assert.equal(settled.result.panel.busy, false);
+  await client.shutdown();
+});
+
 test("chat sends raw messages and needs a tool session", async () => {
   const directory = fixtureRepo();
   const client = new HostClient(directory, { stub: true });
