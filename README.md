@@ -199,10 +199,12 @@ require("neolit").setup({
 })
 ```
 
-The **agent socket**: while the panel is open it serves its own address,
-`$XDG_RUNTIME_DIR/neolit/augment-nvim.sock` (distinct from the TUI's
-`augment.sock`, so both can run at once), reported in every pushed frame's
-`socketPath` field. External agents attach with
+The **agent socket**: while the panel is open it serves a
+directory-keyed address —
+`$XDG_RUNTIME_DIR/neolit/augment-nvim-<basename>-<hash>.sock`, the TUI's
+own default with an `nvim` marker — so a TUI in the same repository and
+panels in other projects never collide with it. The address is reported in
+every pushed frame's `socketPath` field. External agents attach with
 `augmentd --mcp --connect <path>` and their
 mutations render live. Override with `AUGMENT_TUI_SOCKET`; disable with
 `no_socket = true` or `AUGMENT_TUI_NO_SOCKET=1`.
@@ -258,14 +260,15 @@ optimistic-concurrency check, like any other stale writer.
   shutting-down host still pushes frames, and they can never paint — or
   error-close — a newer panel.
 - Long operations never block: `frame` requests carry the animated spinner
-  while an operation runs; the shim pushes `neolit/progress` and `neolit/frame`
-  notifications when a background follow-up (the automatic approach generation
-  after a task starts in this host — a task resumed from the store never
-  auto-generates) begins or completes, and when an external agent's
-  mutation over the socket lands while the panel is idle.
-- The automatic singleton adoption, develop policy, restriction plain
-  semantics, apply preflight, and pathspec commit all live in the controller
-  and kernel — nothing is duplicated in Lua.
+  while an operation runs; the shim pushes `neolit/frame` notifications when
+  an external agent's mutation over the socket lands while the panel is
+  idle. Approach generation is always explicit (`d`, or a message with an
+  empty submit) — nothing runs as a side effect of starting or opening a
+  task.
+- The singleton adoption inside develop, the develop policy, restriction
+  plain semantics (including its carry across task starts), apply preflight,
+  and pathspec commit all live in the controller and kernel — nothing is
+  duplicated in Lua.
 - `lua/neolit/theme.lua` maps the TUI palette onto `Neolit*` highlight groups
   (defined with `default = true`, so a user highlight wins); override any
   `Neolit*` group to restyle.

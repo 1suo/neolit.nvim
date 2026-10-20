@@ -58,7 +58,7 @@ class HostClient {
           ...process.env,
           AUGMENT_TUI_TASKS: "0",
           // Tests must never touch the user's real socket addresses.
-          AUGMENT_TUI_NO_SOCKET: options.socketPath ? undefined : "1",
+          AUGMENT_TUI_NO_SOCKET: options.socketPath || options.sockets ? undefined : "1",
           ...(options.socketPath ? { AUGMENT_TUI_SOCKET: options.socketPath } : {}),
           ...(options.env ?? {}),
           ...(options.noModel ? { AUGMENT_TUI_NO_MODEL: "1" } : {}),
@@ -145,27 +145,22 @@ test("initialize renders the repository tree with stub model info", async () => 
   await client.shutdown();
 });
 
-test("full flow: start auto-adopts, develop refines then drafts, apply and commit", async () => {
+test("full flow: start waits for marks, develop adopts-refines-drafts, apply and commit", async () => {
   const directory = fixtureRepo();
   const client = new HostClient(directory, { stub: true });
   await client.request("initialize", { directory });
 
   const started = await client.request("start", { objective: "add gamma line" });
   assert.ok(started.result, `start failed: ${JSON.stringify(started)}`);
-
-  const adopted = await client.waitFor(
-    (frame) => frame.panel.message?.includes("Single viable approach adopted"),
-    { label: "singleton adoption" },
-  );
-  assert.ok(adopted.tree.rows.some((row) => row.id === "entry:session.ts"));
+  // Generation never fires on its own: the marking window points at [D].
+  assert.ok(started.result.panel.message.includes("generates approaches"), started.result.panel.message);
 
   await client.request("develop");
+  await client.waitFor((frame) => frame.panel.message?.includes("Draft change ready"), { label: "patch draft" });
   await client.waitFor((frame) => frame.tree.selectedRowId === "entry:session.ts", { label: "refine selects the planned child" });
   const detail = await client.request("select", { rowId: "entry:session.ts" });
   assert.ok(detail.result.detail.some((line) => line.text.includes("apply the edit")), "detail explains the child");
 
-  await client.request("develop");
-  await client.waitFor((frame) => frame.panel.message?.includes("Draft change ready"), { label: "patch draft" });
   const drafted = await client.request("select", { rowId: "entry:session.ts" });
   assert.ok(drafted.result.changes.diffs.length === 1, "changes carry the drafted diff");
   assert.ok(drafted.result.changes.diffs[0].text.includes("+gamma"), "raw patch text ships for the diff buffer");
@@ -193,11 +188,11 @@ test("full flow: start auto-adopts, develop refines then drafts, apply and commi
   await client.shutdown();
 });
 
-test("restrictions mark paths and surface the lock chip", async () => {  const directory = fixtureRepo();
+test("restrictions mark paths and surface the lock chip", async () => {
+  const directory = fixtureRepo();
   const client = new HostClient(directory, { stub: true });
   await client.request("initialize", { directory });
   await client.request("start", { objective: "lock a path" });
-  await client.waitFor((frame) => frame.panel.message?.includes("Single viable approach adopted"), { label: "adoption" });
 
   const locked = await client.request("select", { rowId: "entry:session.ts" }).then(() => client.request("lock"));
   assert.ok(locked.result.panel.message.includes("Locked: session.ts"), locked.result.panel.message);
@@ -215,7 +210,6 @@ test("selecting a repository-only file previews its content in the diff column",
   const client = new HostClient(directory, { stub: true });
   await client.request("initialize", { directory });
   await client.request("start", { objective: "add gamma line" });
-  await client.waitFor((frame) => frame.panel.message?.includes("Single viable approach adopted"), { label: "adoption" });
 
   // notes.md is outside the plan: the diff column becomes the content column.
   const selected = await client.request("select", { rowId: "entry:notes.md" });
@@ -230,7 +224,6 @@ test("the diff column shows the file body with the draft marked; M flips to raw"
   const client = new HostClient(directory, { stub: true });
   await client.request("initialize", { directory });
   await client.request("start", { objective: "add gamma line" });
-  await client.waitFor((frame) => frame.panel.message?.includes("Single viable approach adopted"), { label: "adoption" });
   await client.request("develop");
   await client.waitFor((frame) => frame.changes && frame.changes.diffs.length > 0, { label: "drafted" });
   await client.request("select", { rowId: "entry:session.ts" });
@@ -282,9 +275,7 @@ test("tasks list stored sessions and task_switch resumes one", async () => {
   const client = new HostClient(directory, { stub: true, env: { AUGMENT_TUI_TASKS: "1", XDG_STATE_HOME: state } });
   await client.request("initialize", { directory });
   await client.request("start", { objective: "first task" });
-  await client.waitFor((frame) => frame.panel.message?.includes("Single viable approach adopted"), { label: "first adoption" });
   await client.request("start", { objective: "second task" });
-  await client.waitFor((frame) => frame.panel.message?.includes("Single viable approach adopted"), { label: "second adoption" });
 
   const listed = await client.request("tasks");
   const tasks = listed.result.tasks;
@@ -300,6 +291,27 @@ test("tasks list stored sessions and task_switch resumes one", async () => {
   const again = await client.request("tasks");
   assert.equal(again.result.tasks.find((entry) => entry.active).objective, "first task");
   await client.shutdown();
+});
+
+test("each panel serves its own directory-keyed agent socket", async () => {
+  const runtime = fs.mkdtempSync(path.join(os.tmpdir(), "neolit-runtime-"));
+  temporaryDirectories.push(runtime);
+  const env = { XDG_RUNTIME_DIR: runtime };
+  const first = fixtureRepo();
+  const second = fixtureRepo();
+  const a = new HostClient(first, { stub: true, sockets: true, env });
+  const b = new HostClient(second, { stub: true, sockets: true, env });
+  await a.request("initialize", { directory: first });
+  await b.request("initialize", { directory: second });
+  // The bind lands asynchronously; with the old fixed panel path the second
+  // host lost it and served nothing — its tool sessions failed with "The
+  // agent socket is not available" five seconds into every model operation.
+  const frameA = await a.waitFor((frame) => frame.socketPath, { label: "first panel socket" });
+  const frameB = await b.waitFor((frame) => frame.socketPath, { label: "second panel socket" });
+  assert.notEqual(frameA.socketPath, frameB.socketPath, "each panel serves its own directory-keyed address");
+  assert.ok(fs.existsSync(frameA.socketPath), "the socket file exists");
+  await a.shutdown();
+  await b.shutdown();
 });
 
 test("opening on a persisted unresolved task never auto-generates", async () => {
@@ -333,7 +345,6 @@ test("chat sends raw messages and needs a tool session", async () => {
   const client = new HostClient(directory, { stub: true });
   await client.request("initialize", { directory });
   await client.request("start", { objective: "add gamma line" });
-  await client.waitFor((frame) => frame.panel.message?.includes("Single viable approach adopted"), { label: "adoption" });
 
   // The stub runtime has no agent session to talk to: a typed, visible
   // refusal — not a protocol error.
@@ -354,7 +365,6 @@ test("messages route: ambiguous ones offer options the number keys choose", asyn
   const client = new HostClient(directory, { stub: true });
   await client.request("initialize", { directory });
   await client.request("start", { objective: "add gamma line" });
-  await client.waitFor((frame) => frame.panel.message?.includes("Single viable approach adopted"), { label: "adoption" });
 
   // An ambiguous message is classified as offer-options; the frame carries
   // the interpretations and number keys outrank approach candidates.
