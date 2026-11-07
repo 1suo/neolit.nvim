@@ -5,9 +5,9 @@ local M = {}
 local function find_core(opts)
   local config = require("neolit.config")
   local cfg = config.merge(opts or {})
-  local root = cfg.directory or vim.fn.getcwd()
+  local root = vim.fn.fnamemodify(cfg.directory or vim.fn.getcwd(), ":p")
   local plugin_root = config.plugin_root()
-  local npm_root = vim.fn.system({ cfg.node, "npm", "root", "-g" }):gsub("%s+$", "")
+  local npm_root = vim.fn.system({ "npm", "root", "-g" }):gsub("%s+$", "")
   local neolit_dir = config.find_neolit_dir(cfg, {
     env = vim.fn.environ(),
     plugin_root = plugin_root,
