@@ -4,8 +4,9 @@ Neovim host for [neolit](https://github.com/1suo/neolit).
 
 > **Git-native rewrite in progress:** `:NeolitPlan` opens a separate,
 > read-only planning workspace backed by the new Markdown/Git core. It
-> follows linked README → SPEC/TODO documents, shows requirement references
-> and actual changed files/hunks, opens native diff-syntax buffers, and copies
+> follows linked README → SPEC/TODO documents, shows derived task/requirement
+> states beside their Markdown checkboxes, actual changed files/hunks, opens
+> native diff-syntax buffers, and copies
 > selected task/requirement/file/hunk context for an existing coding-agent
 > conversation. It does not use the legacy planned-diff controller, start an
 > agent, or modify Git state. The existing `:Neolit` command below remains
