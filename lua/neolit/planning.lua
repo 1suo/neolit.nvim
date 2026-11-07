@@ -65,6 +65,13 @@ local function open_diff(root, file, selected_hunk)
   end
 end
 
+local function diff_command(file)
+  if file.status == "added" and #file.hunks == 0 then
+    return { "git", "diff", "--no-index", "--no-ext-diff", "--no-color", "--", "/dev/null", file.path }
+  end
+  return { "git", "diff", "--no-ext-diff", "--no-color", "--find-renames", "HEAD", "--", file.path }
+end
+
 local function render(buf, root, workspace)
   local lines, rows = {}, {}
   local function add(text, row)
