@@ -83,9 +83,9 @@ local function render(buf, root, workspace)
   add("", nil)
   add("TASKS (" .. #workspace.tasks .. ")", nil)
   for _, task in ipairs(workspace.tasks) do
-    local state = task.state == "unmapped" and "!" or (task.checked and "x" or " ")
+    local checkbox = task.checked and "[x]" or "[ ]"
     local todo_path = task.key:match("^(.-)::") or "TODO.md"
-    add(string.format("  [%s] %s  (%s:%d)", state, task.text, todo_path, task.range.startLine), {
+    add(string.format("  %s %-8s %s  (%s:%d)", checkbox, task.state, task.text, todo_path, task.range.startLine), {
       kind = "task", task = task,
     })
     for _, requirement in ipairs(task.resolvedRequirements) do
@@ -118,12 +118,16 @@ local function render(buf, root, workspace)
 
   add("", nil)
   add("CHANGED FILES (" .. #workspace.git.changedFiles .. ")", nil)
-  local associations = {}
+  local associations, statuses = {}, {}
   for _, association in ipairs(workspace.git.associations) do associations[association.path] = association end
+  for _, status in ipairs(workspace.git.status) do statuses[status.path] = status end
   for _, file in ipairs(workspace.git.changedFiles) do
     local association = associations[file.path] or { state = "unplanned", taskKeys = {} }
     local marker = association.state == "unplanned" and "?" or (association.state == "partially-mapped" and "~" or "+")
-    add(string.format("  %s %s", marker, file.path), { kind = "file", file = file })
+    local status = statuses[file.path]
+    local git_status = status and (status.index .. status.worktree) or "  "
+    local doc_marker = file.path:match("%.md$") and "#" or " "
+    add(string.format("  %s %s [%s] %s", marker, doc_marker, git_status, file.path), { kind = "file", file = file })
     for _, hunk in ipairs(file.hunks) do
       add(string.format("      @@ -%d,%d +%d,%d @@ %s", hunk.oldStart, hunk.oldLines, hunk.newStart, hunk.newLines, hunk.header), {
         kind = "hunk", file = file, hunk = hunk,
