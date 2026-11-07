@@ -51,7 +51,7 @@ local function open_diff(root, file, selected_hunk)
   end
 end
 
-local function render(root, workspace)
+local function render(buf, root, workspace)
   local lines, rows = {}, {}
   local function add(text, row)
     lines[#lines + 1] = text
@@ -106,7 +106,6 @@ local function render(root, workspace)
     })
   end
 
-  local buf = vim.api.nvim_get_current_buf()
   vim.bo[buf].modifiable = true
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
   vim.bo[buf].modifiable = false
@@ -147,7 +146,7 @@ function M.open(opts)
             vim.notify("neolit: could not decode planning workspace", vim.log.levels.ERROR)
             return
           end
-          render(root, workspace)
+          render(buf, root, workspace)
           vim.b[buf].neolit_workspace = workspace
         end)
       end,
@@ -168,14 +167,14 @@ function M.open(opts)
       local task = row.task
       local todo_path = task.key:match("^(.-)::")
       if todo_path then
-        vim.cmd("edit " .. vim.fn.fnameescape(root .. "/" .. todo_path))
+        vim.cmd("tabedit " .. vim.fn.fnameescape(root .. "/" .. todo_path))
         vim.api.nvim_win_set_cursor(0, { task.range.startLine, 0 })
       end
     elseif row.kind == "requirement" then
       local req = row.requirement
       local spec_path = row.spec_path
       if spec_path then
-        vim.cmd("edit " .. vim.fn.fnameescape(root .. "/" .. spec_path))
+        vim.cmd("tabedit " .. vim.fn.fnameescape(root .. "/" .. spec_path))
         vim.api.nvim_win_set_cursor(0, { req.range.startLine, 0 })
       end
     elseif row.kind == "file" then
@@ -226,7 +225,10 @@ function M.open(opts)
   map("<CR>", selected, "Open selected TODO, SPEC requirement, or native diff")
   map("r", refresh, "Refresh Git-native planning workspace")
   map("x", ask_context, "Copy selected planning/diff context for existing agent")
-  map("q", function() pcall(vim.api.nvim_buf_delete, buf, { force = true }) end, "Close planning workspace")
+  map("q", function()
+    if vim.api.nvim_get_current_buf() == buf then vim.cmd("close") end
+    if vim.api.nvim_buf_is_valid(buf) then pcall(vim.api.nvim_buf_delete, buf, { force = true }) end
+  end, "Close planning workspace")
   refresh()
 end
 
