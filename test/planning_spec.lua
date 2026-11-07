@@ -116,7 +116,8 @@ return {
       end
       if panel_buf and vim.api.nvim_buf_is_valid(panel_buf) then
         pcall(vim.api.nvim_set_current_buf, panel_buf)
-        pcall(vim.cmd, "close")
+        local has_close, close_workspace = pcall(find_mapping, "n", "q", panel_buf)
+        if has_close then pcall(close_workspace) else pcall(vim.api.nvim_buf_delete, panel_buf, { force = true }) end
       end
       vim.fn.delete(directory, "rf")
       if not ok then error(failure) end
