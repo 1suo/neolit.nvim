@@ -127,10 +127,10 @@ local function render(buf, root, workspace)
     local status = statuses[file.path]
     local git_status = status and (status.index .. status.worktree) or "  "
     local doc_marker = file.path:match("%.md$") and "#" or " "
-    add(string.format("  %s %s [%s] %s", marker, doc_marker, git_status, file.path), { kind = "file", file = file })
+    add(string.format("  %s %s [%s] %s", marker, doc_marker, git_status, file.path), { kind = "file", file = file, association = association })
     for _, hunk in ipairs(file.hunks) do
       add(string.format("      @@ -%d,%d +%d,%d @@ %s", hunk.oldStart, hunk.oldLines, hunk.newStart, hunk.newLines, hunk.header), {
-        kind = "hunk", file = file, hunk = hunk,
+        kind = "hunk", file = file, hunk = hunk, association = association,
       })
     end
   end
@@ -260,6 +260,17 @@ function M.open(opts)
         .. "\nDiff side: HEAD → working tree/index"
         .. (row.hunk and string.format("\nOld lines %d-%d; new lines %d-%d", row.hunk.oldStart, row.hunk.oldStart + row.hunk.oldLines - 1, row.hunk.newStart, row.hunk.newStart + row.hunk.newLines - 1) or "")
         .. "\n\n" .. diff
+      local workspace = vim.b[buf].neolit_workspace
+      local related = {}
+      for _, task in ipairs(workspace and workspace.tasks or {}) do
+        if row.association and vim.tbl_contains(row.association.taskKeys, task.key) then
+          related[#related + 1] = "- TODO: " .. task.text
+          for _, requirement in ipairs(task.resolvedRequirements) do
+            related[#related + 1] = "  - " .. requirement.id .. ": " .. requirement.text
+          end
+        end
+      end
+      if #related > 0 then context = context .. "\n\nRelated plan:\n" .. table.concat(related, "\n") end
     elseif row.kind == "requirement" then
       context = "Selected SPEC requirement " .. row.requirement.id
         .. "\nSource: " .. tostring(row.spec_path) .. ":" .. row.requirement.range.startLine
