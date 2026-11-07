@@ -1,0 +1,93 @@
+local config = require("neolit.config")
+local planning = require("neolit.planning")
+
+local function run(args, cwd)
+  local result = vim.system(args, { cwd = cwd, text = true }):wait()
+  assert(result.code == 0, table.concat(args, " ") .. " failed: " .. (result.stderr or ""))
+  return result.stdout or ""
+end
+
+local function fixture()
+  local directory = vim.fn.trim(vim.fn.system({ "mktemp", "-d", "/tmp/neolit-plan-XXXXXX" }))
+  assert(directory ~= "", "mktemp failed")
+  run({ "git", "init", "-q" }, directory)
+  run({ "git", "config", "user.email", "test@example.com" }, directory)
+  run({ "git", "config", "user.name", "Neolit planning test" }, directory)
+  vim.fn.writefile({ "# Fixture" }, directory .. "/README.md")
+  vim.fn.writefile({ "export const value = 1;", "export const next = 2;" }, directory .. "/sample.ts")
+  run({ "git", "add", "." }, directory)
+  run({ "git", "commit", "-qm", "fixture" }, directory)
+  vim.fn.writefile({ "export const value = 1;", "export const next = 3;" }, directory .. "/sample.ts")
+  return directory
+end
+
+local function find_mapping(mode, lhs, buffer)
+  for _, mapping in ipairs(vim.keymap.get(mode, lhs, { buffer = buffer })) do
+    if mapping.callback then return mapping.callback end
+  end
+  error("mapping not found: " .. lhs)
+end
+
+return {
+  {
+    name = "copies an exact selected diff line with a stale-checked base anchor",
+    run = function(t)
+      local neolit_dir = config.find_neolit_dir({}, {
+        env = vim.env,
+        plugin_root = config.plugin_root(),
+        readable = function(path) return vim.fn.filereadable(path) == 1 end,
+      })
+      if not neolit_dir then
+        print("  (skipped: no neolit dist found; set NEOLIT_DIR)")
+        return
+      end
+
+      local directory = fixture()
+      local original_input = vim.ui.input
+      local original_tab_count = #vim.api.nvim_list_tabpages()
+      local ok, failure = pcall(function()
+        planning.open({ directory = directory, neolit_dir = neolit_dir })
+        local panel_buf = vim.api.nvim_get_current_buf()
+        t:ok(vim.wait(15000, function()
+          return vim.api.nvim_buf_is_valid(panel_buf) and vim.b[panel_buf].neolit_rows ~= nil
+        end, 50), "planning workspace loads")
+
+        local file_row
+        for row, item in pairs(vim.b[panel_buf].neolit_rows) do
+          if item and item.kind == "file" and item.file.path == "sample.ts" then
+            file_row = row
+            break
+          end
+        end
+        t:ok(file_row ~= nil, "changed file is visible")
+        vim.api.nvim_win_set_cursor(0, { file_row, 0 })
+        find_mapping("n", "<CR>", panel_buf)()
+
+        local working_buf = vim.api.nvim_get_current_buf()
+        t:ok(vim.api.nvim_buf_is_valid(working_buf), "native working-tree diff buffer opens")
+        vim.api.nvim_win_set_cursor(0, { 2, 0 })
+        local packet
+        vim.ui.input = function(_, callback) callback("Why did this line change?") end
+        find_mapping("n", "<leader>nx", working_buf)()
+        packet = vim.fn.getreg("+") .. "\n" .. vim.fn.getreg('"')
+
+        t:ok(packet:find("Why did this line change?", 1, true) ~= nil, "question is included")
+        t:ok(packet:find("sample.ts:2-2", 1, true) ~= nil, "exact path and line range are included")
+        t:ok(packet:find("Diff side: working-tree", 1, true) ~= nil, "diff side is explicit")
+        t:ok(packet:find("Base commit:", 1, true) ~= nil, "base commit is explicit")
+        t:ok(packet:find("Diff identity (sha256):", 1, true) ~= nil, "diff identity is explicit")
+        t:ok(packet:find("export const next = 3;", 1, true) ~= nil, "selected source line is included")
+        t:ok(packet:find("+export const next = 3;", 1, true) ~= nil, "current Git diff is included")
+      end)
+      vim.ui.input = original_input
+      while #vim.api.nvim_list_tabpages() > original_tab_count do
+        pcall(vim.cmd, "tabclose!")
+      end
+      if vim.api.nvim_buf_is_valid(vim.api.nvim_get_current_buf()) then
+        pcall(vim.cmd, "close")
+      end
+      vim.fn.delete(directory, "rf")
+      if not ok then error(failure) end
+    end,
+  },
+};
