@@ -78,7 +78,7 @@ return {
         packet = vim.fn.getreg("+") .. "\n" .. vim.fn.getreg('"')
 
         t:ok(packet:find("Why did this line change?", 1, true) ~= nil, "question is included")
-        t:ok(packet:find("sample.ts:2-2", 1, true) ~= nil, "exact path and line range are included")
+        t:ok(packet:find("sample.ts lines 2-2", 1, true) ~= nil, "exact path and line range are included")
         t:ok(packet:find("Diff side: working-tree", 1, true) ~= nil, "diff side is explicit")
         t:ok(packet:find("Base commit:", 1, true) ~= nil, "base commit is explicit")
         t:ok(packet:find("Diff identity (sha256):", 1, true) ~= nil, "diff identity is explicit")
