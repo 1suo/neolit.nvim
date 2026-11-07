@@ -1,7 +1,15 @@
 # neolit.nvim
 
-Neovim host for [neolit](https://github.com/1suo/neolit), the planned-diff
-augmentation kernel.
+Neovim host for [neolit](https://github.com/1suo/neolit).
+
+> **Git-native rewrite in progress:** `:NeolitPlan` opens a separate,
+> read-only planning workspace backed by the new Markdown/Git core. It
+> follows linked README → SPEC/TODO documents, shows requirement references
+> and actual changed files/hunks, opens native diff-syntax buffers, and copies
+> selected task/requirement/file/hunk context for an existing coding-agent
+> conversation. It does not use the legacy planned-diff controller, start an
+> agent, or modify Git state. The existing `:Neolit` command below remains
+> the legacy planned-diff panel until the rewrite is complete.
 The plugin gives Neovim the same operational plane as the standalone `augment`
 TUI: the repository tree with integrated plan state on the left, the
 DESCRIPTION/CHANGES detail pane on the right, the message panel below, and the
@@ -15,6 +23,33 @@ newline-delimited JSON-RPC 2.0 over stdio (the `augmentd` framing). The Lua
 side only renders frames into native windows and routes keys. Plan lifecycle,
 model routing, retries, apply/commit transactions, and pane formatting stay
 single-sourced in the neolit package.
+
+## Git-native planning workspace
+
+Build the neolit core checkout first:
+
+```sh
+cd /path/to/neolit
+npm install
+npm run build
+```
+
+Configure `neolit_dir` to that checkout if it is not found by the default
+resolver, then run `:NeolitPlan` in a repository. The command opens a
+separate planning buffer. Use:
+
+- `<CR>` on a task to open its TODO source location in another tab.
+- `<CR>` on a requirement to open its exact SPEC source location.
+- `<CR>` on a changed file or hunk to open the actual Git diff in a
+  `filetype=diff` buffer; hunk selection navigates to that hunk.
+- `x` on a task, requirement, file, or hunk to copy a compact context packet
+  to the system clipboard for pasting into the existing agent conversation.
+- `r` to refresh; `q` to close.
+
+This view is read-only. It does not stage, apply, commit, or rewrite files.
+File/hunk association is based on explicit TODO file hints; it is not a claim
+that a diff semantically fulfills a requirement. Agent handoff is clipboard
+based for now; there is no Neolit-owned chat or session layer.
 
 ## Requirements
 
