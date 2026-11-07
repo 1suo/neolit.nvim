@@ -40,8 +40,8 @@ separate planning buffer. Use:
 
 - `<CR>` on a task to open its TODO source location in another tab.
 - `<CR>` on a requirement to open its exact SPEC source location.
-- `<CR>` on a changed file or hunk to open the actual Git diff in a
-  `filetype=diff` buffer; hunk selection navigates to that hunk.
+- `<CR>` on a changed file or hunk to open a native side-by-side Neovim diff between `HEAD` and the working
+  file; hunk selection navigates to that hunk.
 - `x` on a task, requirement, file, or hunk to enter a question and copy it
   together with the exact selected context to the system clipboard for the
   existing agent conversation.
