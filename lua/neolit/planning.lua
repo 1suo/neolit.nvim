@@ -30,6 +30,10 @@ local function diff_command(file)
   return command
 end
 
+local function normalize_diff(diff)
+  return (diff or ""):gsub("\\r\\n", "\\n"):gsub("\\n+$", "")
+end
+
 local function open_diff(root, file, selected_hunk, on_line_context)
   local initial_result = vim.system(diff_command(file), { cwd = root, text = true }):wait()
   local initial_diff = initial_result.stdout or ""
@@ -360,7 +364,7 @@ function M.open(opts)
         refresh()
         return
       end
-      if row.file.rawDiff and diff ~= row.file.rawDiff then
+      if row.file.rawDiff and normalize_diff(diff) ~= row.file.rawDiff then
         vim.notify("Selected diff changed since the workspace was loaded; refreshing. Select it again.", vim.log.levels.WARN)
         refresh()
         return
