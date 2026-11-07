@@ -13,7 +13,22 @@ local function fixture()
   run({ "git", "init", "-q" }, directory)
   run({ "git", "config", "user.email", "test@example.com" }, directory)
   run({ "git", "config", "user.name", "Neolit planning test" }, directory)
-  vim.fn.writefile({ "# Fixture" }, directory .. "/README.md")
+  vim.fn.mkdir(directory .. "/src", "p")
+  vim.fn.writefile({ "# Fixture", "", "[Feature](src/README.md)" }, directory .. "/README.md")
+  vim.fn.writefile({ "# Feature", "", "[SPEC](SPEC.md) [TODO](TODO.md)" }, directory .. "/src/README.md")
+  vim.fn.writefile({
+    "# Feature",
+    "## Requirements",
+    "- **R-01** Change the exported value.",
+    "## Acceptance criteria",
+    "- **AC-01** R-01 exports the new value.",
+  }, directory .. "/src/SPEC.md")
+  vim.fn.writefile({
+    "# Feature tasks",
+    "- [ ] Change the value",
+    "  - SPEC: `SPEC.md#R-01`",
+    "  - File: `sample.ts`",
+  }, directory .. "/src/TODO.md")
   vim.fn.writefile({ "export const value = 1;", "export const next = 2;" }, directory .. "/sample.ts")
   run({ "git", "add", "." }, directory)
   run({ "git", "commit", "-qm", "fixture" }, directory)
@@ -61,6 +76,9 @@ return {
           end
         end
         t:ok(file_row ~= nil, "changed file is visible")
+        local panel_text = table.concat(vim.api.nvim_buf_get_lines(panel_buf, 0, -1, false), "\n")
+        t:ok(panel_text:find("implemented", 1, true) ~= nil, "derived task state is displayed")
+        t:ok(panel_text:find("AC-01", 1, true) == nil, "acceptance criteria remain in the SPEC rather than duplicated in the compact list")
         vim.api.nvim_win_set_cursor(0, { file_row, 0 })
         find_mapping("n", "<CR>", panel_buf)()
 
