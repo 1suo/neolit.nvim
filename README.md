@@ -42,9 +42,14 @@ separate planning buffer. Use:
 - `<CR>` on a requirement to open its exact SPEC source location.
 - `<CR>` on a changed file or hunk to open a native side-by-side Neovim diff between `HEAD` and the working
   file; hunk selection navigates to that hunk.
-- `x` on a task, requirement, file, or hunk to enter a question and copy it
-  together with the exact selected context to the system clipboard for the
-  existing agent conversation.
+- `x` on a task, requirement, file, or hunk in the planning buffer to enter a
+  question and copy it together with the selected context for the existing
+  agent conversation.
+- In a native diff tab, `<leader>nx` on a line or visual line selection asks a
+  question about those exact base/working-tree lines. The packet includes the
+  path, side, line range, base commit, diff SHA-256, selected lines, and current
+  file diff. It refuses unsaved working buffers and refreshes rather than
+  sending context when HEAD or the opened diff has changed.
 - `r` to refresh; `q` to close.
 
 This view is read-only. It does not stage, apply, commit, or rewrite files.
@@ -68,7 +73,7 @@ based for now; there is no Neolit-owned chat or session layer.
 {
   "1suo/neolit.nvim",
   opts = {}, -- see Configuration
-  cmd = { "Neolit", "NeolitClose" },
+  cmd = { "Neolit", "NeolitClose", "NeolitPlan" },
 }
 ```
 
