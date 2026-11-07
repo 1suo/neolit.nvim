@@ -20,14 +20,17 @@ local function find_core(opts)
   return cfg, root, neolit_dir
 end
 
-local function open_diff(root, file)
-  local args
+local function diff_command(file)
   if file.status == "added" and #file.hunks == 0 then
-    args = { "git", "diff", "--no-index", "--no-ext-diff", "--no-color", "--", "/dev/null", file.path }
-  else
-    args = { "git", "diff", "--no-ext-diff", "--no-color", "--find-renames", "HEAD", "--", file.path }
+    return { "git", "diff", "--no-index", "--no-ext-diff", "--no-color", "--", "/dev/null", file.path }
   end
-  local output = vim.fn.systemlist(args)
+  return { "git", "diff", "--no-ext-diff", "--no-color", "--find-renames", "HEAD", "--", file.path }
+end
+
+local function open_diff(root, file, selected_hunk)
+  local result = vim.system(diff_command(file), { cwd = root, text = true }):wait()
+  local output = vim.split(result.stdout or "", "\n", { plain = true })
+  if output[#output] == "" then table.remove(output) end
   local buf = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_buf_set_name(buf, "neolit-diff://" .. file.path)
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, #output > 0 and output or { "(no diff for " .. file.path .. ")" })
@@ -37,6 +40,15 @@ local function open_diff(root, file)
   vim.bo[buf].filetype = "diff"
   vim.cmd("tab split")
   vim.api.nvim_win_set_buf(0, buf)
+  if selected_hunk then
+    local header = string.format("@@ -%d", selected_hunk.oldStart)
+    for index, line in ipairs(output) do
+      if line:sub(1, #header) == header and line:find("+" .. selected_hunk.newStart, 1, true) then
+        vim.api.nvim_win_set_cursor(0, { index, 0 })
+        break
+      end
+    end
+  end
 end
 
 local function render(root, workspace)
@@ -78,6 +90,11 @@ local function render(root, workspace)
     local association = associations[file.path] or { state = "unplanned", taskKeys = {} }
     local marker = association.state == "unplanned" and "?" or (association.state == "partially-mapped" and "~" or "+")
     add(string.format("  %s %s", marker, file.path), { kind = "file", file = file })
+    for _, hunk in ipairs(file.hunks) do
+      add(string.format("      @@ -%d,%d +%d,%d @@ %s", hunk.oldStart, hunk.oldLines, hunk.newStart, hunk.newLines, hunk.header), {
+        kind = "hunk", file = file, hunk = hunk,
+      })
+    end
   end
   if #workspace.git.changedFiles == 0 then add("  (working tree clean)", nil) end
 
@@ -163,19 +180,37 @@ function M.open(opts)
       end
     elseif row.kind == "file" then
       open_diff(root, row.file)
+    elseif row.kind == "hunk" then
+      open_diff(root, row.file, row.hunk)
     end
   end
 
   local function ask_context()
     local row = vim.b[buf].neolit_rows and vim.b[buf].neolit_rows[vim.api.nvim_win_get_cursor(0)[1]]
-    if not row or (row.kind ~= "file" and row.kind ~= "requirement" and row.kind ~= "task") then
+    if not row or (row.kind ~= "file" and row.kind ~= "hunk" and row.kind ~= "requirement" and row.kind ~= "task") then
       vim.notify("Select a task, requirement, or changed file first")
       return
     end
     local context
-    if row.kind == "file" then
-      local diff = vim.fn.system({ "git", "diff", "--no-ext-diff", "--no-color", "HEAD", "--", row.file.path })
-      context = "Selected repository diff: " .. row.file.path .. "\n\n" .. diff
+    if row.kind == "file" or row.kind == "hunk" then
+      local result = vim.system(diff_command(row.file), { cwd = root, text = true }):wait()
+      local diff = result.stdout or ""
+      if row.kind == "hunk" then
+        local lines, capture, selected = vim.split(diff, "\n", { plain = true }), {}, false
+        for _, line in ipairs(lines) do
+          if line:match("^@@ ") then
+            if selected then break end
+            local old, new = line:match("^@@ %-(%d+)[^ ]* %+(%d+)")
+            selected = tonumber(old) == row.hunk.oldStart and tonumber(new) == row.hunk.newStart
+          end
+          if selected then capture[#capture + 1] = line end
+        end
+        diff = table.concat(capture, "\n")
+      end
+      context = "Selected Git diff (" .. (row.kind == "hunk" and "hunk" or "file") .. "): " .. row.file.path
+        .. "\nDiff side: HEAD → working tree/index"
+        .. (row.hunk and string.format("\nOld lines %d-%d; new lines %d-%d", row.hunk.oldStart, row.hunk.oldStart + row.hunk.oldLines - 1, row.hunk.newStart, row.hunk.newStart + row.hunk.newLines - 1) or "")
+        .. "\n\n" .. diff
     elseif row.kind == "requirement" then
       context = "Selected SPEC requirement " .. row.requirement.id .. ": " .. row.requirement.text
     else
