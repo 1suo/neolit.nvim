@@ -122,23 +122,7 @@ local function render(buf, root, workspace)
       kind = "task", task = task,
     })
     for _, requirement in ipairs(task.resolvedRequirements) do
-      local spec_path
-      for _, reference in ipairs(task.specReferences) do
-        if vim.tbl_contains(reference.ids, requirement.id) then
-          for _, spec in ipairs(workspace.specs) do
-            if spec.path == reference.path then
-              for _, candidate in ipairs(spec.requirements) do
-                if candidate.id == requirement.id and candidate.text == requirement.text
-                  and candidate.range.startLine == requirement.range.startLine then
-                  spec_path = spec.path
-                  break
-                end
-              end
-            end
-          end
-        end
-        if spec_path then break end
-      end
+      local spec_path = requirement.specPath
       local requirement_state = requirement_states[requirement.specPath .. "#" .. requirement.id] or "planned"
       add(string.format("      %s  %-10s %s", requirement.id, requirement_state, requirement.text), {
         kind = "requirement", requirement = requirement, spec_path = spec_path,
