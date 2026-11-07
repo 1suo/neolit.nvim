@@ -36,6 +36,7 @@ local function open_diff(root, file, selected_hunk)
   vim.bo[base_buf].bufhidden = "hide"
   vim.bo[base_buf].swapfile = false
   vim.bo[base_buf].filetype = filetype
+  local base_win = vim.api.nvim_get_current_win()
 
   vim.cmd("vsplit")
   local working_buf
@@ -52,12 +53,14 @@ local function open_diff(root, file, selected_hunk)
     vim.bo[working_buf].filetype = filetype
   end
 
-  vim.api.nvim_set_current_buf(base_buf)
+  local working_win = vim.api.nvim_get_current_win()
+  vim.api.nvim_set_current_win(base_win)
   vim.cmd("diffthis")
-  vim.api.nvim_set_current_buf(working_buf)
+  vim.api.nvim_set_current_win(working_win)
   vim.cmd("diffthis")
   if selected_hunk then
     local target = file.status == "deleted" and selected_hunk.oldStart or selected_hunk.newStart
+    vim.api.nvim_set_current_win(file.status == "deleted" and base_win or working_win)
     vim.api.nvim_win_set_cursor(0, { math.max(1, target), 0 })
   end
 end
