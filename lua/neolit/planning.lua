@@ -31,7 +31,7 @@ local function diff_command(file)
 end
 
 local function normalize_diff(diff)
-  return (diff or ""):gsub("\\r\\n", "\\n"):gsub("\\n+$", "")
+  return (diff or ""):gsub("\r\n", "\n"):gsub("\n+$", "")
 end
 
 local function open_diff(root, file, selected_hunk, on_line_context)
