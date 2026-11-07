@@ -232,6 +232,18 @@ function M.open(opts)
     if row.kind == "file" or row.kind == "hunk" then
       local result = vim.system(diff_command(row.file), { cwd = root, text = true }):wait()
       local diff = result.stdout or ""
+      local workspace = vim.b[buf].neolit_workspace
+      local head = vim.system({ "git", "rev-parse", "--verify", "HEAD" }, { cwd = root, text = true }):wait()
+      if workspace and workspace.git.head ~= (head.stdout or ""):gsub("%s+$", "") then
+        vim.notify("Diff anchor is stale because HEAD changed; refresh and select it again.", vim.log.levels.WARN)
+        refresh()
+        return
+      end
+      if row.file.rawDiff and diff ~= row.file.rawDiff then
+        vim.notify("Selected diff changed since the workspace was loaded; refreshing. Select it again.", vim.log.levels.WARN)
+        refresh()
+        return
+      end
       if row.kind == "hunk" then
         local lines, capture, selected = vim.split(diff, "\n", { plain = true }), {}, false
         for _, line in ipairs(lines) do
