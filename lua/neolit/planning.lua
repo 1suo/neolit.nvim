@@ -227,7 +227,17 @@ function M.open(opts)
   end
 
   local function copy_context(context)
-    copy_context(context)
+    vim.ui.input({ prompt = "Question about selected context: " }, function(question)
+      if not question or question == "" then return end
+      local packet = "Question: " .. question .. "\n\n" .. context
+      local copied = pcall(vim.fn.setreg, "+", packet)
+      if copied then
+        vim.notify("Question and exact selection context copied. Paste into the existing agent conversation.")
+      else
+        vim.fn.setreg('"', packet)
+        vim.notify("Clipboard unavailable; context copied to the unnamed register.")
+      end
+    end)
   end
 
   local function ask_line_context(file, side, range, selected_lines, opened_diff_identity, target_buf)
@@ -343,17 +353,7 @@ function M.open(opts)
         .. "\nSource: " .. tostring(row.task.key:match("^(.-)::")) .. ":" .. row.task.range.startLine
         .. "\nSPEC references: " .. vim.inspect(row.task.specReferences)
     end
-    vim.ui.input({ prompt = "Question about selected context: " }, function(question)
-      if not question or question == "" then return end
-      local packet = "Question: " .. question .. "\n\n" .. context
-      local copied = pcall(vim.fn.setreg, "+", packet)
-      if copied then
-        vim.notify("Question and exact selection context copied. Paste into the existing agent conversation.")
-      else
-        vim.fn.setreg('"', packet)
-        vim.notify("Clipboard unavailable; context copied to the unnamed register.")
-      end
-    end)
+    copy_context(context)
   end
 
   local function map(lhs, fn, desc)
