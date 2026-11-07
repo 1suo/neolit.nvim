@@ -42,8 +42,9 @@ separate planning buffer. Use:
 - `<CR>` on a requirement to open its exact SPEC source location.
 - `<CR>` on a changed file or hunk to open the actual Git diff in a
   `filetype=diff` buffer; hunk selection navigates to that hunk.
-- `x` on a task, requirement, file, or hunk to copy a compact context packet
-  to the system clipboard for pasting into the existing agent conversation.
+- `x` on a task, requirement, file, or hunk to enter a question and copy it
+  together with the exact selected context to the system clipboard for the
+  existing agent conversation.
 - `r` to refresh; `q` to close.
 
 This view is read-only. It does not stage, apply, commit, or rewrite files.
