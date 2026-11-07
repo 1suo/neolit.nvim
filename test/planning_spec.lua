@@ -45,9 +45,10 @@ return {
       local directory = fixture()
       local original_input = vim.ui.input
       local original_tab_count = #vim.api.nvim_list_tabpages()
+      local panel_buf
       local ok, failure = pcall(function()
         planning.open({ directory = directory, neolit_dir = neolit_dir })
-        local panel_buf = vim.api.nvim_get_current_buf()
+        panel_buf = vim.api.nvim_get_current_buf()
         t:ok(vim.wait(15000, function()
           return vim.api.nvim_buf_is_valid(panel_buf) and vim.b[panel_buf].neolit_rows ~= nil
         end, 50), "planning workspace loads")
@@ -83,7 +84,8 @@ return {
       while #vim.api.nvim_list_tabpages() > original_tab_count do
         pcall(vim.cmd, "tabclose!")
       end
-      if vim.api.nvim_buf_is_valid(vim.api.nvim_get_current_buf()) then
+      if panel_buf and vim.api.nvim_buf_is_valid(panel_buf) then
+        pcall(vim.api.nvim_set_current_buf, panel_buf)
         pcall(vim.cmd, "close")
       end
       vim.fn.delete(directory, "rf")
