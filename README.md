@@ -54,7 +54,7 @@ separate planning buffer. Use:
   path, side, line range, base commit, diff SHA-256, selected lines, and current
   file diff. It refuses unsaved working buffers and refreshes rather than
   sending context when HEAD or the opened diff has changed.
-- `r` to refresh; `q` to close.
+- Repository saves and editor focus refresh the view automatically; `r` forces a refresh and `q` closes it.
 
 This view is read-only. It does not stage, apply, commit, or rewrite files.
 File/hunk association is based on explicit TODO file hints; it is not a claim
