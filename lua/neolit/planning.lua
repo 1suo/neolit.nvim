@@ -20,7 +20,20 @@ local function find_core(opts)
   return cfg, root, neolit_dir
 end
 
-local function open_diff(root, file, selected_hunk)
+local function diff_command(file)
+  if file.status == "added" and #file.hunks == 0 then
+    return { "git", "diff", "--no-index", "--no-ext-diff", "--no-color", "--", "/dev/null", file.path }
+  end
+  local command = { "git", "diff", "--no-ext-diff", "--no-color", "--find-renames", "HEAD", "--" }
+  if file.previousPath then command[#command + 1] = file.previousPath end
+  command[#command + 1] = file.path
+  return command
+end
+
+local function open_diff(root, file, selected_hunk, on_line_context)
+  local initial_result = vim.system(diff_command(file), { cwd = root, text = true }):wait()
+  local initial_diff = initial_result.stdout or ""
+  local initial_diff_identity = vim.fn.sha256(initial_diff)
   local base_path = file.previousPath or file.path
   local base_result = vim.system({ "git", "show", "HEAD:" .. base_path }, { cwd = root, text = true }):wait()
   local base_lines = vim.split(base_result.code == 0 and (base_result.stdout or "") or "", "\n", { plain = true })
@@ -63,13 +76,28 @@ local function open_diff(root, file, selected_hunk)
     vim.api.nvim_set_current_win(file.status == "deleted" and base_win or working_win)
     vim.api.nvim_win_set_cursor(0, { math.max(1, target), 0 })
   end
-end
 
-local function diff_command(file)
-  if file.status == "added" and #file.hunks == 0 then
-    return { "git", "diff", "--no-index", "--no-ext-diff", "--no-color", "--", "/dev/null", file.path }
+  if on_line_context then
+    local function install_line_context(target_buf, side)
+      local function send_range(first, last)
+        local start_line, end_line = math.min(first, last), math.max(first, last)
+        local selected = vim.api.nvim_buf_get_lines(target_buf, start_line - 1, end_line, false)
+        on_line_context(file, side, { startLine = start_line, endLine = end_line },
+          table.concat(selected, "\n"), initial_diff_identity, target_buf)
+      end
+      vim.keymap.set("n", "<leader>nx", function()
+        local line = vim.api.nvim_win_get_cursor(0)[1]
+        send_range(line, line)
+      end, { buffer = target_buf, silent = true, desc = "Ask existing agent about this line" })
+      vim.keymap.set("x", "<leader>nx", function()
+        local first = vim.fn.getpos("v")[2]
+        local last = vim.api.nvim_win_get_cursor(0)[1]
+        send_range(first, last)
+      end, { buffer = target_buf, silent = true, desc = "Ask existing agent about selected lines" })
+    end
+    install_line_context(base_buf, "base")
+    install_line_context(working_buf, "working-tree")
   end
-  return { "git", "diff", "--no-ext-diff", "--no-color", "--find-renames", "HEAD", "--", file.path }
 end
 
 local function render(buf, root, workspace)
