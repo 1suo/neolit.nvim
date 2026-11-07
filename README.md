@@ -40,6 +40,9 @@ separate planning buffer. Use:
 
 - `<CR>` on a task to open its TODO source location in another tab.
 - `<CR>` on a requirement to open its exact SPEC source location.
+- Task and requirement rows show derived states (`planned`, `in-progress`,
+  `implemented`, `verified`, `blocked`, `unmapped`); the TODO checkbox remains
+  a separate note and never proves implementation or verification.
 - `<CR>` on a changed file or hunk to open a native side-by-side Neovim diff between `HEAD` and the working
   file; hunk selection navigates to that hunk.
 - `x` on a task, requirement, file, or hunk in the planning buffer to enter a
