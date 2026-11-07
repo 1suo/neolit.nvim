@@ -226,17 +226,20 @@ function M.open(opts)
     })
   end
 
+  local function copy_packet(packet)
+    local copied = pcall(vim.fn.setreg, "+", packet)
+    if copied then
+      vim.notify("Question and exact selection context copied. Paste into the existing agent conversation.")
+    else
+      vim.fn.setreg('"', packet)
+      vim.notify("Clipboard unavailable; context copied to the unnamed register.")
+    end
+  end
+
   local function copy_context(context)
     vim.ui.input({ prompt = "Question about selected context: " }, function(question)
       if not question or question == "" then return end
-      local packet = "Question: " .. question .. "\n\n" .. context
-      local copied = pcall(vim.fn.setreg, "+", packet)
-      if copied then
-        vim.notify("Question and exact selection context copied. Paste into the existing agent conversation.")
-      else
-        vim.fn.setreg('"', packet)
-        vim.notify("Clipboard unavailable; context copied to the unnamed register.")
-      end
+      copy_packet("Question: " .. question .. "\n\n" .. context)
     end)
   end
 
@@ -260,15 +263,69 @@ function M.open(opts)
       refresh()
       return
     end
+
     local selected_path = side == "base" and (file.previousPath or file.path) or file.path
-    local context = "Selected source lines: " .. selected_path
-      .. ":" .. range.startLine .. "-" .. range.endLine
-      .. "\nDiff side: " .. side
-      .. "\nBase commit: " .. current_head
-      .. "\nDiff identity (sha256): " .. opened_diff_identity
-      .. "\n\nSelected lines:\n~~~text\n" .. selected_lines .. "\n~~~"
-      .. "\n\nCurrent Git diff:\n~~~diff\n" .. current_diff .. "\n~~~"
-    copy_context(context)
+    local related_tasks = {}
+    for _, association in ipairs(workspace and workspace.git.associations or {}) do
+      if association.path == file.path then
+        for _, task in ipairs(workspace.tasks or {}) do
+          if vim.tbl_contains(association.taskKeys or {}, task.key) then
+            local requirements = {}
+            for _, requirement in ipairs(task.resolvedRequirements or {}) do
+              for _, reference in ipairs(task.specReferences or {}) do
+                if vim.tbl_contains(reference.ids or {}, requirement.id) then
+                  requirements[#requirements + 1] = {
+                    specPath = reference.path,
+                    requirement = requirement,
+                  }
+                end
+              end
+            end
+            related_tasks[#related_tasks + 1] = {
+              todoPath = task.key:match("^(.-)::") or "",
+              task = task,
+              requirements = requirements,
+            }
+          end
+        end
+        break
+      end
+    end
+
+    vim.ui.input({ prompt = "Question about selected lines: " }, function(question)
+      if not question or question == "" then return end
+      local payload = {
+        question = question,
+        path = selected_path,
+        side = side,
+        baseCommit = current_head,
+        diffText = current_diff,
+        lineRange = range,
+        selectedDiffText = current_diff,
+        selectedLinesText = selected_lines,
+        relatedTasks = related_tasks,
+      }
+      local url = vim.uri_from_fname(neolit_dir .. "/dist/planning/context.js")
+      local js = "const m = await import(" .. string.format("%q", url) .. "); "
+        .. "const p = JSON.parse(process.argv[1]); "
+        .. "const anchor = m.createDiffAnchor({ path: p.path, side: p.side, baseCommit: p.baseCommit, diffText: p.diffText, lineRange: p.lineRange }); "
+        .. "const result = m.buildDiffQuestionPacket({ question: p.question, anchor, currentBaseCommit: p.baseCommit, currentDiffText: p.diffText, selectedDiffText: p.selectedDiffText, selectedLinesText: p.selectedLinesText, relatedTasks: p.relatedTasks }); "
+        .. "process.stdout.write(JSON.stringify(result));"
+      local packet_result = vim.system({
+        cfg.node, "--input-type=module", "-e", js, vim.json.encode(payload),
+      }, { cwd = root, text = true }):wait()
+      if packet_result.code ~= 0 then
+        vim.notify("Could not build Neolit context packet: " .. (packet_result.stderr or ""), vim.log.levels.ERROR)
+        return
+      end
+      local decoded_ok, packet_result_json = pcall(vim.json.decode, packet_result.stdout or "")
+      if not decoded_ok or packet_result_json.status ~= "ready" then
+        vim.notify("Diff context became stale; refresh and select the line again.", vim.log.levels.WARN)
+        refresh()
+        return
+      end
+      copy_packet(packet_result_json.packet)
+    end)
   end
 
   local function selected()
