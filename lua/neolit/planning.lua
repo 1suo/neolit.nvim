@@ -22,7 +22,7 @@ end
 
 local function open_diff(root, file)
   local args
-  if file.status == "added" and file.hunks == nil then
+  if file.status == "added" and #file.hunks == 0 then
     args = { "git", "diff", "--no-index", "--no-ext-diff", "--no-color", "--", "/dev/null", file.path }
   else
     args = { "git", "diff", "--no-ext-diff", "--no-color", "--find-renames", "HEAD", "--", file.path }
@@ -51,12 +51,17 @@ local function render(root, workspace)
   add("TASKS (" .. #workspace.tasks .. ")", nil)
   for _, task in ipairs(workspace.tasks) do
     local state = task.state == "unmapped" and "!" or (task.checked and "x" or " ")
-    add(string.format("  [%s] %s  (%s:%d)", state, task.text, workspace.todos[1] and task.range and "" or "", task.range.startLine), {
+    local todo_path = task.key:match("^(.-)::") or "TODO.md"
+    add(string.format("  [%s] %s  (%s:%d)", state, task.text, todo_path, task.range.startLine), {
       kind = "task", task = task,
     })
     for _, requirement in ipairs(task.resolvedRequirements) do
+      local spec_path
+      for _, reference in ipairs(task.specReferences) do
+        if vim.tbl_contains(reference.ids, requirement.id) then spec_path = reference.path; break end
+      end
       add(string.format("      %s  %s", requirement.id, requirement.text), {
-        kind = "requirement", requirement = requirement,
+        kind = "requirement", requirement = requirement, spec_path = spec_path,
       })
     end
     for _, unresolved in ipairs(task.unresolvedReferences) do
@@ -151,12 +156,7 @@ function M.open(opts)
       end
     elseif row.kind == "requirement" then
       local req = row.requirement
-      local spec_path
-      for _, spec in ipairs(vim.b.neolit_workspace.specs) do
-        for _, candidate in ipairs(spec.requirements) do
-          if candidate.id == req.id and candidate.range.startLine == req.range.startLine then spec_path = spec.path end
-        end
-      end
+      local spec_path = row.spec_path
       if spec_path then
         vim.cmd("edit " .. vim.fn.fnameescape(root .. "/" .. spec_path))
         vim.api.nvim_win_set_cursor(0, { req.range.startLine, 0 })
@@ -192,8 +192,6 @@ function M.open(opts)
   map("r", refresh, "Refresh Git-native planning workspace")
   map("x", ask_context, "Copy selected planning/diff context for existing agent")
   map("q", function() pcall(vim.api.nvim_buf_delete, buf, { force = true }) end, "Close planning workspace")
-  map("j", "j", "Move down")
-  map("k", "k", "Move up")
   refresh()
 end
 
