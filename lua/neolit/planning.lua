@@ -137,7 +137,7 @@ function M.open(opts)
   vim.api.nvim_win_set_buf(0, buf)
   vim.api.nvim_buf_set_name(buf, "neolit://planning")
   vim.bo[buf].buftype = "nofile"
-  vim.bo[buf].bufhidden = "wipe"
+  vim.bo[buf].bufhidden = "hide"
   vim.bo[buf].swapfile = false
   vim.bo[buf].filetype = "neolit-planning"
 
@@ -225,10 +225,12 @@ function M.open(opts)
         .. "\n\n" .. diff
     elseif row.kind == "requirement" then
       context = "Selected SPEC requirement " .. row.requirement.id
-        .. "\\nSource: " .. tostring(row.spec_path) .. ":" .. row.requirement.range.startLine
-        .. "\\n\\n" .. row.requirement.text
+        .. "\nSource: " .. tostring(row.spec_path) .. ":" .. row.requirement.range.startLine
+        .. "\n\n" .. row.requirement.text
     else
-      context = "Selected TODO task: " .. row.task.text .. "\nSPEC references: " .. vim.inspect(row.task.resolvedRequirements)
+      context = "Selected TODO task: " .. row.task.text
+        .. "\nSource: " .. tostring(row.task.key:match("^(.-)::")) .. ":" .. row.task.range.startLine
+        .. "\nSPEC references: " .. vim.inspect(row.task.resolvedRequirements)
     end
     vim.fn.setreg("+", context)
     vim.notify("Planning context copied. Paste it into the existing coding-agent conversation.")
