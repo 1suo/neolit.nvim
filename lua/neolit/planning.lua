@@ -30,7 +30,7 @@ local function open_diff(root, file, selected_hunk)
   vim.cmd("tab split")
   vim.cmd("enew")
   local base_buf = vim.api.nvim_get_current_buf()
-  vim.api.nvim_buf_set_name(base_buf, "neolit-base://" .. base_path)
+  vim.api.nvim_buf_set_name(base_buf, "neolit-base://" .. base_path .. "#" .. base_buf)
   vim.api.nvim_buf_set_lines(base_buf, 0, -1, false, base_lines)
   vim.bo[base_buf].buftype = "nofile"
   vim.bo[base_buf].bufhidden = "hide"
@@ -45,7 +45,7 @@ local function open_diff(root, file, selected_hunk)
     working_buf = vim.api.nvim_get_current_buf()
   else
     working_buf = vim.api.nvim_create_buf(false, true)
-    vim.api.nvim_buf_set_name(working_buf, "neolit-working://" .. file.path)
+    vim.api.nvim_buf_set_name(working_buf, "neolit-working://" .. file.path .. "#" .. working_buf)
     vim.api.nvim_win_set_buf(0, working_buf)
     vim.bo[working_buf].buftype = "nofile"
     vim.bo[working_buf].bufhidden = "hide"
@@ -156,7 +156,7 @@ function M.open(opts)
   local buf = vim.api.nvim_create_buf(false, true)
   vim.cmd("botright 16split")
   vim.api.nvim_win_set_buf(0, buf)
-  vim.api.nvim_buf_set_name(buf, "neolit://planning")
+  vim.api.nvim_buf_set_name(buf, "neolit://planning-" .. buf)
   vim.bo[buf].buftype = "nofile"
   vim.bo[buf].bufhidden = "hide"
   vim.bo[buf].swapfile = false
@@ -251,7 +251,7 @@ function M.open(opts)
     else
       context = "Selected TODO task: " .. row.task.text
         .. "\nSource: " .. tostring(row.task.key:match("^(.-)::")) .. ":" .. row.task.range.startLine
-        .. "\nSPEC references: " .. vim.inspect(row.task.resolvedRequirements)
+        .. "\nSPEC references: " .. vim.inspect(row.task.specReferences)
     end
     vim.ui.input({ prompt = "Question about selected context: " }, function(question)
       if not question or question == "" then return end
