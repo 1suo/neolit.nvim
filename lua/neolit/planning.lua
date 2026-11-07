@@ -232,8 +232,17 @@ function M.open(opts)
         .. "\nSource: " .. tostring(row.task.key:match("^(.-)::")) .. ":" .. row.task.range.startLine
         .. "\nSPEC references: " .. vim.inspect(row.task.resolvedRequirements)
     end
-    vim.fn.setreg("+", context)
-    vim.notify("Planning context copied. Paste it into the existing coding-agent conversation.")
+    vim.ui.input({ prompt = "Question about selected context: " }, function(question)
+      if not question or question == "" then return end
+      local packet = "Question: " .. question .. "\n\n" .. context
+      local copied = pcall(vim.fn.setreg, "+", packet)
+      if copied then
+        vim.notify("Question and exact selection context copied. Paste into the existing agent conversation.")
+      else
+        vim.fn.setreg('"', packet)
+        vim.notify("Clipboard unavailable; context copied to the unnamed register.")
+      end
+    end)
   end
 
   local function map(lhs, fn, desc)
