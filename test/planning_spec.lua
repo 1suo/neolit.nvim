@@ -68,8 +68,13 @@ return {
         t:ok(vim.api.nvim_buf_is_valid(working_buf), "native working-tree diff buffer opens")
         vim.api.nvim_win_set_cursor(0, { 2, 0 })
         local packet
-        vim.ui.input = function(_, callback) callback("Why did this line change?") end
-        find_mapping("n", "<leader>nx", working_buf)()
+        local prompt_count = 0
+        vim.ui.input = function(_, callback)
+          prompt_count = prompt_count + 1
+          callback("Why did this line change?")
+        end
+        local ask_line = find_mapping("n", "<leader>nx", working_buf)
+        ask_line()
         packet = vim.fn.getreg("+") .. "\n" .. vim.fn.getreg('"')
 
         t:ok(packet:find("Why did this line change?", 1, true) ~= nil, "question is included")
@@ -79,6 +84,10 @@ return {
         t:ok(packet:find("Diff identity (sha256):", 1, true) ~= nil, "diff identity is explicit")
         t:ok(packet:find("export const next = 3;", 1, true) ~= nil, "selected source line is included")
         t:ok(packet:find("+export const next = 3;", 1, true) ~= nil, "current Git diff is included")
+
+        vim.fn.writefile({ "export const value = 1;", "export const next = 4;" }, directory .. "/sample.ts")
+        ask_line()
+        t:eq(prompt_count, 1, "a changed diff is rejected before asking or copying context")
       end)
       vim.ui.input = original_input
       while #vim.api.nvim_list_tabpages() > original_tab_count do
