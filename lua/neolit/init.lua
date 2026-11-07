@@ -5,6 +5,7 @@ local config = require("neolit.config")
 local theme = require("neolit.theme")
 local ui = require("neolit.ui")
 local keys = require("neolit.keys")
+local planning = require("neolit.planning")
 
 local M = {}
 
@@ -39,7 +40,10 @@ function M.setup(user)
     local objective = options.args ~= "" and options.args or nil
     M.open(objective)
   end, { nargs = "?", desc = "Open the neolit planned-diff panel" })
-  vim.api.nvim_create_user_command("NeolitClose", function() ui.close() end, { desc = "Close the neolit planned-diff panel" })
+  vim.api.nvim_create_user_command("NeolitClose", function() ui.close() end, { desc = "Close the legacy planned-diff panel" })
+  vim.api.nvim_create_user_command("NeolitPlan", function()
+    planning.open(configured)
+  end, { desc = "Open the read-only Git-native planning workspace" })
 
   if configured.keymap_prefix then
     keys.bind_global(configured.keymap_prefix, M.key)
@@ -62,6 +66,11 @@ end
 
 function M.close()
   ui.close()
+end
+
+function M.plan()
+  if not configured then M.setup({}) end
+  planning.open(configured)
 end
 
 --- Opens the panel when closed, closes it when open (nvim-tree style).
