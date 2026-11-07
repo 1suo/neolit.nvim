@@ -24,6 +24,7 @@ local spec_files = {
   "ui_spec",
   "init_spec",
   "ui_smoke_spec",
+  "planning_spec",
 }
 
 local passed, failed = 0, 0
