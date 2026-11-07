@@ -254,6 +254,7 @@ function M.open(opts)
       return
     end
 
+    local anchor_base = current_head ~= "" and current_head or "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
     local selected_path = side == "base" and (file.previousPath or file.path) or file.path
     local related_tasks = {}
     for _, association in ipairs(workspace and workspace.git.associations or {}) do
@@ -288,7 +289,7 @@ function M.open(opts)
         question = question,
         path = selected_path,
         side = side,
-        baseCommit = current_head,
+        baseCommit = anchor_base,
         diffText = current_diff,
         lineRange = range,
         selectedDiffText = current_diff,
