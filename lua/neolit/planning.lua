@@ -109,11 +109,16 @@ local function render(buf, root, workspace)
 
   add("PLANNING  " .. workspace.git.branch .. " @ " .. workspace.git.head:sub(1, 8), { kind = "header" })
   add("", nil)
+  local requirement_states = {}
+  for _, item in ipairs(workspace.derived and workspace.derived.requirements or {}) do
+    requirement_states[item.specPath .. "#" .. item.requirementId] = item.state
+  end
   add("TASKS (" .. #workspace.tasks .. ")", nil)
   for _, task in ipairs(workspace.tasks) do
     local checkbox = task.checked and "[x]" or "[ ]"
     local todo_path = task.key:match("^(.-)::") or "TODO.md"
-    add(string.format("  %s %-8s %s  (%s:%d)", checkbox, task.state, task.text, todo_path, task.range.startLine), {
+    local task_state = workspace.derived and workspace.derived.tasks[task.key]
+    add(string.format("  %s %-10s %s  (%s:%d)", checkbox, task_state and task_state.state or task.state, task.text, todo_path, task.range.startLine), {
       kind = "task", task = task,
     })
     for _, requirement in ipairs(task.resolvedRequirements) do
@@ -134,7 +139,8 @@ local function render(buf, root, workspace)
         end
         if spec_path then break end
       end
-      add(string.format("      %s  %s", requirement.id, requirement.text), {
+      local requirement_state = requirement_states[requirement.specPath .. "#" .. requirement.id] or "planned"
+      add(string.format("      %s  %-10s %s", requirement.id, requirement_state, requirement.text), {
         kind = "requirement", requirement = requirement, spec_path = spec_path,
       })
     end
