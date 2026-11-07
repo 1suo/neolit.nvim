@@ -106,6 +106,24 @@ return {
         t:ok(packet:find("Change the value", 1, true) ~= nil, "related TODO task is included")
         t:ok(packet:find("src/SPEC.md#R-01", 1, true) ~= nil, "linked SPEC requirement is included")
 
+        vim.api.nvim_set_current_buf(panel_buf)
+        vim.api.nvim_win_set_cursor(0, { file_row, 0 })
+        find_mapping("n", "x", panel_buf)()
+        local file_packet = vim.fn.getreg("+") .. "\n" .. vim.fn.getreg('"')
+        t:ok(file_packet:find("Selected Git diff: sample.ts", 1, true) ~= nil, "file context uses the shared packet builder")
+        t:ok(file_packet:find("Diff identity (sha256):", 1, true) ~= nil, "file context carries a stable diff identity")
+
+        local hunk_row
+        for row, item in pairs(vim.b[panel_buf].neolit_rows) do
+          if item and item.kind == "hunk" and item.file.path == "sample.ts" then hunk_row = row; break end
+        end
+        t:ok(hunk_row ~= nil, "changed hunk is visible")
+        vim.api.nvim_win_set_cursor(0, { hunk_row, 0 })
+        find_mapping("n", "x", panel_buf)()
+        local hunk_packet = vim.fn.getreg("+") .. "\n" .. vim.fn.getreg('"')
+        t:ok(hunk_packet:find("sample.ts hunk old", 1, true) ~= nil, "hunk context includes exact hunk coordinates")
+        t:ok(hunk_packet:find("+export const next = 3;", 1, true) ~= nil, "hunk context contains only the selected hunk diff")
+
         local prior_identity = vim.b[panel_buf].neolit_workspace.git.diffIdentity
         vim.fn.writefile({ "export const value = 1;", "export const next = 4;" }, directory .. "/sample.ts")
         ask_line()
