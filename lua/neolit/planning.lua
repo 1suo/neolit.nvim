@@ -258,10 +258,9 @@ function M.open(opts)
       end
       context = "Selected Git diff (" .. (row.kind == "hunk" and "hunk" or "file") .. "): " .. row.file.path
         .. "\nDiff side: HEAD → working tree/index"
-        .. "\nBase commit: " .. tostring((vim.b[buf].neolit_workspace or {}).git and vim.b[buf].neolit_workspace.git.head or "")
+        .. "\nBase commit: " .. tostring(workspace and workspace.git.head or "")
         .. (row.hunk and string.format("\nOld lines %d-%d; new lines %d-%d", row.hunk.oldStart, row.hunk.oldStart + row.hunk.oldLines - 1, row.hunk.newStart, row.hunk.newStart + row.hunk.newLines - 1) or "")
         .. "\n\n" .. diff
-      local workspace = vim.b[buf].neolit_workspace
       local related = {}
       for _, task in ipairs(workspace and workspace.tasks or {}) do
         if row.association and vim.tbl_contains(row.association.taskKeys, task.key) then
