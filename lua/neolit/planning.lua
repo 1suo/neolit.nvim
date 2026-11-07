@@ -35,7 +35,7 @@ local function open_diff(root, file, selected_hunk)
   vim.api.nvim_buf_set_name(buf, "neolit-diff://" .. file.path)
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, #output > 0 and output or { "(no diff for " .. file.path .. ")" })
   vim.bo[buf].buftype = "nofile"
-  vim.bo[buf].bufhidden = "wipe"
+  vim.bo[buf].bufhidden = "hide"
   vim.bo[buf].swapfile = false
   vim.bo[buf].filetype = "diff"
   vim.cmd("tab split")
@@ -70,7 +70,20 @@ local function render(buf, root, workspace)
     for _, requirement in ipairs(task.resolvedRequirements) do
       local spec_path
       for _, reference in ipairs(task.specReferences) do
-        if vim.tbl_contains(reference.ids, requirement.id) then spec_path = reference.path; break end
+        if vim.tbl_contains(reference.ids, requirement.id) then
+          for _, spec in ipairs(workspace.specs) do
+            if spec.path == reference.path then
+              for _, candidate in ipairs(spec.requirements) do
+                if candidate.id == requirement.id and candidate.text == requirement.text
+                  and candidate.range.startLine == requirement.range.startLine then
+                  spec_path = spec.path
+                  break
+                end
+              end
+            end
+          end
+        end
+        if spec_path then break end
       end
       add(string.format("      %s  %s", requirement.id, requirement.text), {
         kind = "requirement", requirement = requirement, spec_path = spec_path,
@@ -211,7 +224,9 @@ function M.open(opts)
         .. (row.hunk and string.format("\nOld lines %d-%d; new lines %d-%d", row.hunk.oldStart, row.hunk.oldStart + row.hunk.oldLines - 1, row.hunk.newStart, row.hunk.newStart + row.hunk.newLines - 1) or "")
         .. "\n\n" .. diff
     elseif row.kind == "requirement" then
-      context = "Selected SPEC requirement " .. row.requirement.id .. ": " .. row.requirement.text
+      context = "Selected SPEC requirement " .. row.requirement.id
+        .. "\\nSource: " .. tostring(row.spec_path) .. ":" .. row.requirement.range.startLine
+        .. "\\n\\n" .. row.requirement.text
     else
       context = "Selected TODO task: " .. row.task.text .. "\nSPEC references: " .. vim.inspect(row.task.resolvedRequirements)
     end
