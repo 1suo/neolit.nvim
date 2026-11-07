@@ -22,7 +22,7 @@ end
 
 local function diff_command(file)
   if file.untracked or (file.status == "added" and #file.hunks == 0) then
-    return { "git", "diff", "--no-index", "--no-ext-diff", "--no-color", "--", "/dev/null", file.path }
+    return { "git", "-c", "core.quotePath=false", "diff", "--no-index", "--no-ext-diff", "--no-color", "--", "/dev/null", file.path }
   end
   local command = { "git", "diff", "--no-ext-diff", "--no-color", "--find-renames", "HEAD", "--" }
   if file.previousPath then command[#command + 1] = file.previousPath end
