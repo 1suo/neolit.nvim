@@ -102,6 +102,9 @@ return {
         t:ok(packet:find("Diff identity (sha256):", 1, true) ~= nil, "diff identity is explicit")
         t:ok(packet:find("export const next = 3;", 1, true) ~= nil, "selected source line is included")
         t:ok(packet:find("+export const next = 3;", 1, true) ~= nil, "current Git diff is included")
+        t:ok(packet:find("Related plan:", 1, true) ~= nil, "linked plan context is included")
+        t:ok(packet:find("Change the value", 1, true) ~= nil, "related TODO task is included")
+        t:ok(packet:find("src/SPEC.md#R-01", 1, true) ~= nil, "linked SPEC requirement is included")
 
         vim.fn.writefile({ "export const value = 1;", "export const next = 4;" }, directory .. "/sample.ts")
         ask_line()
