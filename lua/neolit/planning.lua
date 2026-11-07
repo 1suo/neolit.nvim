@@ -188,11 +188,16 @@ function M.open(opts)
   vim.bo[buf].swapfile = false
   vim.bo[buf].filetype = "neolit-planning"
 
+  local refresh_job
+  local refresh_revision = 0
   local function refresh()
+    refresh_revision = refresh_revision + 1
+    local revision = refresh_revision
+    if refresh_job then pcall(vim.fn.jobstop, refresh_job) end
     local url = vim.uri_from_fname(neolit_dir .. "/dist/planning/workspace.js")
     local js = "const m = await import(" .. string.format("%q", url) .. "); const w = await m.loadPlanningWorkspace(process.cwd()); process.stdout.write(JSON.stringify(w));"
     local command = { cfg.node, "--input-type=module", "-e", js }
-    vim.fn.jobstart(command, {
+    refresh_job = vim.fn.jobstart(command, {
       cwd = root,
       stdout_buffered = true,
       stderr_buffered = true,
@@ -201,7 +206,7 @@ function M.open(opts)
         if raw == "" then return end
         local decoded_ok, workspace = pcall(vim.json.decode, raw)
         vim.schedule(function()
-          if not vim.api.nvim_buf_is_valid(buf) then return end
+          if revision ~= refresh_revision or not vim.api.nvim_buf_is_valid(buf) then return end
           if not decoded_ok then
             vim.notify("neolit: could not decode planning workspace", vim.log.levels.ERROR)
             return
@@ -212,10 +217,21 @@ function M.open(opts)
       end,
       on_stderr = function(_, data)
         local message = table.concat(data or {}, "\n"):gsub("%s+$", "")
-        if message ~= "" then vim.schedule(function() vim.notify(message, vim.log.levels.ERROR) end) end
+        if message ~= "" then
+          vim.schedule(function()
+            if revision == refresh_revision then vim.notify(message, vim.log.levels.ERROR) end
+          end)
+        end
       end,
-      on_exit = function(_, code)
-        if code ~= 0 then vim.schedule(function() vim.notify("neolit planning refresh failed (exit " .. code .. ")", vim.log.levels.ERROR) end) end
+      on_exit = function(job, code)
+        if refresh_job == job then refresh_job = nil end
+        if code ~= 0 then
+          vim.schedule(function()
+            if revision == refresh_revision then
+              vim.notify("neolit planning refresh failed (exit " .. code .. ")", vim.log.levels.ERROR)
+            end
+          end)
+        end
       end,
     })
   end
@@ -411,10 +427,25 @@ function M.open(opts)
   local function map(lhs, fn, desc)
     vim.keymap.set("n", lhs, fn, { buffer = buf, silent = true, nowait = true, desc = desc })
   end
+  local refresh_group = vim.api.nvim_create_augroup("NeolitPlanning" .. buf, { clear = true })
+  vim.api.nvim_create_autocmd({ "BufWritePost", "FileChangedShellPost" }, {
+    group = refresh_group,
+    callback = function(event)
+      local name = vim.api.nvim_buf_get_name(event.buf)
+      if name ~= "" and name:sub(1, #root + 1) == root .. "/" then refresh() end
+    end,
+  })
+  vim.api.nvim_create_autocmd("FocusGained", {
+    group = refresh_group,
+    callback = refresh,
+  })
   map("<CR>", selected, "Open selected TODO, SPEC requirement, or native diff")
   map("r", refresh, "Refresh Git-native planning workspace")
   map("x", ask_context, "Copy selected planning/diff context for existing agent")
   map("q", function()
+    refresh_revision = refresh_revision + 1
+    if refresh_job then pcall(vim.fn.jobstop, refresh_job); refresh_job = nil end
+    pcall(vim.api.nvim_del_augroup_by_id, refresh_group)
     if vim.api.nvim_get_current_buf() == buf then vim.cmd("close") end
     if vim.api.nvim_buf_is_valid(buf) then pcall(vim.api.nvim_buf_delete, buf, { force = true }) end
   end, "Close planning workspace")
