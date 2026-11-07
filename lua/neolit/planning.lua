@@ -439,6 +439,16 @@ function M.open(opts)
     group = refresh_group,
     callback = refresh,
   })
+  vim.api.nvim_create_autocmd("BufWipeout", {
+    group = refresh_group,
+    buffer = buf,
+    once = true,
+    callback = function()
+      refresh_revision = refresh_revision + 1
+      if refresh_job then pcall(vim.fn.jobstop, refresh_job); refresh_job = nil end
+      pcall(vim.api.nvim_del_augroup_by_id, refresh_group)
+    end,
+  })
   map("<CR>", selected, "Open selected TODO, SPEC requirement, or native diff")
   map("r", refresh, "Refresh Git-native planning workspace")
   map("x", ask_context, "Copy selected planning/diff context for existing agent")
