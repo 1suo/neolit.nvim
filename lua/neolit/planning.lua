@@ -20,34 +20,45 @@ local function find_core(opts)
   return cfg, root, neolit_dir
 end
 
-local function diff_command(file)
-  if file.status == "added" and #file.hunks == 0 then
-    return { "git", "diff", "--no-index", "--no-ext-diff", "--no-color", "--", "/dev/null", file.path }
-  end
-  return { "git", "diff", "--no-ext-diff", "--no-color", "--find-renames", "HEAD", "--", file.path }
-end
-
 local function open_diff(root, file, selected_hunk)
-  local result = vim.system(diff_command(file), { cwd = root, text = true }):wait()
-  local output = vim.split(result.stdout or "", "\n", { plain = true })
-  if output[#output] == "" then table.remove(output) end
-  local buf = vim.api.nvim_create_buf(false, true)
-  vim.api.nvim_buf_set_name(buf, "neolit-diff://" .. file.path)
-  vim.api.nvim_buf_set_lines(buf, 0, -1, false, #output > 0 and output or { "(no diff for " .. file.path .. ")" })
-  vim.bo[buf].buftype = "nofile"
-  vim.bo[buf].bufhidden = "hide"
-  vim.bo[buf].swapfile = false
-  vim.bo[buf].filetype = "diff"
+  local base_path = file.previousPath or file.path
+  local base_result = vim.system({ "git", "show", "HEAD:" .. base_path }, { cwd = root, text = true }):wait()
+  local base_lines = vim.split(base_result.code == 0 and (base_result.stdout or "") or "", "\n", { plain = true })
+  if base_lines[#base_lines] == "" then table.remove(base_lines) end
+  local filetype = vim.filetype.match({ filename = file.path }) or ""
+
   vim.cmd("tab split")
-  vim.api.nvim_win_set_buf(0, buf)
+  vim.cmd("enew")
+  local base_buf = vim.api.nvim_get_current_buf()
+  vim.api.nvim_buf_set_name(base_buf, "neolit-base://" .. base_path)
+  vim.api.nvim_buf_set_lines(base_buf, 0, -1, false, base_lines)
+  vim.bo[base_buf].buftype = "nofile"
+  vim.bo[base_buf].bufhidden = "hide"
+  vim.bo[base_buf].swapfile = false
+  vim.bo[base_buf].filetype = filetype
+
+  vim.cmd("vsplit")
+  local working_buf
+  if vim.fn.filereadable(root .. "/" .. file.path) == 1 then
+    vim.cmd("edit " .. vim.fn.fnameescape(root .. "/" .. file.path))
+    working_buf = vim.api.nvim_get_current_buf()
+  else
+    working_buf = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_name(working_buf, "neolit-working://" .. file.path)
+    vim.api.nvim_win_set_buf(0, working_buf)
+    vim.bo[working_buf].buftype = "nofile"
+    vim.bo[working_buf].bufhidden = "hide"
+    vim.bo[working_buf].swapfile = false
+    vim.bo[working_buf].filetype = filetype
+  end
+
+  vim.api.nvim_set_current_buf(base_buf)
+  vim.cmd("diffthis")
+  vim.api.nvim_set_current_buf(working_buf)
+  vim.cmd("diffthis")
   if selected_hunk then
-    local header = string.format("@@ -%d", selected_hunk.oldStart)
-    for index, line in ipairs(output) do
-      if line:sub(1, #header) == header and line:find("+" .. selected_hunk.newStart, 1, true) then
-        vim.api.nvim_win_set_cursor(0, { index, 0 })
-        break
-      end
-    end
+    local target = file.status == "deleted" and selected_hunk.oldStart or selected_hunk.newStart
+    vim.api.nvim_win_set_cursor(0, { math.max(1, target), 0 })
   end
 end
 
