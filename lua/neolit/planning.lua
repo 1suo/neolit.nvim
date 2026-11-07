@@ -369,24 +369,25 @@ function M.open(opts)
       vim.notify("Select a task, requirement, or changed file first")
       return
     end
-    local context
     if row.kind == "file" or row.kind == "hunk" then
       local result = vim.system(diff_command(row.file), { cwd = root, text = true }):wait()
-      local diff = result.stdout or ""
+      local full_diff = result.stdout or ""
       local workspace = vim.b[buf].neolit_workspace
       local head = vim.system({ "git", "rev-parse", "--verify", "HEAD" }, { cwd = root, text = true }):wait()
-      if workspace and workspace.git.head ~= (head.stdout or ""):gsub("%s+$", "") then
+      local current_head = (head.stdout or ""):gsub("%s+$", "")
+      if workspace and workspace.git.head ~= current_head then
         vim.notify("Diff anchor is stale because HEAD changed; refresh and select it again.", vim.log.levels.WARN)
         refresh()
         return
       end
-      if row.file.rawDiff and normalize_diff(diff) ~= row.file.rawDiff then
+      if row.file.rawDiff and normalize_diff(full_diff) ~= row.file.rawDiff then
         vim.notify("Selected diff changed since the workspace was loaded; refreshing. Select it again.", vim.log.levels.WARN)
         refresh()
         return
       end
+      local selected_diff = full_diff
       if row.kind == "hunk" then
-        local lines, capture, selected = vim.split(diff, "\n", { plain = true }), {}, false
+        local lines, capture, selected = vim.split(full_diff, "\n", { plain = true }), {}, false
         for _, line in ipairs(lines) do
           if line:match("^@@ ") then
             if selected then break end
@@ -395,24 +396,69 @@ function M.open(opts)
           end
           if selected then capture[#capture + 1] = line end
         end
-        diff = table.concat(capture, "\n")
-      end
-      context = "Selected Git diff (" .. (row.kind == "hunk" and "hunk" or "file") .. "): " .. row.file.path
-        .. "\nDiff side: HEAD → working tree/index"
-        .. "\nBase commit: " .. tostring(workspace and workspace.git.head or "")
-        .. (row.hunk and string.format("\nOld lines %d-%d; new lines %d-%d", row.hunk.oldStart, row.hunk.oldStart + row.hunk.oldLines - 1, row.hunk.newStart, row.hunk.newStart + row.hunk.newLines - 1) or "")
-        .. "\n\n" .. diff
-      local related = {}
-      for _, task in ipairs(workspace and workspace.tasks or {}) do
-        if row.association and vim.tbl_contains(row.association.taskKeys, task.key) then
-          related[#related + 1] = "- TODO: " .. task.text
-          for _, requirement in ipairs(task.resolvedRequirements) do
-            related[#related + 1] = "  - " .. requirement.id .. ": " .. requirement.text
-          end
+        selected_diff = table.concat(capture, "\n")
+        if selected_diff == "" then
+          vim.notify("Selected hunk is no longer present; refresh and select it again.", vim.log.levels.WARN)
+          refresh()
+          return
         end
       end
-      if #related > 0 then context = context .. "\n\nRelated plan:\n" .. table.concat(related, "\n") end
-    elseif row.kind == "requirement" then
+      local related_tasks = {}
+      for _, task in ipairs(workspace and workspace.tasks or {}) do
+        if row.association and vim.tbl_contains(row.association.taskKeys or {}, task.key) then
+          local requirements = {}
+          for _, requirement in ipairs(task.resolvedRequirements or {}) do
+            for _, reference in ipairs(task.specReferences or {}) do
+              if vim.tbl_contains(reference.ids or {}, requirement.id) then
+                requirements[#requirements + 1] = { specPath = reference.path, requirement = requirement }
+              end
+            end
+          end
+          related_tasks[#related_tasks + 1] = {
+            todoPath = task.key:match("^(.-)::") or "",
+            task = task,
+            requirements = requirements,
+          }
+        end
+      end
+      vim.ui.input({ prompt = "Question about selected diff: " }, function(question)
+        if not question or question == "" then return end
+        local payload = {
+          question = question,
+          path = row.file.path,
+          side = "working-tree",
+          baseCommit = current_head ~= "" and current_head or "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+          diffText = full_diff,
+          selectedDiffText = selected_diff,
+          hunk = row.kind == "hunk" and row.hunk or nil,
+          relatedTasks = related_tasks,
+        }
+        local url = vim.uri_from_fname(neolit_dir .. "/dist/planning/context.js")
+        local js = "const m = await import(" .. string.format("%q", url) .. "); "
+          .. "const p = JSON.parse(process.argv[1]); "
+          .. "const anchor = m.createDiffAnchor({ path: p.path, side: p.side, baseCommit: p.baseCommit, diffText: p.diffText, hunk: p.hunk }); "
+          .. "const result = m.buildDiffQuestionPacket({ question: p.question, anchor, currentBaseCommit: p.baseCommit, currentDiffText: p.diffText, selectedDiffText: p.selectedDiffText, relatedTasks: p.relatedTasks }); "
+          .. "process.stdout.write(JSON.stringify(result));"
+        local packet_result = vim.system({
+          cfg.node, "--input-type=module", "-e", js, vim.json.encode(payload),
+        }, { cwd = root, text = true }):wait()
+        if packet_result.code ~= 0 then
+          vim.notify("Could not build Neolit context packet: " .. (packet_result.stderr or ""), vim.log.levels.ERROR)
+          return
+        end
+        local decoded_ok, packet = pcall(vim.json.decode, packet_result.stdout or "")
+        if not decoded_ok or packet.status ~= "ready" then
+          vim.notify("Diff context became stale; refresh and select it again.", vim.log.levels.WARN)
+          refresh()
+          return
+        end
+        copy_packet(packet.packet)
+      end)
+      return
+    end
+
+    local context
+    if row.kind == "requirement" then
       context = "Selected SPEC requirement " .. row.requirement.id
         .. "\nSource: " .. tostring(row.spec_path) .. ":" .. row.requirement.range.startLine
         .. "\n\n" .. row.requirement.text
