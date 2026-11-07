@@ -106,9 +106,22 @@ return {
         t:ok(packet:find("Change the value", 1, true) ~= nil, "related TODO task is included")
         t:ok(packet:find("src/SPEC.md#R-01", 1, true) ~= nil, "linked SPEC requirement is included")
 
+        local prior_identity = vim.b[panel_buf].neolit_workspace.git.diffIdentity
         vim.fn.writefile({ "export const value = 1;", "export const next = 4;" }, directory .. "/sample.ts")
         ask_line()
         t:eq(prompt_count, 1, "a changed diff is rejected before asking or copying context")
+        t:ok(vim.wait(10000, function()
+          local workspace = vim.b[panel_buf].neolit_workspace
+          return workspace and workspace.git.diffIdentity ~= prior_identity
+        end, 50), "stale context refreshes the planning workspace")
+
+        local before_save_identity = vim.b[panel_buf].neolit_workspace.git.diffIdentity
+        vim.api.nvim_buf_set_lines(working_buf, 1, 2, false, { "export const next = 5;" })
+        vim.cmd("write")
+        t:ok(vim.wait(10000, function()
+          local workspace = vim.b[panel_buf].neolit_workspace
+          return workspace and workspace.git.diffIdentity ~= before_save_identity
+        end, 50), "saving a repository file refreshes the planning workspace")
       end)
       vim.ui.input = original_input
       while #vim.api.nvim_list_tabpages() > original_tab_count do
