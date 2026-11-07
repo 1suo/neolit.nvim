@@ -21,7 +21,7 @@ local function find_core(opts)
 end
 
 local function diff_command(file)
-  if file.status == "added" and #file.hunks == 0 then
+  if file.untracked or (file.status == "added" and #file.hunks == 0) then
     return { "git", "diff", "--no-index", "--no-ext-diff", "--no-color", "--", "/dev/null", file.path }
   end
   local command = { "git", "diff", "--no-ext-diff", "--no-color", "--find-renames", "HEAD", "--" }
