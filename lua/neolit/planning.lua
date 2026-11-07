@@ -226,6 +226,41 @@ function M.open(opts)
     })
   end
 
+  local function copy_context(context)
+    copy_context(context)
+  end
+
+  local function ask_line_context(file, side, range, selected_lines, opened_diff_identity, target_buf)
+    if side == "working-tree" and vim.bo[target_buf].modified then
+      vim.notify("Save the working-tree buffer before asking about its diff context.", vim.log.levels.WARN)
+      return
+    end
+    local result = vim.system(diff_command(file), { cwd = root, text = true }):wait()
+    local current_diff = result.stdout or ""
+    if vim.fn.sha256(current_diff) ~= opened_diff_identity then
+      vim.notify("Selected diff changed since it was opened; refresh and select it again.", vim.log.levels.WARN)
+      refresh()
+      return
+    end
+    local workspace = vim.b[buf].neolit_workspace
+    local head = vim.system({ "git", "rev-parse", "--verify", "HEAD" }, { cwd = root, text = true }):wait()
+    local current_head = (head.stdout or ""):gsub("%s+$", "")
+    if workspace and workspace.git.head ~= current_head then
+      vim.notify("Diff anchor is stale because HEAD changed; refresh and select it again.", vim.log.levels.WARN)
+      refresh()
+      return
+    end
+    local selected_path = side == "base" and (file.previousPath or file.path) or file.path
+    local context = "Selected source lines: " .. selected_path
+      .. ":" .. range.startLine .. "-" .. range.endLine
+      .. "\nDiff side: " .. side
+      .. "\nBase commit: " .. current_head
+      .. "\nDiff identity (sha256): " .. opened_diff_identity
+      .. "\n\nSelected lines:\n~~~text\n" .. selected_lines .. "\n~~~"
+      .. "\n\nCurrent Git diff:\n~~~diff\n" .. current_diff .. "\n~~~"
+    copy_context(context)
+  end
+
   local function selected()
     local row = vim.b[buf].neolit_rows and vim.b[buf].neolit_rows[vim.api.nvim_win_get_cursor(0)[1]]
     if not row then return end
@@ -244,9 +279,9 @@ function M.open(opts)
         vim.api.nvim_win_set_cursor(0, { req.range.startLine, 0 })
       end
     elseif row.kind == "file" then
-      open_diff(root, row.file)
+      open_diff(root, row.file, nil, ask_line_context)
     elseif row.kind == "hunk" then
-      open_diff(root, row.file, row.hunk)
+      open_diff(root, row.file, row.hunk, ask_line_context)
     end
   end
 
