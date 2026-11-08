@@ -1109,21 +1109,41 @@ function M.open(opts)
     vim.notify(label .. " copied")
   end
 
+  local function copy_source_line(path, line, label)
+    if type(path) ~= "string" or type(line) ~= "number" then return false end
+    local target = safe_repo_path(root, path)
+    if not target or vim.fn.filereadable(target) ~= 1 then return false end
+    local source = vim.fn.readfile(target)
+    local value = source[line]
+    if type(value) ~= "string" then return false end
+    copy_value(value, label)
+    return true
+  end
+
   local function copy_selected_text()
     local row = current_row()
     if not row then return end
     if row.kind == "task" or row.kind == "requirement_task" then
-      copy_value((row.task.checked and "- [x] " or "- [ ] ") .. row.task.text, "Task text")
+      local path = row.task.key:match("^(.-)::")
+      if not copy_source_line(path, row.task.range and row.task.range.startLine, "Task source") then
+        copy_value(row.task.text, "Task text")
+      end
     elseif row.kind == "requirement" then
-      copy_value(row.requirement.id .. " " .. row.requirement.text, "Requirement text")
-    elseif row.kind == "acceptance_criterion" then
-      copy_value(row.criterion.id .. " " .. row.criterion.text, "Acceptance criterion")
-    elseif row.kind == "requirement_criterion" then
-      copy_value(row.criterion.ref .. " " .. row.criterion.text, "Acceptance criterion")
+      if not copy_source_line(row.spec_path, row.requirement.range and row.requirement.range.startLine, "Requirement source") then
+        copy_value(row.requirement.text, "Requirement text")
+      end
+    elseif row.kind == "acceptance_criterion" or row.kind == "requirement_criterion" then
+      if not copy_source_line(row.criterion.specPath, row.criterion.range and row.criterion.range.startLine, "Acceptance criterion source") then
+        copy_value(row.criterion.text, "Acceptance criterion")
+      end
     elseif row.kind == "task_requirement" then
-      copy_value(row.requirement.specPath .. "#" .. row.requirement.id .. " " .. row.requirement.text, "Requirement")
+      if not copy_source_line(row.requirement.specPath, row.requirement.range and row.requirement.range.startLine, "Requirement source") then
+        copy_value(row.requirement.text, "Requirement text")
+      end
     elseif row.kind == "task_acceptance" then
-      copy_value(row.criterion.specPath .. "#" .. row.criterion.id .. " " .. row.criterion.text, "Acceptance criterion")
+      if not copy_source_line(row.criterion.specPath, row.criterion.range and row.criterion.range.startLine, "Acceptance criterion source") then
+        copy_value(row.criterion.text, "Acceptance criterion")
+      end
     elseif row.kind == "task_change" then
       copy_value(row.file and row.file.rawDiff or "", "File diff")
     elseif row.kind == "task_hunk" then
