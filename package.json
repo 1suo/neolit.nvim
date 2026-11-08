@@ -2,11 +2,8 @@
   "name": "neolit.nvim",
   "version": "0.1.0",
   "private": true,
-  "description": "Neovim host UI for the neolit planned-diff kernel (augmentd protocol)",
+  "description": "Neovim host for the Git-native Neolit planning workspace",
   "type": "module",
-  "scripts": {
-    "test": "node --test test/host.test.mjs"
-  },
   "author": "1suo",
   "license": "MIT"
 }
