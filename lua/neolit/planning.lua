@@ -137,7 +137,7 @@ local function open_diff(root, file, selected_hunk, on_line_context, comparison_
   end
 end
 
-local function render(buf, root, workspace, expanded_files, expanded_dirs, filter_mode_value)
+local function render(buf, root, workspace, expanded_files, expanded_dirs, expanded_tasks, filter_mode_value)
   local lines, rows = {}, {}
   expanded_files = expanded_files or {}
   expanded_dirs = expanded_dirs or {}
@@ -259,33 +259,34 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, filte
   end
   render_tree(tree_root, "", 0)
   if filter_mode == "affected" and #(workspace.git.changedFiles or {}) == 0 then add("  (no affected files)", nil) end
-  add("", nil)
-  add("TASKS (" .. #workspace.tasks .. ")", nil)
+  add("TASKS (" .. #workspace.tasks .. ")", { kind = "section", section = "tasks" })
   for _, task in ipairs(workspace.tasks) do
     local checkbox = task.checked and "[x]" or "[ ]"
     local todo_path = task.key:match("^(.-)::") or "TODO.md"
-    local task_state = workspace.derived and workspace.derived.tasks[task.key]
-    add(string.format("  %s %-10s %s  (%s:%d)", checkbox, task_state and task_state.state or task.state, task.text, todo_path, task.range.startLine), {
-      kind = "task", task = task,
+    local task_state = workspace.derived and workspace.derived.tasks and workspace.derived.tasks[task.key]
+    local expanded = expanded_tasks[task.key] ~= false
+    local state = task_state and task_state.state or task.state
+    add(string.format("  %s %s TASK %-10s %s  (%s:%d)", expanded and "▾" or "▸", checkbox, state, task.text, todo_path, task.range.startLine), {
+      kind = "task", task = task, key = "task:" .. task.key, expanded = expanded,
     })
-    for _, file_path in ipairs(task.filePaths or {}) do
-      add("      FILE  " .. file_path, {
-        kind = "planned_file", path = file_path, task = task,
-      })
-    end
-    for _, requirement in ipairs(task.resolvedRequirements) do
-      local spec_path = requirement.specPath
-      local requirement_state = requirement_states[requirement.specPath .. "#" .. requirement.id] or "planned"
-      add(string.format("      %s  %-10s", requirement.id, requirement_state), {
-        kind = "requirement", requirement = requirement, spec_path = spec_path,
-      })
-    end
-    for _, unresolved in ipairs(task.unresolvedReferences) do
-      add("      ! unresolved " .. unresolved.path .. "#" .. table.concat(unresolved.ids, ","), { kind = "diagnostic" })
+    if expanded then
+      for _, file_path in ipairs(task.filePaths or {}) do
+        add("      ↳ FILE  " .. file_path, { kind = "planned_file", path = file_path, task = task })
+      end
+      for _, requirement in ipairs(task.resolvedRequirements or {}) do
+        local spec_path = requirement.specPath
+        local requirement_state = requirement_states[requirement.specPath .. "#" .. requirement.id] or "planned"
+        add(string.format("      ↳ %s  %-10s  %s", requirement.id, requirement_state, requirement.text or ""), {
+          kind = "requirement", requirement = requirement, spec_path = spec_path,
+        })
+      end
+      for _, unresolved in ipairs(task.unresolvedReferences or {}) do
+        add("      ↳ ! unresolved " .. unresolved.path .. "#" .. table.concat(unresolved.ids, ","), { kind = "diagnostic" })
+      end
     end
   end
   if #workspace.tasks == 0 then add("  (no linked TODO tasks)", nil) end
-
+  add("", nil)
   add("", nil)
   add("DIAGNOSTICS (" .. #workspace.diagnostics .. ")", nil)
   for _, diagnostic in ipairs(workspace.diagnostics) do
@@ -323,6 +324,7 @@ function M.open(opts)
   local refresh_revision = 0
   local expanded_files = {}
   local expanded_dirs = {}
+  local expanded_tasks = {}
   local filter_mode = "all"
   local function refresh()
     refresh_revision = refresh_revision + 1
@@ -357,7 +359,7 @@ function M.open(opts)
           for _, file in ipairs(workspace.git.changedFiles or {}) do
             if expanded_files[file.path] == nil then expanded_files[file.path] = false end
           end
-          render(buf, root, workspace, expanded_files, expanded_dirs, filter_mode)
+          render(buf, root, workspace, expanded_files, expanded_dirs, expanded_tasks, filter_mode)
           vim.b[buf].neolit_workspace = workspace
         end)
       end,
@@ -987,6 +989,10 @@ function M.open(opts)
       expanded_dirs[row.path] = not (row.expanded ~= false)
       rerender_at()
       return
+    elseif row.kind == "task" then
+      expanded_tasks[row.task.key] = not (row.expanded ~= false)
+      rerender_at(row.key)
+      return
     end
     local file = row.file
     if row.kind == "hunk" then file = row.file end
@@ -1115,9 +1121,17 @@ function M.open(opts)
     end,
   })
   map("<CR>", selected, "Open selected diff, TODO, or SPEC requirement")
-  map("za", toggle_file, "Expand/collapse selected diff file")
-  map("zR", function() set_all_expanded(true) end, "Expand all diff files")
-  map("zM", function() set_all_expanded(false) end, "Collapse all diff files")
+  map("za", toggle_file, "Expand/collapse selected task, folder, or diff file")
+  map("zR", function()
+    set_all_expanded(true)
+    for _, task in ipairs((vim.b[buf].neolit_workspace or {}).tasks or {}) do expanded_tasks[task.key] = true end
+    rerender_at()
+  end, "Expand all tasks and diff files")
+  map("zM", function()
+    set_all_expanded(false)
+    for _, task in ipairs((vim.b[buf].neolit_workspace or {}).tasks or {}) do expanded_tasks[task.key] = false end
+    rerender_at()
+  end, "Collapse all tasks and diff files")
   map("f", function()
     filter_mode = filter_mode == "all" and "affected" or "all"
     local workspace = vim.b[buf].neolit_workspace
