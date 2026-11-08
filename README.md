@@ -53,10 +53,10 @@ collapsed.
   as evidence candidates, never as proof that implementation is complete.
 - `f` toggles affected-only mode. It keeps relevant TODO/SPEC source documents
   visible alongside changed paths.
-- `<CR>` on a task or requirement opens its Markdown source. `<CR>` on a
-  changed file expands its planning/evidence rows; press it again to open the
-  diff. `e` focuses the editable working side; `o` opens the actual file
-  without a diff.
+- `za` expands a changed file's task/hunk evidence. `<CR>` on a changed
+  file or hunk opens its native diff directly. `<CR>` on a task or requirement
+  opens its Markdown source. `e` focuses the editable working side; `o`
+  opens the actual file without a diff.
 - `D` toggles side-by-side/unified diff presentation. `r` refreshes;
   writes, focus return, and idle refreshes also pick up external agent edits.
 
