@@ -886,6 +886,36 @@ function M.open(opts)
     end
   end
 
+  local function open_selected_file()
+    local row = current_row()
+    if not row then return end
+    local path, line
+    if row.file and type(row.file.path) == "string" then
+      path = row.file.path
+    elseif row.kind == "repository_file" or row.kind == "planning_document" or row.kind == "planned_file" then
+      path = row.path
+    elseif row.kind == "task" then
+      path = row.task.key:match("^(.-)::")
+      line = row.task.range and row.task.range.startLine
+    elseif row.kind == "requirement" then
+      path = row.spec_path
+      line = row.requirement.range and row.requirement.range.startLine
+    end
+    if not path then
+      vim.notify("No source file for this tree entry", vim.log.levels.INFO)
+      return
+    end
+    open_in_preview(path, line, true)
+  end
+  local function focus_working_diff()
+    local win = diff_state.preview_win
+    if win and vim.api.nvim_win_is_valid(win) then
+      vim.api.nvim_set_current_win(win)
+      return
+    end
+    open_selected_file()
+  end
+
   local function show_details()
     local row = vim.b[buf].neolit_rows and vim.b[buf].neolit_rows[vim.api.nvim_win_get_cursor(0)[1]]
     if not row then return end
@@ -1541,7 +1571,9 @@ function M.open(opts)
       pcall(vim.api.nvim_del_augroup_by_id, refresh_group)
     end,
   })
-  map("<CR>", selected, "Open selected diff, TODO, or SPEC requirement")
+  map("<CR>", selected, "Show selected diff or expand/open planning entry")
+  map("e", focus_working_diff, "Focus editable working-tree side of the diff")
+  map("o", open_selected_file, "Open the actual file without the diff")
   map("za", toggle_node_at_cursor, "Toggle selected folder, document, task, or diff file")
   map("l", expand_node_at_cursor, "Expand selected folder, task, or diff file")
   map("h", collapse_node_at_cursor, "Collapse selected node or move to parent")
@@ -1582,7 +1614,7 @@ function M.open(opts)
   map("x", ask_context, "Ask about selected diff/task and copy context for existing agent")
   map("K", show_details, "Show selected file, hunk, task, or requirement details")
   map("?", function()
-    vim.notify("Tree: <CR> expand/open · za toggle · zo open · zc close · h/l expand/collapse-or-parent · zr/zm one level · zR/zM all · f affected-only · D diff view · x context · K details · r refresh · q/<Esc> close", vim.log.levels.INFO)
+    vim.notify("Tree: <CR> expand/open · za toggle · zo open · zc close · h/l expand/collapse-or-parent · zr/zm one level · zR/zM all · f affected-only · D diff view · e edit working side · o open file · x context · K details · r refresh · q/<Esc> close", vim.log.levels.INFO)
   end, "Show Neolit tree keys")
   local function close_workspace()
     refresh_revision = refresh_revision + 1
