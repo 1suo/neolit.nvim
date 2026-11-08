@@ -345,8 +345,9 @@ function M.open(opts)
       if not question or question == "" then return end
       local packet = "Question: " .. question .. "\n\n" .. context
       local max_chars = 16000
-      if #packet > max_chars then
-        packet = packet:sub(1, max_chars - 32) .. "\n...[planning context truncated]"
+      local marker = "\n...[planning context truncated]"
+      if vim.fn.strchars(packet) > max_chars then
+        packet = vim.fn.strcharpart(packet, 0, max_chars - vim.fn.strchars(marker)) .. marker
       end
       copy_packet(packet)
     end)
