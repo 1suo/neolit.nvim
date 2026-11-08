@@ -47,6 +47,7 @@ Install the plugin:
 - `<CR>` on a changed file/hunk opens a native side-by-side diff against the
   selected comparison base; on an individual added/removed line it opens at
   that exact line on the working-tree/base side respectively.
+- `e` (also `<leader>ne`) opens/focuses the selected file in the editable working-tree side of its side-by-side diff. `o` (also `<leader>no`) opens the actual file alone in the right pane, without the base comparison. Both actions work from file, hunk, and changed-line rows.
 - `x` on a task, requirement, file, hunk, or individual changed line asks for a question and copies a
   bounded context packet for the user's existing agent conversation. Task/requirement packets include resolved linked SPEC text and acceptance criteria; line packets carry the exact side and line coordinate.
 - In a native diff, `<leader>nx` on a line or visual selection copies context
