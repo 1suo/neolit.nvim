@@ -183,7 +183,7 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs)
       local branch = last and "└── " or "├── "
       local indent = ancestors or ""
       if entry.directory then
-        local expanded = expanded_dirs[entry.path] ~= false
+        local expanded = expanded_dirs[entry.path] == true or (expanded_dirs[entry.path] == nil and depth == 0)
         add("  " .. indent .. branch .. (expanded and "▾ " or "▸ ") .. entry.name .. "/", {
           kind = "tree_directory", path = entry.path, expanded = expanded,
         })
@@ -327,6 +327,7 @@ function M.open(opts)
   vim.api.nvim_win_set_buf(0, buf)
   local tree_win = vim.api.nvim_get_current_win()
   vim.api.nvim_win_set_width(tree_win, 34)
+  vim.wo[tree_win].wrap = false
   vim.api.nvim_buf_set_name(buf, "neolit://planning-" .. buf)
   vim.bo[buf].buftype = "nofile"
   vim.bo[buf].bufhidden = "hide"
