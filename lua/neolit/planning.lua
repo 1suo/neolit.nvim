@@ -175,7 +175,9 @@ local function render(buf, root, workspace)
       local hunk_association = hunk_associations[file.path .. "#" .. (hunk_index - 1)]
       local hunk_marker = not hunk_association and "?" or (
         hunk_association.state == "unresolved" and "~" or (
-          hunk_association.state == "documentation" and "#" or "?"
+          hunk_association.state == "documentation" and "#" or (
+          hunk_association.state == "attributed" and "=" or "?"
+        )
         )
       )
       local candidate_count = #(hunk_association and hunk_association.candidateTaskKeys or {})
