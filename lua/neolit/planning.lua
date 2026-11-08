@@ -631,6 +631,21 @@ function M.open(opts)
       for _, criterion in ipairs(ordered_criteria) do
         put("  " .. criterion.id .. " " .. criterion.text)
       end
+      put("Linked TODO tasks:")
+      for _, task in ipairs(vim.b[buf].neolit_workspace.tasks or {}) do
+        local linked = false
+        for _, requirement in ipairs(task.resolvedRequirements or {}) do
+          if requirement.specPath == row.spec_path and requirement.id == row.requirement.id then
+            linked = true
+            break
+          end
+        end
+        if linked then
+          local task_state = ((vim.b[buf].neolit_workspace.derived or {}).tasks or {})[task.key]
+          put("  " .. task.text .. " [" .. tostring(task_state and task_state.state or task.state) .. "]")
+          put("    " .. (task.key:match("^(.-)::") or "TODO") .. ":" .. task.range.startLine)
+        end
+      end
     elseif row.kind == "diagnostic" then
       put("DOCUMENTATION DIAGNOSTIC")
       put(row.diagnostic and row.diagnostic.message or "Unresolved reference")
