@@ -382,7 +382,7 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
     local changed_paths = type(projection) == "table" and projection.changedPaths or {}
     local diagnostics = diagnostics_by_task[key] or {}
     local expandable = #(task.filePaths or {}) + #(task.specReferences or {})
-      + #(task.description or {}) + #(task.resolvedRequirements or {})
+      + #(task.description or {}) + #(task.agentNotes or {}) + #(task.resolvedRequirements or {})
       + #(task.resolvedAcceptanceCriteria or {}) + #reviews + #changed_paths + #diagnostics > 0
     add(prefix .. indent .. (expandable and (expanded and "- " or "+ ") or "")
       .. checkbox .. " " .. state:upper() .. " " .. task.text,
