@@ -536,7 +536,7 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
       for _, task_key in ipairs(file_association and file_association.taskKeys or {}) do
         local task = tasks_by_key[task_key]
         if task then
-          add(child_prefix .. " TASK " .. task.text,
+          add(child_prefix .. " TASK " .. task.text .. " · " .. tostring(file_association.state):upper(),
             { kind = "task_change", key = "file-task:" .. path .. ":" .. task_key,
               parent_key = "file:" .. path, file = changed, association = file_association, task = task })
         end
