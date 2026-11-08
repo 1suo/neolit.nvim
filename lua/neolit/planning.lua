@@ -30,6 +30,19 @@ local function diff_command(file, base)
   return command
 end
 
+local function safe_repo_path(root, relative)
+  if type(relative) ~= "string" or relative == "" or relative:match("^[/\\]") or relative:match("^%a:[/\\]") then
+    return nil
+  end
+  local root_path = vim.fn.resolve(vim.fn.fnamemodify(root, ":p"))
+  local absolute = vim.fn.fnamemodify(root_path .. "/" .. relative, ":p")
+  local resolved = vim.fn.resolve(absolute)
+  if resolved ~= root_path and resolved:sub(1, #root_path + 1) ~= root_path .. "/" then
+    return nil
+  end
+  return absolute
+end
+
 local function normalize_diff(diff)
   return (diff or ""):gsub("\r\n", "\n"):gsub("\n+$", "")
 end
@@ -125,6 +138,11 @@ local function render(buf, root, workspace)
     add(string.format("  %s %-10s %s  (%s:%d)", checkbox, task_state and task_state.state or task.state, task.text, todo_path, task.range.startLine), {
       kind = "task", task = task,
     })
+    for _, file_path in ipairs(task.filePaths or {}) do
+      add("      FILE  " .. file_path, {
+        kind = "planned_file", path = file_path, task = task,
+      })
+    end
     for _, requirement in ipairs(task.resolvedRequirements) do
       local spec_path = requirement.specPath
       local requirement_state = requirement_states[requirement.specPath .. "#" .. requirement.id] or "planned"
@@ -370,16 +388,34 @@ function M.open(opts)
     if row.kind == "task" then
       local task = row.task
       local todo_path = task.key:match("^(.-)::")
-      if todo_path then
-        vim.cmd("tabedit " .. vim.fn.fnameescape(root .. "/" .. todo_path))
+      local todo_file = todo_path and safe_repo_path(root, todo_path)
+      if todo_file then
+        vim.cmd("tabedit " .. vim.fn.fnameescape(todo_file))
         vim.api.nvim_win_set_cursor(0, { task.range.startLine, 0 })
       end
     elseif row.kind == "requirement" then
       local req = row.requirement
       local spec_path = row.spec_path
-      if spec_path then
-        vim.cmd("tabedit " .. vim.fn.fnameescape(root .. "/" .. spec_path))
+      local spec_file = spec_path and safe_repo_path(root, spec_path)
+      if spec_file then
+        vim.cmd("tabedit " .. vim.fn.fnameescape(spec_file))
         vim.api.nvim_win_set_cursor(0, { req.range.startLine, 0 })
+      end
+    elseif row.kind == "planned_file" then
+      local workspace = vim.b[buf].neolit_workspace
+      local changed
+      for _, file in ipairs(workspace and workspace.git.changedFiles or {}) do
+        if file.path == row.path or file.previousPath == row.path then changed = file; break end
+      end
+      if changed then
+        open_diff(root, changed, nil, ask_line_context, workspace.git.base)
+      else
+        local target = safe_repo_path(root, row.path)
+        if target and vim.fn.filereadable(target) == 1 then
+          vim.cmd("tabedit " .. vim.fn.fnameescape(target))
+        else
+          vim.notify("Planned file does not exist yet: " .. row.path, vim.log.levels.INFO)
+        end
       end
     elseif row.kind == "file" then
       open_diff(root, row.file, nil, ask_line_context, workspace and workspace.git.base)
@@ -390,8 +426,8 @@ function M.open(opts)
 
   local function ask_context()
     local row = vim.b[buf].neolit_rows and vim.b[buf].neolit_rows[vim.api.nvim_win_get_cursor(0)[1]]
-    if not row or (row.kind ~= "file" and row.kind ~= "hunk" and row.kind ~= "requirement" and row.kind ~= "task") then
-      vim.notify("Select a task, requirement, or changed file first")
+    if not row or (row.kind ~= "file" and row.kind ~= "hunk" and row.kind ~= "requirement" and row.kind ~= "task" and row.kind ~= "planned_file") then
+      vim.notify("Select a task, requirement, planned file, or changed file first")
       return
     end
     if row.kind == "file" or row.kind == "hunk" then
@@ -485,7 +521,13 @@ function M.open(opts)
     end
 
     local context
-    if row.kind == "requirement" then
+    if row.kind == "planned_file" then
+      context = "Selected planned file: " .. row.path
+        .. "\nTODO task: " .. row.task.text
+        .. "\nTODO source: " .. tostring(row.task.key:match("^(.-)::")) .. ":" .. row.task.range.startLine
+        .. "\nDescription: " .. table.concat(row.task.description or {}, "\n")
+        .. "\nSPEC references: " .. vim.inspect(row.task.specReferences)
+    elseif row.kind == "requirement" then
       context = "Selected SPEC requirement " .. row.requirement.id
         .. "\nSource: " .. tostring(row.spec_path) .. ":" .. row.requirement.range.startLine
         .. "\n\n" .. row.requirement.text
