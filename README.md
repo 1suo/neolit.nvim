@@ -52,7 +52,8 @@ separate planning buffer. Use:
 - In a native diff tab, `<leader>nx` on a line or visual line selection asks a
   question about those exact base/working-tree lines. The packet includes the
   path, side, line range, base commit, diff SHA-256, selected lines, and current
-  file diff. It refuses unsaved working buffers and refreshes rather than
+  file diff. When opened from a selected hunk, related task context is limited
+  to that hunk's candidate tasks rather than every task hinted at the file. It refuses unsaved working buffers and refreshes rather than
   sending context when HEAD or the opened diff has changed.
 - Repository saves and editor focus refresh the view automatically; `r` forces a refresh and `q` closes it. Set `comparison_base` in Neolit configuration (default `HEAD`) to review against another commit/ref; the resolved base SHA is shown in the planning header and used for native diffs and contextual-question freshness checks.
 
