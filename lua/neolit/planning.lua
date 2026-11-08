@@ -1255,7 +1255,7 @@ function M.open(opts)
     local row = current_row()
     if not row then return end
     local relative, range, label, marker
-    if row.kind == "task" and row.task then
+    if (row.kind == "task" or row.kind == "requirement_task") and row.task then
       relative = row.task.key:match("^(.-)::")
       range = row.task.range
       label = "TODO task"
