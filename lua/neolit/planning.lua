@@ -465,6 +465,11 @@ function M.open(opts)
   local tree_win = vim.api.nvim_get_current_win()
   vim.api.nvim_win_set_width(tree_win, 34)
   vim.wo[tree_win].wrap = false
+  -- Keep one permanent right-hand preview in this tab. Every document and
+  -- ordinary file replaces its buffer; diffs temporarily use this same pane.
+  vim.api.nvim_set_current_win(tree_win)
+  vim.cmd("rightbelow vsplit")
+  local preview_win = vim.api.nvim_get_current_win()
   vim.api.nvim_buf_set_name(buf, "neolit://planning-" .. buf)
   vim.bo[buf].buftype = "nofile"
   vim.bo[buf].bufhidden = "hide"
@@ -476,7 +481,7 @@ function M.open(opts)
   local expanded_files = {}
   local expanded_dirs = {}
   local expanded_tasks = {}
-  local diff_state = { tree_win = tree_win }
+  local diff_state = { tree_win = tree_win, preview_win = preview_win }
   local filter_mode = "all"
 
   local function open_in_preview(relative_path, line)
