@@ -972,7 +972,7 @@ function M.open(opts)
   local function rerender_at(key)
     local workspace = vim.b[buf].neolit_workspace
     if not workspace then return end
-    render(buf, root, workspace, expanded_files, expanded_dirs, filter_mode)
+    render(buf, root, workspace, expanded_files, expanded_dirs, expanded_tasks, filter_mode)
     if key then
       for line, row in pairs(vim.b[buf].neolit_rows or {}) do
         if row and row.key == key then
