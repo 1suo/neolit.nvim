@@ -290,7 +290,13 @@ function M.open(opts)
     if refresh_job then pcall(vim.fn.jobstop, refresh_job) end
     local url = vim.uri_from_fname(neolit_dir .. "/dist/planning/workspace.js")
     local comparison_base = vim.json.encode(cfg.comparison_base or "HEAD")
-    local js = "const m = await import(" .. string.format("%q", url) .. "); const w = await m.loadPlanningWorkspace(process.cwd(), { comparisonBase: " .. comparison_base .. " }); process.stdout.write(JSON.stringify(w));"
+    local js = "const m = await import(" .. string.format("%q", url) .. "); "
+      .. "const w = await m.loadPlanningWorkspace(process.cwd(), { comparisonBase: " .. comparison_base .. " }); "
+      .. "w.git.diff = ''; "
+      .. "for (const f of w.git.changedFiles) for (const h of f.hunks) { "
+      .. "delete h.changes; delete h.addedLines; delete h.removedLines; "
+      .. "delete h.addedLineNumbers; delete h.removedLineNumbers; } "
+      .. "process.stdout.write(JSON.stringify(w));"
     local command = { cfg.node, "--input-type=module", "-e", js }
     refresh_job = vim.fn.jobstart(command, {
       cwd = root,
