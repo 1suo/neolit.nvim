@@ -128,8 +128,9 @@ local function open_diff(root, file, selected_hunk, on_line_context, comparison_
   end
 end
 
-local function render(buf, root, workspace)
+local function render(buf, root, workspace, expanded_files)
   local lines, rows = {}, {}
+  expanded_files = expanded_files or {}
   local function add(text, row)
     lines[#lines + 1] = text
     rows[#lines] = row
@@ -141,6 +142,50 @@ local function render(buf, root, workspace)
   for _, item in ipairs(workspace.derived and workspace.derived.requirements or {}) do
     requirement_states[item.specPath .. "#" .. item.requirementId] = item.state
   end
+  add("DIFF TREE (" .. #workspace.git.changedFiles .. " files)", nil)
+  local associations, statuses, hunk_associations = {}, {}, {}
+  for _, association in ipairs(workspace.git.associations) do associations[association.path] = association end
+  for _, association in ipairs(workspace.git.hunkAssociations or {}) do
+    hunk_associations[association.path .. "#" .. association.hunkIndex] = association
+  end
+  for _, status in ipairs(workspace.git.status) do statuses[status.path] = status end
+  for _, file in ipairs(workspace.git.changedFiles) do
+    local association = associations[file.path] or { state = "unplanned", taskKeys = {} }
+    local marker = association.state == "unplanned" and "?" or (association.state == "partially-mapped" and "~" or "+")
+    local status = statuses[file.path]
+    local git_status = status and (status.index .. status.worktree) or "  "
+    local doc_marker = file.path:match("%.md$") and "#" or " "
+    local is_expanded = expanded_files[file.path] ~= false
+    local file_key = "file:" .. file.path
+    add(string.format("  %s %s [%s] %s %s", marker, doc_marker, git_status, is_expanded and "▾" or "▸", file.path), { kind = "file", key = file_key, file = file, association = association, expanded = is_expanded })
+    if is_expanded then
+    for hunk_index, hunk in ipairs(file.hunks) do
+      local hunk_association = hunk_associations[file.path .. "#" .. (hunk_index - 1)]
+      local hunk_marker = not hunk_association and "?" or (
+        hunk_association.state == "unresolved" and "~" or (
+          hunk_association.state == "documentation" and "#" or (
+          hunk_association.state == "attributed" and "=" or "?"
+        )
+        )
+      )
+      local candidate_labels = {}
+      for _, task_key in ipairs(hunk_association and hunk_association.candidateTaskKeys or {}) do
+        for _, task in ipairs(workspace.tasks or {}) do
+          if task.key == task_key then candidate_labels[#candidate_labels + 1] = "task: " .. task.text end
+        end
+      end
+      for _, reference in ipairs(hunk_association and hunk_association.candidateRequirementRefs or {}) do
+        candidate_labels[#candidate_labels + 1] = "requirement: " .. reference
+      end
+      local candidate_label = #candidate_labels > 0 and (" [" .. table.concat(candidate_labels, "; ") .. "]") or ""
+      add(string.format("    %s @@ -%d,%d +%d,%d @@ %s%s", hunk_marker, hunk.oldStart, hunk.oldLines, hunk.newStart, hunk.newLines, hunk.header, candidate_label), {
+        kind = "hunk", key = file_key .. ":hunk:" .. hunk_index, file = file, hunk = hunk, association = association, hunkAssociation = hunk_association,
+      })
+    end
+    end
+  end
+  if #workspace.git.changedFiles == 0 then add("  (working tree clean)", nil) end
+
   add("TASKS (" .. #workspace.tasks .. ")", nil)
   for _, task in ipairs(workspace.tasks) do
     local checkbox = task.checked and "[x]" or "[ ]"
@@ -166,47 +211,6 @@ local function render(buf, root, workspace)
     end
   end
   if #workspace.tasks == 0 then add("  (no linked TODO tasks)", nil) end
-
-  add("", nil)
-  add("CHANGED FILES (" .. #workspace.git.changedFiles .. ")", nil)
-  local associations, statuses, hunk_associations = {}, {}, {}
-  for _, association in ipairs(workspace.git.associations) do associations[association.path] = association end
-  for _, association in ipairs(workspace.git.hunkAssociations or {}) do
-    hunk_associations[association.path .. "#" .. association.hunkIndex] = association
-  end
-  for _, status in ipairs(workspace.git.status) do statuses[status.path] = status end
-  for _, file in ipairs(workspace.git.changedFiles) do
-    local association = associations[file.path] or { state = "unplanned", taskKeys = {} }
-    local marker = association.state == "unplanned" and "?" or (association.state == "partially-mapped" and "~" or "+")
-    local status = statuses[file.path]
-    local git_status = status and (status.index .. status.worktree) or "  "
-    local doc_marker = file.path:match("%.md$") and "#" or " "
-    add(string.format("  %s %s [%s] %s", marker, doc_marker, git_status, file.path), { kind = "file", file = file, association = association })
-    for hunk_index, hunk in ipairs(file.hunks) do
-      local hunk_association = hunk_associations[file.path .. "#" .. (hunk_index - 1)]
-      local hunk_marker = not hunk_association and "?" or (
-        hunk_association.state == "unresolved" and "~" or (
-          hunk_association.state == "documentation" and "#" or (
-          hunk_association.state == "attributed" and "=" or "?"
-        )
-        )
-      )
-      local candidate_labels = {}
-      for _, task_key in ipairs(hunk_association and hunk_association.candidateTaskKeys or {}) do
-        for _, task in ipairs(workspace.tasks or {}) do
-          if task.key == task_key then candidate_labels[#candidate_labels + 1] = "task: " .. task.text end
-        end
-      end
-      for _, reference in ipairs(hunk_association and hunk_association.candidateRequirementRefs or {}) do
-        candidate_labels[#candidate_labels + 1] = "requirement: " .. reference
-      end
-      local candidate_label = #candidate_labels > 0 and (" [" .. table.concat(candidate_labels, "; ") .. "]") or ""
-      add(string.format("    %s @@ -%d,%d +%d,%d @@ %s%s", hunk_marker, hunk.oldStart, hunk.oldLines, hunk.newStart, hunk.newLines, hunk.header, candidate_label), {
-        kind = "hunk", file = file, hunk = hunk, association = association, hunkAssociation = hunk_association,
-      })
-    end
-  end
-  if #workspace.git.changedFiles == 0 then add("  (working tree clean)", nil) end
 
   add("", nil)
   add("DIAGNOSTICS (" .. #workspace.diagnostics .. ")", nil)
@@ -240,6 +244,7 @@ function M.open(opts)
 
   local refresh_job
   local refresh_revision = 0
+  local expanded_files = {}
   local function refresh()
     refresh_revision = refresh_revision + 1
     local revision = refresh_revision
@@ -262,7 +267,10 @@ function M.open(opts)
             vim.notify("neolit: could not decode planning workspace", vim.log.levels.ERROR)
             return
           end
-          render(buf, root, workspace)
+          for _, file in ipairs(workspace.git.changedFiles or {}) do
+            if expanded_files[file.path] == nil then expanded_files[file.path] = true end
+          end
+          render(buf, root, workspace, expanded_files)
           vim.b[buf].neolit_workspace = workspace
         end)
       end,
@@ -600,6 +608,34 @@ function M.open(opts)
   local function map(lhs, fn, desc)
     vim.keymap.set("n", lhs, fn, { buffer = buf, silent = true, nowait = true, desc = desc })
   end
+  local function rerender_at(key)
+    local workspace = vim.b[buf].neolit_workspace
+    if not workspace then return end
+    render(buf, root, workspace, expanded_files)
+    if key then
+      for line, row in pairs(vim.b[buf].neolit_rows or {}) do
+        if row and row.key == key then
+          vim.api.nvim_win_set_cursor(0, { line, 0 })
+          return
+        end
+      end
+    end
+  end
+  local function toggle_file()
+    local row = vim.b[buf].neolit_rows and vim.b[buf].neolit_rows[vim.api.nvim_win_get_cursor(0)[1]]
+    if not row then return end
+    local file = row.file
+    if row.kind == "hunk" then file = row.file end
+    if not file then return end
+    expanded_files[file.path] = not (expanded_files[file.path] ~= false)
+    rerender_at("file:" .. file.path)
+  end
+  local function set_all_expanded(expanded)
+    local workspace = vim.b[buf].neolit_workspace
+    if not workspace then return end
+    for _, file in ipairs(workspace.git.changedFiles or {}) do expanded_files[file.path] = expanded end
+    rerender_at()
+  end
   local refresh_group = vim.api.nvim_create_augroup("NeolitPlanning" .. buf, { clear = true })
   vim.api.nvim_create_autocmd({ "BufWritePost", "FileChangedShellPost" }, {
     group = refresh_group,
@@ -622,9 +658,12 @@ function M.open(opts)
       pcall(vim.api.nvim_del_augroup_by_id, refresh_group)
     end,
   })
-  map("<CR>", selected, "Open selected TODO, SPEC requirement, or native diff")
+  map("<CR>", selected, "Open selected diff, TODO, or SPEC requirement")
+  map("za", toggle_file, "Expand/collapse selected diff file")
+  map("zR", function() set_all_expanded(true) end, "Expand all diff files")
+  map("zM", function() set_all_expanded(false) end, "Collapse all diff files")
   map("r", refresh, "Refresh Git-native planning workspace")
-  map("x", ask_context, "Copy selected planning/diff context for existing agent")
+  map("x", ask_context, "Ask about selected diff/task and copy context for existing agent")
   map("q", function()
     refresh_revision = refresh_revision + 1
     if refresh_job then pcall(vim.fn.jobstop, refresh_job); refresh_job = nil end
