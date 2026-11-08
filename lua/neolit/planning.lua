@@ -294,6 +294,10 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
       if file.path == path then return file end
     end
   end
+  local function find_changed_hunk(file, hunk_index)
+    if type(file) ~= "table" or type(hunk_index) ~= "number" then return nil end
+    return file.hunks and file.hunks[hunk_index + 1] or nil
+  end
   local function state_reason(state, projection)
     if state == "unmapped" then return "No valid SPEC requirement reference" end
     if state == "blocked" then return "Blocked by an explicit blocker" end
@@ -401,6 +405,7 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
       add(prefix .. indent .. " HUNK " .. review.path .. "#" .. tostring(review.hunkIndex + 1)
         .. " " .. tostring(review.state):upper() .. " · " .. tostring(review.reason),
         { kind = "task_hunk", parent_key = "task:" .. key, file = file,
+          hunk = find_changed_hunk(file, review.hunkIndex),
           hunkAssociation = hunk_association, task = task })
     end
     for _, diagnostic in ipairs(diagnostics) do
@@ -530,6 +535,7 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
               .. tostring(review.hunkIndex + 1) .. " " .. tostring(review.state):upper()
               .. " · " .. tostring(review.reason),
               { kind = "task_hunk", parent_key = requirement_key, file = file,
+                hunk = find_changed_hunk(file, review.hunkIndex),
                 hunkAssociation = hunk_association, requirement = requirement })
           end
         end
@@ -551,12 +557,16 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
           if task then names[#names + 1] = task.text end
         end
         local requirements = item.candidateRequirementRefs or {}
-        local related = #names > 0 and table.concat(names, ", ")
-          or (#requirements > 0 and table.concat(requirements, ", ") or "no task or requirement candidate")
+        local related_parts = {}
+        if #names > 0 then related_parts[#related_parts + 1] = "tasks: " .. table.concat(names, ", ") end
+        if #requirements > 0 then related_parts[#related_parts + 1] = "SPEC: " .. table.concat(requirements, ", ") end
+        local related = #related_parts > 0 and table.concat(related_parts, " · ")
+          or "no task or requirement candidate"
         add(child_prefix .. " HUNK " .. tostring(item.hunkIndex + 1) .. " "
           .. tostring(item.state):upper() .. " · " .. tostring(item.reason) .. " · " .. related,
           { kind = "task_hunk", key = "file-hunk:" .. path .. ":" .. tostring(item.hunkIndex),
-            parent_key = "file:" .. path, file = changed, hunkAssociation = item })
+            parent_key = "file:" .. path, file = changed,
+            hunk = find_changed_hunk(changed, item.hunkIndex), hunkAssociation = item })
       end
     end
   end
@@ -942,7 +952,7 @@ function M.open(opts)
     elseif row.kind == "task_change" then
       open_diff(root, row.file, nil, workspace and workspace.git.base, nil, diff_state, true)
     elseif row.kind == "task_hunk" then
-      open_diff(root, row.file, row.hunkAssociation and row.hunkAssociation.hunk,
+      open_diff(root, row.file, row.hunk,
         workspace and workspace.git.base, nil, diff_state, true)
     elseif row.kind == "file" then
       open_diff(root, row.file, nil, workspace and workspace.git.base, nil, diff_state, true)
@@ -971,7 +981,7 @@ function M.open(opts)
     elseif row.kind == "task_change" then
       open_diff(root, row.file, nil, workspace and workspace.git.base, nil, diff_state, false)
     elseif row.kind == "task_hunk" then
-      open_diff(root, row.file, row.hunkAssociation and row.hunkAssociation.hunk,
+      open_diff(root, row.file, row.hunk,
         workspace and workspace.git.base, nil, diff_state, false)
     elseif row.kind == "file" then
       open_diff(root, row.file, nil, workspace and workspace.git.base, nil, diff_state, false)
@@ -1095,7 +1105,7 @@ function M.open(opts)
     elseif row.kind == "task_change" then
       copy_value(row.file and row.file.rawDiff or "", "File diff")
     elseif row.kind == "task_hunk" then
-      local hunk = row.hunkAssociation and row.hunkAssociation.hunk
+      local hunk = row.hunk
       if hunk then
         local raw = row.file and row.file.rawDiff or ""
         local lines = vim.split(raw, "\n", { plain = true })
