@@ -754,10 +754,13 @@ function M.open(opts)
   -- open becomes Neolit's one-and-only right preview pane. Do not split it
   -- again or create a second preview window.
   local preview_win = vim.api.nvim_get_current_win()
-  vim.cmd("topleft 34vnew")
+  vim.cmd("topleft 36vnew")
   local buf = vim.api.nvim_get_current_buf()
   local tree_win = vim.api.nvim_get_current_win()
-  vim.api.nvim_win_set_width(tree_win, 34)
+  vim.api.nvim_win_set_width(tree_win, 36)
+  -- Keep the navigation column fixed while preview/diff windows split and
+  -- resize the remaining space. The right side then owns all remaining width.
+  vim.wo[tree_win].winfixwidth = true
   vim.wo[tree_win].wrap = false
   vim.bo[buf].tabstop = 2
   vim.bo[buf].shiftwidth = 2
