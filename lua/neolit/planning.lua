@@ -190,6 +190,13 @@ local function render(buf, root, workspace, expanded_files)
           lineNumber = line_number, lineText = changed_text, side = "working-tree",
         })
       end
+      for line_index, changed_text in ipairs(hunk.removedLines or {}) do
+        add(string.format("      -      %s", changed_text), {
+          kind = "change_line", key = file_key .. ":hunk:" .. hunk_index .. ":remove:" .. line_index,
+          file = file, hunk = hunk, hunkAssociation = hunk_association,
+          lineText = changed_text, side = "base",
+        })
+      end
     end
     end
   end
