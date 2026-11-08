@@ -47,7 +47,10 @@ collapsed.
 - Expand a SPEC document, then a requirement, to see referencing TODO tasks,
   acceptance-criterion coverage, and related changed hunks.
 - Expand a changed file to see candidate task links and each hunk's attribution
-  state and reason. Selecting a hunk opens that exact diff.
+  state and reason. File markers are `?` (no task hint), `~` (candidate or
+  ambiguous hint), and `D` (planning-document change). A file hint never gets
+  a confirmed-mapping checkmark: source-code hunk attribution is not inferred
+  from a path alone. Selecting a hunk opens that exact diff.
 - Select a task or requirement to highlight its related rows. Links use resolved
   Markdown references; file-path hints and source-range hunk matches are shown
   as evidence candidates, never as proof that implementation is complete.
