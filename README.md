@@ -282,6 +282,15 @@ of the embedded panel input; status lives in the winbar and feedback in
 `vim.notify` instead of the TUI's header and message panel; file visits
 (`gf`/`o` and `p`) are nvim-only windows inside the panel tab.
 
+## Development contract
+
+This repository is a thin Neovim host for the shared planned-diff controller.
+Read [AGENTS.md](./AGENTS.md) and the reusable
+[Neovim host workflow skill](./.agents/skills/neolit-neovim-host/SKILL.md)
+before changing the Lua UI, keymap, or Node bridge. Changes to plan lifecycle,
+repository behavior, agent sessions, and apply/verify semantics belong in the
+shared [neolit](https://github.com/1suo/neolit) package.
+
 ## Validation
 
 ```sh
