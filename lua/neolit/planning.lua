@@ -302,7 +302,7 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
     end
   end
   local function render_file(entry, prefix, branch)
-    local child_prefix = prefix .. (branch == "└─ " and "   " or "│  ")
+    local child_prefix = prefix .. (branch == "└" and "  " or "│ ")
     local child_depth = 1
     local path, changed = entry.path, changed_by_path[entry.path]
     local status, kind = git_status[path], doc_kind[path]
@@ -312,7 +312,7 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
     local is_expanded = expanded_files[path] == true
     local has_children = (kind == "TODO" and #(tasks_by_doc[path] or {}) > 0)
       or (kind == "SPEC" and #(requirements_by_doc[path] or {}) > 0)
-    add(prefix .. branch
+    add(prefix .. branch .. (has_children and (is_expanded and "-" or "+") or " ")
       .. (kind and kind ~= "README" and ("[" .. kind .. "] ") or "")
       .. entry.name
       .. (marker ~= "" and (" " .. marker) or "")
@@ -373,11 +373,11 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
     end)
     for index, entry in ipairs(entries) do
       local last = index == #entries
-      local branch = last and "└─ " or "├─ "
-      local child_prefix = prefix .. (last and "   " or "│  ")
+      local branch = last and "└" or "├"
+      local child_prefix = prefix .. (last and "  " or "│ ")
       if entry.directory then
         local expanded = expanded_dirs[entry.path] == true
-        add(prefix .. branch .. entry.name .. "/",
+        add(prefix .. branch .. (expanded and "-" or "+") .. entry.name .. "/",
           { kind = "tree_directory", key = "dir:" .. entry.path, parent_key = parent_key, path = entry.path, expanded = expanded, expandable = true })
         if expanded then render_tree(entry.node, child_prefix, "dir:" .. entry.path) end
       else
@@ -595,7 +595,7 @@ function M.open(opts)
             open_paths[#open_paths + 1] = file.path
           end
           for _, path in ipairs(workspace.readmes or {}) do
-            if expanded_files[path] == nil then expanded_files[path] = true end
+            if expanded_files[path] == nil then expanded_files[path] = false end
             open_paths[#open_paths + 1] = path
           end
           for _, spec in ipairs(workspace.specs or {}) do
@@ -607,12 +607,12 @@ function M.open(opts)
             open_paths[#open_paths + 1] = todo.path
           end
           for _, task in ipairs(workspace.tasks or {}) do
-            if expanded_tasks[task.key] == nil then expanded_tasks[task.key] = true end
+            if expanded_tasks[task.key] == nil then expanded_tasks[task.key] = false end
           end
           for _, path in ipairs(open_paths) do
             local parent = path:match("^(.*)/[^/]+$")
             while parent do
-              if expanded_dirs[parent] == nil then expanded_dirs[parent] = true end
+              if expanded_dirs[parent] == nil then expanded_dirs[parent] = false end
               parent = parent:match("^(.*)/[^/]+$")
             end
           end
