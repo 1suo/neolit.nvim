@@ -430,7 +430,7 @@ function M.open(opts)
           question = question,
           path = row.file.path,
           side = "working-tree",
-          baseCommit = current_head ~= "" and current_head or "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+          baseCommit = current_base ~= "" and current_base or "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
           diffText = full_diff,
           selectedDiffText = selected_diff,
           hunk = row.kind == "hunk" and row.hunk or nil,
