@@ -186,8 +186,11 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
     tasks_by_doc[path] = tasks_by_doc[path] or {}
     tasks_by_doc[path][#tasks_by_doc[path] + 1] = task
   end
+  local derived = type(workspace.derived) == "table" and workspace.derived or {}
+  local derived_requirements = type(derived.requirements) == "table" and derived.requirements or {}
+  local derived_tasks = type(derived.tasks) == "table" and derived.tasks or {}
   local requirement_states = {}
-  for _, item in ipairs(workspace.derived and workspace.derived.requirements or {}) do
+  for _, item in ipairs(derived_requirements) do
     requirement_states[item.specPath .. "#" .. item.requirementId] = item.state
   end
 
@@ -218,8 +221,8 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
   local function render_task(task, prefix, depth)
     local key = task.key
     local expanded = expanded_tasks[key] == true
-    local derived = workspace.derived and workspace.derived.tasks and workspace.derived.tasks[key]
-    local state = derived and derived.state or task.state or "planned"
+    local task_state = derived_tasks[key]
+    local state = type(task_state) == "table" and task_state.state or task.state or "planned"
     local checkbox = task.checked and "[x]" or "[ ]"
     local indent = string.rep("  ", depth)
     local expandable = #(task.filePaths or {}) + #(task.specReferences or {}) + #(task.description or {}) + #(task.unresolvedReferences or {}) > 0
@@ -389,8 +392,8 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
         elseif row.doc_kind == "SPEC" then mark(line, "requirements", "Comment") end
       elseif row.kind == "task" then
         mark(line, row.task.checked and "[x]" or "[ ]", row.task.checked and "DiagnosticOk" or "Comment")
-        local derived = workspace.derived and workspace.derived.tasks and workspace.derived.tasks[row.task.key]
-        local state = (derived and derived.state or row.task.state or "planned"):upper()
+        local task_state = derived_tasks[row.task.key]
+        local state = (type(task_state) == "table" and task_state.state or row.task.state or "planned"):upper()
         local group = "DiagnosticInfo"
         if state:find("COMPLETE", 1, true) or state == "DONE" or state == "SATISFIED" then
           group = "DiagnosticOk"
