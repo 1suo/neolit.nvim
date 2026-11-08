@@ -939,226 +939,62 @@ function M.open(opts)
   end
 
 
-  local function ask_context()
-    local row = vim.b[buf].neolit_rows and vim.b[buf].neolit_rows[vim.api.nvim_win_get_cursor(0)[1]]
-    if not row or (row.kind ~= "tree_directory" and row.kind ~= "repository_file" and row.kind ~= "planning_document" and row.kind ~= "file" and row.kind ~= "hunk" and row.kind ~= "change_line" and row.kind ~= "requirement" and row.kind ~= "task" and row.kind ~= "planned_file") then
-      vim.notify("Select a task, requirement, planned file, or changed file first")
+  local function copy_value(value, label)
+    if type(value) ~= "string" or value == "" then
+      vim.notify("Nothing to copy for this selection", vim.log.levels.INFO)
       return
     end
-    if row.kind == "planning_document" then
-      copy_context("Selected " .. tostring(row.doc_kind) .. " document: " .. row.path .. "\nAsk about this document and inspect its current contents in the working tree.")
-      return
-    elseif row.kind == "tree_directory" then
-      local files = {}
-      for _, path in ipairs(vim.b[buf].neolit_workspace.git.repositoryFiles or {}) do
-        if path:sub(1, #row.path + 1) == row.path .. "/" then files[#files + 1] = path end
-      end
-      copy_context("Selected repository folder: " .. row.path .. "\\nFiles beneath this folder:\\n" .. table.concat(files, "\\n"))
-      return
-    elseif row.kind == "repository_file" then
-      local file = row.path
-      local status = nil
-      for _, entry in ipairs(vim.b[buf].neolit_workspace.git.status or {}) do if entry.path == file then status = entry; break end end
-      local changed_file
-      for _, candidate in ipairs(vim.b[buf].neolit_workspace.git.changedFiles or {}) do if candidate.path == file then changed_file = candidate; break end end
-      if changed_file then
-        row = { kind = "file", file = changed_file, association = nil }
-      else
-        copy_context("Selected repository file: " .. file .. "\\nGit status: " .. (status and (status.index .. status.worktree) or "unchanged") .. "\\nAsk the agent to inspect this file in the working tree.")
-        return
-      end
-    end
-    if row.kind == "file" or row.kind == "hunk" or row.kind == "change_line" then
-      local workspace = vim.b[buf].neolit_workspace
-      local base = workspace and workspace.git.base or "HEAD"
-      local result = vim.system(diff_command(row.file, base), { cwd = root, text = true }):wait()
-      local full_diff = result.stdout or ""
-      local head = vim.system({ "git", "rev-parse", "--verify", "--end-of-options", (cfg.comparison_base or "HEAD") .. "^{commit}" }, { cwd = root, text = true }):wait()
-      local current_base = (head.stdout or ""):gsub("%s+$", "")
-      if workspace and workspace.git.base ~= current_base then
-        vim.notify("Diff anchor is stale because the comparison base changed; refresh and select it again.", vim.log.levels.WARN)
-        refresh()
-        return
-      end
-      if row.file.rawDiff and normalize_diff(full_diff) ~= row.file.rawDiff then
-        vim.notify("Selected diff changed since the workspace was loaded; refreshing. Select it again.", vim.log.levels.WARN)
-        refresh()
-        return
-      end
-      local selected_diff = full_diff
-      if row.kind == "hunk" or row.kind == "change_line" then
-        local lines, capture, selected = vim.split(full_diff, "\n", { plain = true }), {}, false
-        for _, line in ipairs(lines) do
-          if line:match("^@@ ") then
-            if selected then break end
-            local old, old_count, new, new_count = line:match("^@@ %-(%d+),?(%d*) %+(%d+),?(%d*) @@")
-            selected = tonumber(old) == row.hunk.oldStart
-              and (old_count == "" and 1 or tonumber(old_count)) == row.hunk.oldLines
-              and tonumber(new) == row.hunk.newStart
-              and (new_count == "" and 1 or tonumber(new_count)) == row.hunk.newLines
-          end
-          if selected then capture[#capture + 1] = line end
-        end
-        selected_diff = table.concat(capture, "\n")
-        if selected_diff == "" then
-          vim.notify("Selected hunk is no longer present; refresh and select it again.", vim.log.levels.WARN)
-          refresh()
-          return
-        end
-      end
-      local related_tasks = {}
-      local related_requirements = {}
-      for _, task in ipairs(workspace and workspace.tasks or {}) do
-        local candidate_keys = (row.kind == "hunk" or row.kind == "change_line") and row.hunkAssociation and row.hunkAssociation.candidateTaskKeys or (row.association and row.association.taskKeys or {})
-        if vim.tbl_contains(candidate_keys, task.key) then
-          local requirements = {}
-          for _, requirement in ipairs(task.resolvedRequirements or {}) do
-            for _, reference in ipairs(task.specReferences or {}) do
-              if reference.path == requirement.specPath and vim.tbl_contains(reference.ids or {}, requirement.id) then
-                requirements[#requirements + 1] = { specPath = reference.path, requirement = requirement }
-              end
-            end
-          end
-          related_tasks[#related_tasks + 1] = {
-            todoPath = task.key:match("^(.-)::") or "",
-            task = task,
-            requirements = requirements,
-          }
-        end
-      end
-      if (row.kind == "hunk" or row.kind == "change_line") and row.hunkAssociation then
-        for _, reference in ipairs(row.hunkAssociation.candidateRequirementRefs or {}) do
-          local spec_path, requirement_id = reference:match("^(.-)#([^#]+)$")
-          for _, spec in ipairs(workspace and workspace.specs or {}) do
-            if spec.path == spec_path then
-              for _, requirement in ipairs(spec.requirements or {}) do
-                if requirement.id == requirement_id then
-                  related_requirements[#related_requirements + 1] = { specPath = spec_path, requirement = requirement }
-                end
-              end
-            end
-          end
-        end
-      end
-      vim.ui.input({ prompt = "Question about selected diff: " }, function(question)
-        if not question or question == "" then return end
-        local payload = {
-          question = question,
-          path = row.file.path,
-          side = row.kind == "change_line" and row.side or "working-tree",
-          baseCommit = current_base ~= "" and current_base or "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
-          diffText = full_diff,
-          selectedDiffText = selected_diff,
-          hunk = row.kind == "hunk" and row.hunk or nil,
-          selectedLinesText = row.kind == "change_line" and row.lineText or nil,
-          lineRange = row.kind == "change_line" and { startLine = row.lineNumber, endLine = row.lineNumber } or nil,
-          relatedTasks = related_tasks,
-          relatedRequirements = related_requirements,
-        }
-        local url = vim.uri_from_fname(neolit_dir .. "/dist/planning/context.js")
-        local js = "const m = await import(" .. string.format("%q", url) .. "); "
-          .. "const p = JSON.parse(process.argv[1]); "
-          .. "const anchor = m.createDiffAnchor({ path: p.path, side: p.side, baseCommit: p.baseCommit, diffText: p.diffText, hunk: p.hunk, lineRange: p.lineRange }); "
-          .. "const result = m.buildDiffQuestionPacket({ question: p.question, anchor, currentBaseCommit: p.baseCommit, currentDiffText: p.diffText, selectedDiffText: p.selectedDiffText, selectedLinesText: p.selectedLinesText, relatedTasks: p.relatedTasks, relatedRequirements: p.relatedRequirements }); "
-          .. "process.stdout.write(JSON.stringify(result));"
-        local packet_result = vim.system({
-          cfg.node, "--input-type=module", "-e", js, vim.json.encode(payload),
-        }, { cwd = root, text = true }):wait()
-        if packet_result.code ~= 0 then
-          vim.notify("Could not build Neolit context packet: " .. (packet_result.stderr or ""), vim.log.levels.ERROR)
-          return
-        end
-        local decoded_ok, packet = pcall(vim.json.decode, packet_result.stdout or "")
-        if not decoded_ok or packet.status ~= "ready" then
-          vim.notify("Diff context became stale; refresh and select it again.", vim.log.levels.WARN)
-          refresh()
-          return
-        end
-        copy_packet(packet.packet)
-      end)
+    local ok = pcall(vim.fn.setreg, "+", value)
+    if not ok then
+      vim.fn.setreg('"', value)
+      vim.notify(label .. " copied to unnamed register (clipboard unavailable)", vim.log.levels.INFO)
       return
     end
+    vim.notify(label .. " copied")
+  end
 
-    local context_lines = {}
-    local function add_context(value)
-      if value and value ~= "" then context_lines[#context_lines + 1] = value end
-    end
-    local documentation_seen = {}
-    local function add_task_context(task)
-      add_context("TODO task: " .. task.text)
-      add_context("Source: " .. tostring(task.key:match("^(.-)::")) .. ":" .. task.range.startLine)
-      if #(task.description or {}) > 0 then
-        add_context("Description:\n" .. table.concat(task.description, "\n"))
-      end
-      for _, path in ipairs(task.filePaths or {}) do add_context("File hint: " .. path) end
-      for _, requirement in ipairs(task.resolvedRequirements or {}) do
-        add_context("SPEC requirement " .. requirement.specPath .. "#" .. requirement.id .. ": " .. requirement.text)
-      end
-      for _, criterion in ipairs(task.resolvedAcceptanceCriteria or {}) do
-        add_context("Acceptance criterion " .. criterion.specPath .. "#" .. criterion.id .. ": " .. criterion.text)
-      end
-      for _, unresolved in ipairs(task.unresolvedReferences or {}) do
-        add_context("Unresolved SPEC reference: " .. unresolved.path .. "#" .. table.concat(unresolved.ids or {}, ", "))
-      end
-
-      local workspace = vim.b[buf].neolit_workspace
-      local payload = vim.json.encode({
-        task = task,
-        readmes = workspace and workspace.readmeContents or {},
-        maxReadmeChars = 4000,
-      })
-      local url = vim.uri_from_fname(neolit_dir .. "/dist/planning/context.js")
-      local js = "const m = await import(" .. string.format("%q", url) .. "); "
-        .. "const p = JSON.parse(process.argv[1]); "
-        .. "process.stdout.write(JSON.stringify(m.selectTaskDocumentationContext(p)));"
-      local result = vim.system({
-        cfg.node, "--input-type=module", "-e", js, payload,
-      }, { cwd = root, text = true }):wait()
-      if result.code == 0 then
-        local ok, docs = pcall(vim.json.decode, result.stdout or "")
-        if ok then
-          for _, current in ipairs(docs.currentBehavior or {}) do
-            if not documentation_seen[current.readmePath] then
-              documentation_seen[current.readmePath] = true
-              add_context("Current shipped behavior — " .. current.readmePath .. ":\n" .. current.content)
-            end
-          end
-          for _, diagnostic in ipairs(docs.diagnostics or {}) do
-            add_context("Documentation context diagnostic: " .. diagnostic)
-          end
-        else
-          add_context("README context unavailable: could not decode the planning context result.")
-        end
-      else
-        add_context("README context unavailable: " .. (result.stderr or "planning context helper failed"))
-      end
-    end
-    if row.kind == "planned_file" then
-      add_context("Selected planned file: " .. row.path)
-      add_task_context(row.task)
+  local function copy_selected_text()
+    local row = current_row()
+    if not row then return end
+    if row.kind == "task" then
+      copy_value(row.task.text, "Task text")
     elseif row.kind == "requirement" then
-      add_context("Selected SPEC requirement " .. row.spec_path .. "#" .. row.requirement.id)
-      add_context("Source: " .. row.spec_path .. ":" .. row.requirement.range.startLine)
-      add_context(row.requirement.text)
-      local workspace = vim.b[buf].neolit_workspace
-      for _, task in ipairs(workspace.tasks or {}) do
-        local linked = false
-        for _, reference in ipairs(task.specReferences or {}) do
-          if reference.path == row.spec_path and vim.tbl_contains(reference.ids or {}, row.requirement.id) then
-            linked = true
-            break
-          end
-        end
-        if linked then
-          add_context("")
-          add_task_context(task)
-        end
-      end
+      copy_value(row.requirement.text, "Requirement text")
+    elseif row.kind == "acceptance_criterion" then
+      copy_value(row.criterion.text, "Acceptance criterion")
+    elseif row.kind == "task_description" then
+      local line = vim.api.nvim_buf_get_lines(buf, vim.api.nvim_win_get_cursor(0)[1] - 1,
+        vim.api.nvim_win_get_cursor(0)[1], false)[1] or ""
+      copy_value(line:gsub("^%s+", ""), "Description")
+    elseif row.kind == "task_reference" then
+      copy_value(row.reference.path .. "#" .. table.concat(row.reference.ids or {}, ", "), "SPEC reference")
+    elseif row.kind == "diagnostic" then
+      copy_value(row.diagnostic.message or tostring(row.diagnostic), "Diagnostic")
+    elseif row.kind == "hunk" then
+      copy_value(row.hunk and row.hunk.header or "", "Hunk header")
     else
-      add_context("Selected planning task")
-      add_task_context(row.task)
+      local line = vim.api.nvim_buf_get_lines(buf, vim.api.nvim_win_get_cursor(0)[1] - 1,
+        vim.api.nvim_win_get_cursor(0)[1], false)[1] or ""
+      copy_value(line:gsub("^%s+", ""), "Selected text")
     end
-    copy_context(table.concat(context_lines, "\n"))
+  end
+
+  local function copy_selected_path()
+    local row = current_row()
+    if not row then return end
+    local path = selected_file_target(row)
+    if not path and row.kind == "tree_directory" then path = row.path end
+    if not path and row.kind == "task_reference" then path = row.reference.path end
+    if not path and row.kind == "diagnostic" then path = row.diagnostic.path or row.diagnostic.todoPath end
+    if path then
+      local line
+      if row.kind == "task" then line = row.task.range and row.task.range.startLine
+      elseif row.kind == "requirement" then line = row.requirement.range and row.requirement.range.startLine
+      elseif row.kind == "acceptance_criterion" then line = row.criterion.range and row.criterion.range.startLine end
+      copy_value(path .. (line and (":" .. line) or ""), "Path")
+    else
+      vim.notify("This selection has no source path", vim.log.levels.INFO)
+    end
   end
 
   local function map(lhs, fn, desc)
@@ -1452,9 +1288,10 @@ function M.open(opts)
     if row then preview_row(row) end
     vim.notify("Neolit diff view: " .. diff_state.diff_view)
   end, "Toggle side-by-side / unified diff preview")
-  map("x", ask_context, "Ask about selected diff/task and copy context for existing agent")
+  map("x", copy_selected_text, "Copy selected task, requirement, description, or row text")
+  map("y", copy_selected_path, "Copy selected repository path and source line")
   map("?", function()
-    vim.notify("Tree: <CR> expand/open · za toggle · zo open · zc close · h/l expand/collapse-or-parent · zr/zm one level · zR/zM all · f affected-only · D diff view · e / <leader>ne edit working side · o / <leader>no open file · x context · r refresh · q/<Esc> close", vim.log.levels.INFO)
+    vim.notify("Tree: <CR> expand/open · za toggle · zo open · zc close · h/l expand/collapse-or-parent · zr/zm one level · zR/zM all · f affected-only · D diff view · e / <leader>ne edit working side · o / <leader>no open file · x copy text · y copy path · r refresh · q/<Esc> close", vim.log.levels.INFO)
   end, "Show Neolit tree keys")
   local function close_workspace()
     refresh_revision = refresh_revision + 1
