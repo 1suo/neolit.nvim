@@ -17,7 +17,7 @@ local function ensure_open(fn)
   M.open(nil, fn)
 end
 
---- Acts as if `key` (a TUI operation key: n e <CR> d a c l w m t x o s q
+--- Acts as if `key` (a TUI operation key: n e <CR> d a g c l w m t x o s q
 --- <Tab> <Esc> 1-9) was pressed on the panel, opening the panel first when it
 --- is closed. Unknown keys are ignored; quitting a closed panel is a no-op.
 function M.key(key)
