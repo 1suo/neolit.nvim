@@ -511,6 +511,11 @@ const methods = {
     return buildFrame();
   },
 
+  async verify() {
+    await controller.verifySelected();
+    return buildFrame();
+  },
+
   async commit() {
     await controller.commitApplied();
     return buildFrame();
