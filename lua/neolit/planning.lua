@@ -161,7 +161,8 @@ local function render(buf, root, workspace)
         )
       )
       local candidate_count = #(hunk_association and hunk_association.candidateTaskKeys or {})
-      local candidate_label = candidate_count > 0 and (" [" .. candidate_count .. " task candidate(s)]") or ""
+      local requirement_count = #(hunk_association and hunk_association.candidateRequirementRefs or {})
+      local candidate_label = candidate_count > 0 and (" [" .. candidate_count .. " task candidate(s), " .. requirement_count .. " requirement(s)]") or ""
       add(string.format("    %s @@ -%d,%d +%d,%d @@ %s%s", hunk_marker, hunk.oldStart, hunk.oldLines, hunk.newStart, hunk.newLines, hunk.header, candidate_label), {
         kind = "hunk", file = file, hunk = hunk, association = association, hunkAssociation = hunk_association,
       })
@@ -297,7 +298,7 @@ function M.open(opts)
             local requirements = {}
             for _, requirement in ipairs(task.resolvedRequirements or {}) do
               for _, reference in ipairs(task.specReferences or {}) do
-                if vim.tbl_contains(reference.ids or {}, requirement.id) then
+                if reference.path == requirement.specPath and vim.tbl_contains(reference.ids or {}, requirement.id) then
                   requirements[#requirements + 1] = {
                     specPath = reference.path,
                     requirement = requirement,
@@ -424,7 +425,7 @@ function M.open(opts)
           local requirements = {}
           for _, requirement in ipairs(task.resolvedRequirements or {}) do
             for _, reference in ipairs(task.specReferences or {}) do
-              if vim.tbl_contains(reference.ids or {}, requirement.id) then
+              if reference.path == requirement.specPath and vim.tbl_contains(reference.ids or {}, requirement.id) then
                 requirements[#requirements + 1] = { specPath = reference.path, requirement = requirement }
               end
             end
