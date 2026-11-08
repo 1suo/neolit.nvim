@@ -72,7 +72,7 @@ local function open_diff(root, file, selected_hunk, on_line_context, comparison_
   if base_lines[#base_lines] == "" then table.remove(base_lines) end
   local filetype = vim.filetype.match({ filename = file.path }) or ""
 
-  vim.cmd("tab split")
+  vim.cmd("rightbelow vsplit")
   vim.cmd("enew")
   local base_buf = vim.api.nvim_get_current_buf()
   vim.api.nvim_buf_set_name(base_buf, "neolit-base://" .. base_path .. "#" .. base_buf)
@@ -83,7 +83,7 @@ local function open_diff(root, file, selected_hunk, on_line_context, comparison_
   vim.bo[base_buf].filetype = filetype
   local base_win = vim.api.nvim_get_current_win()
 
-  vim.cmd("vsplit")
+  vim.cmd("rightbelow vsplit")
   local working_buf
   if vim.fn.filereadable(working_path) == 1 then
     vim.cmd("edit " .. vim.fn.fnameescape(working_path))
@@ -137,9 +137,10 @@ local function open_diff(root, file, selected_hunk, on_line_context, comparison_
   end
 end
 
-local function render(buf, root, workspace, expanded_files)
+local function render(buf, root, workspace, expanded_files, expanded_dirs)
   local lines, rows = {}, {}
   expanded_files = expanded_files or {}
+  expanded_dirs = expanded_dirs or {}
   local function add(text, row)
     lines[#lines + 1] = text
     rows[#lines] = row
@@ -151,22 +152,28 @@ local function render(buf, root, workspace, expanded_files)
   for _, item in ipairs(workspace.derived and workspace.derived.requirements or {}) do
     requirement_states[item.specPath .. "#" .. item.requirementId] = item.state
   end
-  add("FILE TREE (" .. #(workspace.git.repositoryFiles or {}) .. " files)", nil)
+  add("REPOSITORY  " .. vim.fn.fnamemodify(root, ":t") .. "  (" .. #(workspace.git.repositoryFiles or {}) .. ")", nil)
   local tree_root = { children = {}, files = {} }
+  local git_status = {}
+  for _, status in ipairs(workspace.git.status or {}) do git_status[status.path] = status end
+  for _, file in ipairs(workspace.git.changedFiles or {}) do
+    git_status[file.path] = git_status[file.path] or { index = " ", worktree = "M" }
+    if file.previousPath then git_status[file.previousPath] = git_status[file.previousPath] or { index = "R", worktree = " " } end
+  end
   for _, path in ipairs(workspace.git.repositoryFiles or {}) do
     local node = tree_root
     local parts = vim.split(path, "/", { plain = true })
     for index = 1, #parts - 1 do
       local name = parts[index]
-      node.children[name] = node.children[name] or { children = {}, files = {} }
+      node.children[name] = node.children[name] or { children = {}, files = {}, path = table.concat(parts, "/", 1, index) }
       node = node.children[name]
     end
-    node.files[#node.files + 1] = parts[#parts]
+    node.files[#node.files + 1] = { name = parts[#parts], path = path }
   end
-  local function render_tree(node, prefix, ancestors)
+  local function render_tree(node, ancestors, depth)
     local entries = {}
-    for name, child in pairs(node.children) do entries[#entries + 1] = { name = name, directory = true, node = child } end
-    for _, name in ipairs(node.files) do entries[#entries + 1] = { name = name, directory = false } end
+    for name, child in pairs(node.children) do entries[#entries + 1] = { name = name, directory = true, node = child, path = child.path } end
+    for _, file in ipairs(node.files) do entries[#entries + 1] = { name = file.name, path = file.path, directory = false } end
     table.sort(entries, function(a, b)
       if a.directory ~= b.directory then return a.directory end
       return a.name:lower() < b.name:lower()
@@ -174,16 +181,25 @@ local function render(buf, root, workspace, expanded_files)
     for index, entry in ipairs(entries) do
       local last = index == #entries
       local branch = last and "└── " or "├── "
-      local full_path = prefix == "" and entry.name or (prefix .. "/" .. entry.name)
+      local indent = ancestors or ""
       if entry.directory then
-        add("  " .. (ancestors or "") .. branch .. entry.name .. "/", { kind = "tree_directory", path = full_path })
-        render_tree(entry.node, full_path, (ancestors or "") .. (last and "    " or "│   "))
+        local expanded = expanded_dirs[entry.path] ~= false
+        add("  " .. indent .. branch .. (expanded and "▾ " or "▸ ") .. entry.name .. "/", {
+          kind = "tree_directory", path = entry.path, expanded = expanded,
+        })
+        if expanded then render_tree(entry.node, indent .. (last and "    " or "│   "), depth + 1) end
       else
-        add("  " .. (ancestors or "") .. branch .. entry.name, { kind = "repository_file", path = full_path })
+        local status = git_status[entry.path]
+        local marker = status and (status.index .. status.worktree) or "  "
+        local changed = status ~= nil
+        local icon = changed and "● " or "  "
+        add("  " .. indent .. branch .. icon .. entry.name .. (changed and ("  [" .. marker .. "]") or ""), {
+          kind = "repository_file", path = entry.path, changed = changed,
+        })
       end
     end
   end
-  render_tree(tree_root, "", "")
+  render_tree(tree_root, "", 0)
   add("", nil)
   add("DIFF TREE (" .. #workspace.git.changedFiles .. " files)", nil)
   local associations, statuses, hunk_associations = {}, {}, {}
@@ -307,8 +323,10 @@ function M.open(opts)
   if not ok then vim.notify(cfg, vim.log.levels.ERROR); return end
 
   local buf = vim.api.nvim_create_buf(false, true)
-  vim.cmd("botright 16split")
+  vim.cmd("topleft 34vnew")
   vim.api.nvim_win_set_buf(0, buf)
+  local tree_win = vim.api.nvim_get_current_win()
+  vim.api.nvim_win_set_width(tree_win, 34)
   vim.api.nvim_buf_set_name(buf, "neolit://planning-" .. buf)
   vim.bo[buf].buftype = "nofile"
   vim.bo[buf].bufhidden = "hide"
@@ -318,6 +336,7 @@ function M.open(opts)
   local refresh_job
   local refresh_revision = 0
   local expanded_files = {}
+  local expanded_dirs = {}
   local function refresh()
     refresh_revision = refresh_revision + 1
     local revision = refresh_revision
@@ -351,7 +370,7 @@ function M.open(opts)
           for _, file in ipairs(workspace.git.changedFiles or {}) do
             if expanded_files[file.path] == nil then expanded_files[file.path] = false end
           end
-          render(buf, root, workspace, expanded_files)
+          render(buf, root, workspace, expanded_files, expanded_dirs)
           vim.b[buf].neolit_workspace = workspace
         end)
       end,
@@ -733,9 +752,29 @@ function M.open(opts)
 
   local function ask_context()
     local row = vim.b[buf].neolit_rows and vim.b[buf].neolit_rows[vim.api.nvim_win_get_cursor(0)[1]]
-    if not row or (row.kind ~= "file" and row.kind ~= "hunk" and row.kind ~= "change_line" and row.kind ~= "requirement" and row.kind ~= "task" and row.kind ~= "planned_file") then
+    if not row or (row.kind ~= "tree_directory" and row.kind ~= "repository_file" and row.kind ~= "file" and row.kind ~= "hunk" and row.kind ~= "change_line" and row.kind ~= "requirement" and row.kind ~= "task" and row.kind ~= "planned_file") then
       vim.notify("Select a task, requirement, planned file, or changed file first")
       return
+    end
+    if row.kind == "tree_directory" then
+      local files = {}
+      for _, path in ipairs(vim.b[buf].neolit_workspace.git.repositoryFiles or {}) do
+        if path:sub(1, #row.path + 1) == row.path .. "/" then files[#files + 1] = path end
+      end
+      copy_context("Selected repository folder: " .. row.path .. "\\nFiles beneath this folder:\\n" .. table.concat(files, "\\n"))
+      return
+    elseif row.kind == "repository_file" then
+      local file = row.path
+      local status = nil
+      for _, entry in ipairs(vim.b[buf].neolit_workspace.git.status or {}) do if entry.path == file then status = entry; break end end
+      local changed_file
+      for _, candidate in ipairs(vim.b[buf].neolit_workspace.git.changedFiles or {}) do if candidate.path == file then changed_file = candidate; break end end
+      if changed_file then
+        row = { kind = "file", file = changed_file, association = nil }
+      else
+        copy_context("Selected repository file: " .. file .. "\\nGit status: " .. (status and (status.index .. status.worktree) or "unchanged") .. "\\nAsk the agent to inspect this file in the working tree.")
+        return
+      end
     end
     if row.kind == "file" or row.kind == "hunk" or row.kind == "change_line" then
       local workspace = vim.b[buf].neolit_workspace
@@ -936,7 +975,7 @@ function M.open(opts)
   local function rerender_at(key)
     local workspace = vim.b[buf].neolit_workspace
     if not workspace then return end
-    render(buf, root, workspace, expanded_files)
+    render(buf, root, workspace, expanded_files, expanded_dirs)
     if key then
       for line, row in pairs(vim.b[buf].neolit_rows or {}) do
         if row and row.key == key then
@@ -949,6 +988,11 @@ function M.open(opts)
   local function toggle_file()
     local row = vim.b[buf].neolit_rows and vim.b[buf].neolit_rows[vim.api.nvim_win_get_cursor(0)[1]]
     if not row then return end
+    if row.kind == "tree_directory" then
+      expanded_dirs[row.path] = not (row.expanded ~= false)
+      rerender_at()
+      return
+    end
     local file = row.file
     if row.kind == "hunk" then file = row.file end
     if not file then return end
