@@ -582,7 +582,7 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
       elseif row.kind == "requirement" then
         mark(line, row.requirement.id, "Identifier")
         local state = (requirement_states[row.spec_path .. "#" .. row.requirement.id] or "unmapped"):upper()
-        local group = state == "VERIFIED" or state == "IMPLEMENTED" and "DiagnosticOk"
+        local group = (state == "VERIFIED" or state == "IMPLEMENTED") and "DiagnosticOk"
           or (state == "IN-PROGRESS" or state == "UNMAPPED") and "DiagnosticWarn"
           or state == "BLOCKED" and "DiagnosticError" or "DiagnosticInfo"
         mark(line, state, group)
@@ -604,8 +604,12 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
         if row.doc_kind then mark(line, "[" .. row.doc_kind .. "]", "Special") end
         local association = row.association or {}
         local group = association.state == "unplanned" and "DiagnosticWarn"
-          or association.state == "partially-mapped" and "DiagnosticInfo" or "DiagnosticOk"
-        mark(line, association.state == "unplanned" and "?" or association.state == "partially-mapped" and "~" or "✓", group)
+          or (association.state == "partially-mapped" or association.state == "unresolved") and "DiagnosticInfo"
+          or association.state == "documentation" and "Special" or "DiagnosticOk"
+        local marker = association.state == "unplanned" and "?"
+          or (association.state == "partially-mapped" or association.state == "unresolved") and "~"
+          or association.state == "documentation" and "D" or "✓"
+        mark(line, marker, group)
         local git = row.git_status
         if git then
           local code = "[" .. tostring(git.index or " ") .. tostring(git.worktree or " ") .. "]"
