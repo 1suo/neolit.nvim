@@ -456,12 +456,28 @@ end
 
 function M.open(opts)
   opts = opts or {}
+
+  -- The workspace is a singleton per Neovim instance. Reopening :Neolit
+  -- should reveal the existing tree, not create another tree in the layout.
+  for _, tabpage in ipairs(vim.api.nvim_list_tabpages()) do
+    for _, win in ipairs(vim.api.nvim_tabpage_list_wins(tabpage)) do
+      local existing = vim.api.nvim_win_get_buf(win)
+      if vim.api.nvim_buf_is_valid(existing)
+        and vim.api.nvim_buf_get_option(existing, "filetype") == "neolit-planning" then
+        vim.api.nvim_set_current_tabpage(tabpage)
+        vim.api.nvim_set_current_win(win)
+        return
+      end
+    end
+  end
+
   local ok, cfg, root, neolit_dir = pcall(find_core, opts)
   if not ok then vim.notify(cfg, vim.log.levels.ERROR); return end
 
-  local buf = vim.api.nvim_create_buf(false, true)
+  -- :vnew creates the tree buffer itself; do not leave an extra scratch
+  -- buffer behind by creating one before the split.
   vim.cmd("topleft 34vnew")
-  vim.api.nvim_win_set_buf(0, buf)
+  local buf = vim.api.nvim_get_current_buf()
   local tree_win = vim.api.nvim_get_current_win()
   vim.api.nvim_win_set_width(tree_win, 34)
   vim.wo[tree_win].wrap = false
