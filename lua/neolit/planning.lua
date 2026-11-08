@@ -191,10 +191,12 @@ local function render(buf, root, workspace, expanded_files)
         })
       end
       for line_index, changed_text in ipairs(hunk.removedLines or {}) do
-        add(string.format("      -      %s", changed_text), {
+        local line_number = hunk.removedLineNumbers and hunk.removedLineNumbers[line_index]
+          or (hunk.oldStart + line_index - 1)
+        add(string.format("      - %d  %s", line_number, changed_text), {
           kind = "change_line", key = file_key .. ":hunk:" .. hunk_index .. ":remove:" .. line_index,
           file = file, hunk = hunk, hunkAssociation = hunk_association,
-          lineText = changed_text, side = "base",
+          lineNumber = line_number, lineText = changed_text, side = "base",
         })
       end
     end
@@ -534,7 +536,7 @@ function M.open(opts)
       local related_tasks = {}
       local related_requirements = {}
       for _, task in ipairs(workspace and workspace.tasks or {}) do
-        local candidate_keys = row.kind == "hunk" and row.hunkAssociation and row.hunkAssociation.candidateTaskKeys or (row.association and row.association.taskKeys or {})
+        local candidate_keys = (row.kind == "hunk" or row.kind == "change_line") and row.hunkAssociation and row.hunkAssociation.candidateTaskKeys or (row.association and row.association.taskKeys or {})
         if vim.tbl_contains(candidate_keys, task.key) then
           local requirements = {}
           for _, requirement in ipairs(task.resolvedRequirements or {}) do
@@ -570,11 +572,11 @@ function M.open(opts)
         local payload = {
           question = question,
           path = row.file.path,
-          side = "working-tree",
+          side = row.kind == "change_line" and row.side or "working-tree",
           baseCommit = current_base ~= "" and current_base or "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
           diffText = full_diff,
           selectedDiffText = selected_diff,
-          hunk = (row.kind == "hunk" or row.kind == "change_line") and row.hunk or nil,
+          hunk = row.kind == "hunk" and row.hunk or nil,
           selectedLinesText = row.kind == "change_line" and row.lineText or nil,
           lineRange = row.kind == "change_line" and { startLine = row.lineNumber, endLine = row.lineNumber } or nil,
           relatedTasks = related_tasks,
