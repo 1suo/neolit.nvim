@@ -783,6 +783,7 @@ function M.open(opts)
     local function add_context(value)
       if value and value ~= "" then context_lines[#context_lines + 1] = value end
     end
+    local documentation_seen = {}
     local function add_task_context(task)
       add_context("TODO task: " .. task.text)
       add_context("Source: " .. tostring(task.key:match("^(.-)::")) .. ":" .. task.range.startLine)
@@ -798,6 +799,38 @@ function M.open(opts)
       end
       for _, unresolved in ipairs(task.unresolvedReferences or {}) do
         add_context("Unresolved SPEC reference: " .. unresolved.path .. "#" .. table.concat(unresolved.ids or {}, ", "))
+      end
+
+      local workspace = vim.b[buf].neolit_workspace
+      local payload = vim.json.encode({
+        task = task,
+        readmes = workspace and workspace.readmeContents or {},
+        maxReadmeChars = 4000,
+      })
+      local url = vim.uri_from_fname(neolit_dir .. "/dist/planning/context.js")
+      local js = "const m = await import(" .. string.format("%q", url) .. "); "
+        .. "const p = JSON.parse(process.argv[1]); "
+        .. "process.stdout.write(JSON.stringify(m.selectTaskDocumentationContext(p)));"
+      local result = vim.system({
+        cfg.node, "--input-type=module", "-e", js, payload,
+      }, { cwd = root, text = true }):wait()
+      if result.code == 0 then
+        local ok, docs = pcall(vim.json.decode, result.stdout or "")
+        if ok then
+          for _, current in ipairs(docs.currentBehavior or {}) do
+            if not documentation_seen[current.readmePath] then
+              documentation_seen[current.readmePath] = true
+              add_context("Current shipped behavior — " .. current.readmePath .. ":\n" .. current.content)
+            end
+          end
+          for _, diagnostic in ipairs(docs.diagnostics or {}) do
+            add_context("Documentation context diagnostic: " .. diagnostic)
+          end
+        else
+          add_context("README context unavailable: could not decode the planning context result.")
+        end
+      else
+        add_context("README context unavailable: " .. (result.stderr or "planning context helper failed"))
       end
     end
     if row.kind == "planned_file" then
