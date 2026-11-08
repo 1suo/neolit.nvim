@@ -958,6 +958,11 @@ function M.open(opts)
       if spec_file then
         open_in_preview(spec_path, req.range.startLine, true)
       end
+    elseif row.kind == "requirement_task" then
+      local todo_path = row.task.key:match("^(.-)::")
+      if todo_path and safe_repo_path(root, todo_path) then
+        open_in_preview(todo_path, row.task.range.startLine, true)
+      end
     elseif row.kind == "planned_file" then
       local changed
       for _, file in ipairs(workspace and workspace.git.changedFiles or {}) do
@@ -979,7 +984,12 @@ function M.open(opts)
       open_diff(root, row.file, row.hunkAssociation and row.hunkAssociation.hunk,
         ask_line_context, workspace and workspace.git.base, nil, diff_state, true)
     elseif row.kind == "file" then
-      open_diff(root, row.file, nil, ask_line_context, workspace and workspace.git.base, nil, diff_state, true)
+      if row.expandable and not row.expanded then
+        expanded_files[row.path] = true
+        rerender_at(row.key)
+      else
+        open_diff(root, row.file, nil, ask_line_context, workspace and workspace.git.base, nil, diff_state, true)
+      end
     elseif row.kind == "hunk" or row.kind == "change_line" then
       open_diff(root, row.file, row.hunk, ask_line_context, workspace and workspace.git.base,
         row.kind == "change_line" and { side = row.side, lineNumber = row.lineNumber } or nil, diff_state)
@@ -1013,6 +1023,9 @@ function M.open(opts)
       open_diff(root, row.file, row.hunk, ask_line_context, workspace and workspace.git.base,
         row.kind == "change_line" and { side = row.side, lineNumber = row.lineNumber } or nil, diff_state, false)
     elseif row.kind == "task" then
+      local path = row.task.key:match("^(.-)::")
+      if path then open_in_preview(path, row.task.range.startLine, false) end
+    elseif row.kind == "requirement_task" then
       local path = row.task.key:match("^(.-)::")
       if path then open_in_preview(path, row.task.range.startLine, false) end
     elseif row.kind == "requirement" then
@@ -1118,10 +1131,28 @@ function M.open(opts)
     elseif row.kind == "task_hunk" then
       local hunk = row.hunkAssociation and row.hunkAssociation.hunk
       if hunk then
-        local parts = { "@@ -" .. hunk.oldStart .. "," .. hunk.oldLines .. " +" .. hunk.newStart .. "," .. hunk.newLines .. " @@" }
-        for _, line in ipairs(hunk.removedLines or {}) do parts[#parts + 1] = "-" .. line end
-        for _, line in ipairs(hunk.addedLines or {}) do parts[#parts + 1] = "+" .. line end
-        copy_value(table.concat(parts, "\n"), "Hunk")
+        local raw = row.file and row.file.rawDiff or ""
+        local lines = vim.split(raw, "\n", { plain = true })
+        local index, found, parts = 0, false, {}
+        for _, line in ipairs(lines) do
+          if line:match("^@@ ") then
+            index = index + 1
+            if found then break end
+            found = index == row.hunkAssociation.hunkIndex + 1
+          end
+          if found then
+            if line:match("^diff %-%-git ") and #parts > 0 then break end
+            parts[#parts + 1] = line
+          end
+        end
+        if #parts > 0 then
+          copy_value(table.concat(parts, "\n"), "Hunk")
+        else
+          local fallback = { "@@ -" .. hunk.oldStart .. "," .. hunk.oldLines .. " +" .. hunk.newStart .. "," .. hunk.newLines .. " @@" }
+          for _, line in ipairs(hunk.removedLines or {}) do fallback[#fallback + 1] = "-" .. line end
+          for _, line in ipairs(hunk.addedLines or {}) do fallback[#fallback + 1] = "+" .. line end
+          copy_value(table.concat(fallback, "\n"), "Hunk")
+        end
       else
         copy_value(row.file and row.file.rawDiff or "", "File diff")
       end
