@@ -44,8 +44,7 @@ collapsed.
 
 - Expand a TODO document to see parsed tasks, descriptions, agent implementation
   notes, linked SPEC requirements, acceptance criteria, current derived state,
-  and change evidence. Adjacent `TODO.archive.md` and `SPEC.archive.md` files
-  are discovered automatically and remain separate, collapsed documents.
+  and change evidence.
 - Expand a SPEC document, then a requirement, to see referencing TODO tasks,
   acceptance-criterion coverage, and related changed hunks.
 - Expand a changed file to see candidate task links and each hunk's attribution
@@ -62,9 +61,9 @@ collapsed.
   file or hunk opens its native diff directly. `<CR>` on a task or requirement
   opens its Markdown source. `e` focuses the editable working side; `o`
   opens the actual file without a diff.
-- `a` archives the selected TODO task, SPEC requirement, or acceptance criterion into its adjacent
-  `.archive.md` file; selecting an archived entry and pressing `a` restores it.
-  Both moves require confirmation and preserve the complete Markdown block.
+- `d` deletes the selected TODO task, SPEC requirement, or acceptance criterion
+  from its source Markdown file. The action is tree-only; Git history retains the
+  previous content. Modified buffers and stale/ambiguous source ranges are refused.
 - `D` toggles side-by-side/unified diff presentation. `r` refreshes;
   writes, focus return, and idle refreshes also pick up external agent edits.
 
@@ -79,7 +78,7 @@ collapsed.
 | `zr` / `zm` | Expand / collapse one visible level |
 | `zR` / `zM` | Expand / collapse all |
 | `f` | All paths / affected paths and related planning docs |
-| `a` | Archive / restore selected TODO task, SPEC requirement, or criterion |
+| `d` | Delete selected TODO task, SPEC requirement, or criterion |
 | `x` | Copy selected text, task, requirement, file diff, or hunk |
 | `y` | Copy selected source path and line |
 | `e` | Focus editable working side of selected diff |
@@ -89,12 +88,7 @@ collapsed.
 | `q` / `Esc` | Close workspace |
 | `?` | Show key summary |
 
-Archive files use the `.archive.md` suffix (for example, `TODO-auth.archive.md`).
-Move complete task/requirement blocks there explicitly with the existing agent;
-Neolit preserves their IDs and resolves active references against archived SPEC
-entries. `Description:` explains intent; `Agent notes:` explains actual changes,
-rationale, deviations, or caveats. Notes are not verification evidence.
+The tree's `d` action is the only planning-document edit. It operates on the selected parsed entry, never on a normal preview buffer. Deleted text remains recoverable from Git history. `Description:` explains intent; `Agent notes:` explains actual changes, rationale, deviations, or caveats. Notes are not verification evidence.
 
-The workspace does not modify documents while browsing or refreshing. The explicit archive/restore action is the only document-writing operation: press `a` on a TODO/SPEC tree entry, or `<F6>` in an opened SPEC preview to move the Markdown paragraph under the cursor. It executes immediately and refuses stale ranges or modified source buffers. TODO checkboxes are not verification evidence.
 Derived states come from parsed planning documents and current Git metadata;
 verification requires matching evidence for the current base commit and diff.
