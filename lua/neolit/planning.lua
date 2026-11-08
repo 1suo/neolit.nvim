@@ -624,7 +624,11 @@ function M.open(opts)
           end
         end
       end
-      for _, criterion in pairs(linked_criteria) do
+      local ordered_criteria = vim.tbl_values(linked_criteria)
+      table.sort(ordered_criteria, function(left, right)
+        return left.range.startLine < right.range.startLine
+      end)
+      for _, criterion in ipairs(ordered_criteria) do
         put("  " .. criterion.id .. " " .. criterion.text)
       end
     elseif row.kind == "diagnostic" then
