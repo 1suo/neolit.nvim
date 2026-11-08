@@ -905,11 +905,6 @@ function M.open(opts)
         end
       end
     elseif row.kind == "task" then
-      if not row.expanded then
-        expanded_tasks[row.task.key] = true
-        rerender_at(row.key)
-        return
-      end
       local task = row.task
       local todo_path = task.key:match("^(.-)::")
       local todo_file = todo_path and safe_repo_path(root, todo_path)
