@@ -130,7 +130,9 @@ d      develop the selected path and everything under it — a chosen approach
        batched model call (validated all-or-nothing; per-file fallback marks
        failures × and summarizes "Drafted n/m — press D to retry")
 a      apply drafted patch to the working tree (git-apply preflighted as one
-       unit; nothing is staged)
+       rollback-capable unit; nothing is staged)
+g      verify selected applied patches (git diff --check and reverse-apply
+       preflight); commit is blocked until all applied paths verify
 c      commit the session-applied paths only (pathspec commit; unrelated
        dirty or staged files stay untouched)
 l / w  mark/unmark the selected path in the restriction plain (lock / allow
