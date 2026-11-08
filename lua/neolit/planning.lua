@@ -118,8 +118,12 @@ local function open_diff(root, file, selected_hunk, on_line_context, comparison_
 
     local working_buf
     if vim.fn.filereadable(path) == 1 then
+      local existing_buf = vim.fn.bufnr(path)
       working_buf = vim.fn.bufadd(path)
       vim.fn.bufload(working_buf)
+      -- Files first encountered through hover remain real, editable buffers,
+      -- but stay out of the user's ordinary listed-buffer collection.
+      if existing_buf < 0 then vim.bo[working_buf].buflisted = false end
     else
       working_buf = diff_state and diff_state.deleted_buf
       if not working_buf or not vim.api.nvim_buf_is_valid(working_buf) then
@@ -561,8 +565,12 @@ function M.open(opts)
       diff_state.working_win = nil
     end
     pcall(vim.api.nvim_win_call, win, function() vim.cmd("diffoff") end)
+    local existing_buf = vim.fn.bufnr(target)
     local target_buf = vim.fn.bufadd(target)
     vim.fn.bufload(target_buf)
+    -- Hover previews should not flood the user's buffer list. Preserve the
+    -- listed state of buffers that were already open before Neolit previewed them.
+    if existing_buf < 0 then vim.bo[target_buf].buflisted = false end
     vim.api.nvim_win_set_buf(win, target_buf)
     if focus then vim.api.nvim_set_current_win(win) end
     if line then
