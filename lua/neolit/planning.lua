@@ -556,6 +556,12 @@ function M.open(opts)
       put("SPEC REQUIREMENT")
       put(row.requirement.id .. " — " .. row.requirement.text)
       put("Source: " .. row.spec_path .. ":" .. row.requirement.range.startLine)
+      for _, item in ipairs(vim.b[buf].neolit_workspace.derived.requirements or {}) do
+        if item.specPath == row.spec_path and item.requirementId == row.requirement.id then
+          put("State: " .. item.state)
+          break
+        end
+      end
       put("Acceptance criteria:")
       for _, spec in ipairs(vim.b[buf].neolit_workspace.specs or {}) do
         if spec.path == row.spec_path then
@@ -571,8 +577,8 @@ function M.open(opts)
     else
       return
     end
-    local width = math.min(math.max(60, vim.o.columns - 8), 110)
-    local height = math.min(math.max(8, #details), math.max(8, vim.o.lines - 8))
+    local width = math.max(1, math.min(110, vim.o.columns - 4))
+    local height = math.max(1, math.min(math.max(8, #details), vim.o.lines - 6))
     local detail_buf = vim.api.nvim_create_buf(false, true)
     vim.api.nvim_buf_set_lines(detail_buf, 0, -1, false, details)
     vim.bo[detail_buf].buftype = "nofile"
