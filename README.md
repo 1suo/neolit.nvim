@@ -51,7 +51,8 @@ Install the plugin:
 - `r` refreshes; `q` or `:NeolitClose` closes the workspace.
 
 The view displays TODO/SPEC traceability, derived task/requirement states,
-planned-file annotations, Git status, and per-hunk mapping uncertainty.
+planned-file annotations, Git status, per-hunk mapping uncertainty, and exact
+candidate task/requirement references on each hunk row.
 File hints are candidates, not proof of implementation. README/SPEC/TODO
 files remain untouched; TODO checkboxes are not verification evidence.
 
