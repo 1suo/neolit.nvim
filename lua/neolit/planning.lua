@@ -576,6 +576,18 @@ function M.open(opts)
       for _, path in ipairs(task.filePaths or {}) do put("  " .. path) end
       put("SPEC references:")
       for _, reference in ipairs(task.specReferences or {}) do put("  " .. reference.path .. "#" .. table.concat(reference.ids or {}, ", ")) end
+      put("Resolved requirements:")
+      for _, requirement in ipairs(task.resolvedRequirements or {}) do
+        put("  " .. requirement.specPath .. "#" .. requirement.id .. " " .. requirement.text)
+      end
+      put("Resolved acceptance criteria:")
+      for _, criterion in ipairs(task.resolvedAcceptanceCriteria or {}) do
+        put("  " .. criterion.specPath .. "#" .. criterion.id .. " " .. criterion.text)
+      end
+      put("Unresolved references:")
+      for _, reference in ipairs(task.unresolvedReferences or {}) do
+        put("  " .. reference.path .. "#" .. table.concat(reference.ids or {}, ", "))
+      end
     elseif row.kind == "requirement" then
       put("SPEC REQUIREMENT")
       put(row.requirement.id .. " — " .. row.requirement.text)
@@ -588,12 +600,32 @@ function M.open(opts)
         end
       end
       put("Acceptance criteria:")
+      local linked_criteria = {}
       for _, spec in ipairs(vim.b[buf].neolit_workspace.specs or {}) do
         if spec.path == row.spec_path then
           for _, criterion in ipairs(spec.acceptanceCriteria or {}) do
-            if vim.tbl_contains(criterion.requirementIds or {}, row.requirement.id) then put("  " .. criterion.id .. " " .. criterion.text) end
+            if vim.tbl_contains(criterion.requirementIds or {}, row.requirement.id) then
+              linked_criteria[criterion.id] = criterion
+            end
           end
         end
+      end
+      for _, task in ipairs(vim.b[buf].neolit_workspace.tasks or {}) do
+        local task_links_requirement = false
+        for _, requirement in ipairs(task.resolvedRequirements or {}) do
+          if requirement.specPath == row.spec_path and requirement.id == row.requirement.id then
+            task_links_requirement = true
+            break
+          end
+        end
+        if task_links_requirement then
+          for _, criterion in ipairs(task.resolvedAcceptanceCriteria or {}) do
+            if criterion.specPath == row.spec_path then linked_criteria[criterion.id] = criterion end
+          end
+        end
+      end
+      for _, criterion in pairs(linked_criteria) do
+        put("  " .. criterion.id .. " " .. criterion.text)
       end
     elseif row.kind == "diagnostic" then
       put("DOCUMENTATION DIAGNOSTIC")
