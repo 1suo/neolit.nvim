@@ -42,8 +42,10 @@ Install:
 pane for source previews and diffs. Directories and planning documents start
 collapsed.
 
-- Expand a TODO document to see parsed tasks, descriptions, linked SPEC
-  requirements, acceptance criteria, current derived state, and change evidence.
+- Expand a TODO document to see parsed tasks, descriptions, agent implementation
+  notes, linked SPEC requirements, acceptance criteria, current derived state,
+  and change evidence. Adjacent `TODO.archive.md` and `SPEC.archive.md` files
+  are discovered automatically and remain separate, collapsed documents.
 - Expand a SPEC document, then a requirement, to see referencing TODO tasks,
   acceptance-criterion coverage, and related changed hunks.
 - Expand a changed file to see candidate task links and each hunk's attribution
@@ -82,6 +84,12 @@ collapsed.
 | `r` | Refresh |
 | `q` / `Esc` | Close workspace |
 | `?` | Show key summary |
+
+Archive files use the `.archive.md` suffix (for example, `TODO-auth.archive.md`).
+Move complete task/requirement blocks there explicitly with the existing agent;
+Neolit preserves their IDs and resolves active references against archived SPEC
+entries. `Description:` explains intent; `Agent notes:` explains actual changes,
+rationale, deviations, or caveats. Notes are not verification evidence.
 
 The tree is read-only. TODO checkboxes are not verification evidence.
 Derived states come from parsed planning documents and current Git metadata;
