@@ -490,7 +490,7 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
         local state = requirement_states[ref] or "unplanned"
         local reference_path = path
         for _, document in ipairs(workspace.specs or {}) do
-          if document.path == path then reference_path = document.referencePath or path; break end
+          if document.path == path then reference_path = path; break end
         end
         local requirement_key = "requirement:" .. ref
         local requirement_expanded = expanded_tasks[requirement_key] == true
