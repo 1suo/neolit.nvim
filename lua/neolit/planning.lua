@@ -395,8 +395,32 @@ function M.open(opts)
             vim.notify("neolit: could not decode planning workspace", vim.log.levels.ERROR)
             return
           end
+          local open_paths = {}
           for _, file in ipairs(workspace.git.changedFiles or {}) do
             if expanded_files[file.path] == nil then expanded_files[file.path] = false end
+            open_paths[#open_paths + 1] = file.path
+          end
+          for _, path in ipairs(workspace.readmes or {}) do
+            if expanded_files[path] == nil then expanded_files[path] = true end
+            open_paths[#open_paths + 1] = path
+          end
+          for _, spec in ipairs(workspace.specs or {}) do
+            if expanded_files[spec.path] == nil then expanded_files[spec.path] = true end
+            open_paths[#open_paths + 1] = spec.path
+          end
+          for _, todo in ipairs(workspace.todos or {}) do
+            if expanded_files[todo.path] == nil then expanded_files[todo.path] = true end
+            open_paths[#open_paths + 1] = todo.path
+          end
+          for _, task in ipairs(workspace.tasks or {}) do
+            if expanded_tasks[task.key] == nil then expanded_tasks[task.key] = true end
+          end
+          for _, path in ipairs(open_paths) do
+            local parent = path:match("^(.*)/[^/]+$")
+            while parent do
+              if expanded_dirs[parent] == nil then expanded_dirs[parent] = true end
+              parent = parent:match("^(.*)/[^/]+$")
+            end
           end
           render(buf, root, workspace, expanded_files, expanded_dirs, expanded_tasks, filter_mode)
           vim.b[buf].neolit_workspace = workspace
@@ -570,6 +594,9 @@ function M.open(opts)
     if row.kind == "tree_directory" then
       expanded_dirs[row.path] = true
       rerender_at(row.key)
+    elseif row.kind == "planning_document" then
+      local target = safe_repo_path(root, row.path)
+      if target then vim.cmd("tabedit " .. vim.fn.fnameescape(target)) end
     elseif row.kind == "repository_file" then
       local changed
       for _, file in ipairs(workspace and workspace.git.changedFiles or {}) do
@@ -1041,8 +1068,8 @@ function M.open(opts)
     elseif row.kind == "task" then
       expanded_tasks[row.task.key] = expanded
       rerender_at(row.key)
-    elseif row.kind == "file" then
-      expanded_files[row.file.path] = expanded
+    elseif row.kind == "file" or row.kind == "planning_document" then
+      expanded_files[row.path or (row.file and row.file.path)] = expanded
       rerender_at(row.key)
     end
   end
@@ -1058,13 +1085,13 @@ function M.open(opts)
   local function collapse_node_at_cursor()
     local row = current_row()
     if not row then return end
-    if row.kind == "tree_directory" or row.kind == "task" or row.kind == "file" then
+    if row.kind == "tree_directory" or row.kind == "task" or row.kind == "file" or row.kind == "planning_document" then
       if row.expanded then
         toggle_node(row, false)
         return
       end
     end
-    local path = row.path or (row.file and row.file.path) or (row.task and row.task.key)
+    local path = row.path or (row.file and row.file.path) or (row.task and row.task.key:match("^(.-)::")) or row.spec_path
     if type(path) ~= "string" then return end
     local parent = path:match("^(.*)/[^/]+$")
     if parent then
@@ -1087,8 +1114,11 @@ function M.open(opts)
         expanded_dirs[parent] = expanded
         parent = parent:match("^(.*)/[^/]+$")
       end
+      expanded_files[path] = expanded
     end
-    for _, file in ipairs(workspace.git.changedFiles or {}) do expanded_files[file.path] = expanded end
+    for _, path in ipairs(workspace.readmes or {}) do expanded_files[path] = expanded end
+    for _, spec in ipairs(workspace.specs or {}) do expanded_files[spec.path] = expanded end
+    for _, todo in ipairs(workspace.todos or {}) do expanded_files[todo.path] = expanded end
     for _, task in ipairs(workspace.tasks or {}) do expanded_tasks[task.key] = expanded end
     rerender_at()
   end
