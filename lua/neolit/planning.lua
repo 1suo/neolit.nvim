@@ -943,13 +943,13 @@ function M.open(opts)
       local related = false
       if task_key then
         if candidate.kind == "file" then
-          related = vim.tbl_contains(candidate.association and candidate.association.taskKeys or {}, task_key)
+          related = vim.tbl_contains(type(candidate.association) == "table" and candidate.association.taskKeys or {}, task_key)
         elseif candidate.kind == "hunk" or candidate.kind == "change_line" then
-          related = vim.tbl_contains(candidate.hunkAssociation and candidate.hunkAssociation.candidateTaskKeys or {}, task_key)
+          related = vim.tbl_contains(type(candidate.hunkAssociation) == "table" and candidate.hunkAssociation.candidateTaskKeys or {}, task_key)
         elseif candidate.kind == "planned_file" then
-          related = candidate.task and candidate.task.key == task_key
+          related = type(candidate.task) == "table" and candidate.task.key == task_key
         elseif candidate.kind == "requirement" then
-          for _, reference in ipairs(selected_row.task.specReferences or {}) do
+          for _, reference in ipairs(type(selected_row.task) == "table" and selected_row.task.specReferences or {}) do
             if reference.path == candidate.spec_path and vim.tbl_contains(reference.ids or {}, candidate.requirement.id) then
               related = true
               break
@@ -958,18 +958,18 @@ function M.open(opts)
         end
       elseif requirement_ref then
         if candidate.kind == "task" then
-          for _, reference in ipairs(candidate.task.specReferences or {}) do
+          for _, reference in ipairs(type(candidate.task) == "table" and candidate.task.specReferences or {}) do
             if reference.path == selected_row.spec_path and vim.tbl_contains(reference.ids or {}, selected_row.requirement.id) then
               related = true
               break
             end
           end
         elseif candidate.kind == "file" then
-          for _, key in ipairs(candidate.association and candidate.association.taskKeys or {}) do
+          for _, key in ipairs(type(candidate.association) == "table" and candidate.association.taskKeys or {}) do
             if linked_task_keys[key] then related = true; break end
           end
         elseif candidate.kind == "hunk" or candidate.kind == "change_line" then
-          related = vim.tbl_contains(candidate.hunkAssociation and candidate.hunkAssociation.candidateRequirementRefs or {}, requirement_ref)
+          related = vim.tbl_contains(type(candidate.hunkAssociation) == "table" and candidate.hunkAssociation.candidateRequirementRefs or {}, requirement_ref)
         end
       end
       if related then
