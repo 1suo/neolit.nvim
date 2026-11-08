@@ -62,6 +62,9 @@ collapsed.
   file or hunk opens its native diff directly. `<CR>` on a task or requirement
   opens its Markdown source. `e` focuses the editable working side; `o`
   opens the actual file without a diff.
+- `a` archives the selected TODO task or SPEC requirement into its adjacent
+  `.archive.md` file; selecting an archived entry and pressing `a` restores it.
+  Both moves require confirmation and preserve the complete Markdown block.
 - `D` toggles side-by-side/unified diff presentation. `r` refreshes;
   writes, focus return, and idle refreshes also pick up external agent edits.
 
@@ -76,6 +79,7 @@ collapsed.
 | `zr` / `zm` | Expand / collapse one visible level |
 | `zR` / `zM` | Expand / collapse all |
 | `f` | All paths / affected paths and related planning docs |
+| `a` | Archive / restore selected TODO task or SPEC requirement |
 | `x` | Copy selected text, task, requirement, file diff, or hunk |
 | `y` | Copy selected source path and line |
 | `e` | Focus editable working side of selected diff |
@@ -91,6 +95,6 @@ Neolit preserves their IDs and resolves active references against archived SPEC
 entries. `Description:` explains intent; `Agent notes:` explains actual changes,
 rationale, deviations, or caveats. Notes are not verification evidence.
 
-The tree is read-only. TODO checkboxes are not verification evidence.
+The workspace does not modify documents while browsing or refreshing. The explicit `a` archive/restore action is the only document-writing operation; it asks for confirmation and refuses stale ranges or modified source buffers. TODO checkboxes are not verification evidence.
 Derived states come from parsed planning documents and current Git metadata;
 verification requires matching evidence for the current base commit and diff.
