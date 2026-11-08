@@ -298,6 +298,13 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
     if type(file) ~= "table" or type(hunk_index) ~= "number" then return nil end
     return file.hunks and file.hunks[hunk_index + 1] or nil
   end
+  local function file_association_label(state)
+    if state == "unplanned" then return "UNPLANNED" end
+    if state == "partially-mapped" then return "PARTIAL" end
+    if state == "unresolved" then return "AMBIGUOUS" end
+    if state == "documentation" then return "DOC" end
+    return "CANDIDATE"
+  end
   local function hunk_review_summary(review)
     local candidates = {}
     for _, task_key in ipairs(review.candidateTaskKeys or {}) do
@@ -446,9 +453,8 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
     local association = associations[path] or { state = "unplanned", taskKeys = {} }
     local marker = changed and (
       association.state == "unplanned" and "?"
-      or (association.state == "partially-mapped" or association.state == "unresolved") and "~"
       or association.state == "documentation" and "D"
-      or "✓"
+      or "~"
     ) or ""
     local is_expanded = expanded_files[path] == true
     local file_association = associations[path]
@@ -568,7 +574,7 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
       for _, task_key in ipairs(file_association and file_association.taskKeys or {}) do
         local task = tasks_by_key[task_key]
         if task then
-          add(child_prefix .. " TASK " .. task.text .. " · " .. tostring(file_association.state):upper(),
+          add(child_prefix .. " TASK " .. task.text .. " · " .. file_association_label(file_association.state),
             { kind = "task_change", key = "file-task:" .. path .. ":" .. task_key,
               parent_key = "file:" .. path, file = changed, association = file_association, task = task })
         end
@@ -700,11 +706,9 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
         if row.doc_kind then mark(line, "[" .. row.doc_kind .. "]", "Special") end
         local association = row.association or {}
         local group = association.state == "unplanned" and "DiagnosticWarn"
-          or (association.state == "partially-mapped" or association.state == "unresolved") and "DiagnosticInfo"
-          or association.state == "documentation" and "Special" or "DiagnosticOk"
+          or association.state == "documentation" and "Special" or "DiagnosticInfo"
         local marker = association.state == "unplanned" and "?"
-          or (association.state == "partially-mapped" or association.state == "unresolved") and "~"
-          or association.state == "documentation" and "D" or "✓"
+          or association.state == "documentation" and "D" or "~"
         mark(line, marker, group)
         local git = row.git_status
         if git then
