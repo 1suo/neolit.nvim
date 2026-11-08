@@ -738,23 +738,53 @@ function M.open(opts)
       return
     end
 
-    local context
-    if row.kind == "planned_file" then
-      context = "Selected planned file: " .. row.path
-        .. "\nTODO task: " .. row.task.text
-        .. "\nTODO source: " .. tostring(row.task.key:match("^(.-)::")) .. ":" .. row.task.range.startLine
-        .. "\nDescription: " .. table.concat(row.task.description or {}, "\n")
-        .. "\nSPEC references: " .. vim.inspect(row.task.specReferences)
-    elseif row.kind == "requirement" then
-      context = "Selected SPEC requirement " .. row.requirement.id
-        .. "\nSource: " .. tostring(row.spec_path) .. ":" .. row.requirement.range.startLine
-        .. "\n\n" .. row.requirement.text
-    else
-      context = "Selected TODO task: " .. row.task.text
-        .. "\nSource: " .. tostring(row.task.key:match("^(.-)::")) .. ":" .. row.task.range.startLine
-        .. "\nSPEC references: " .. vim.inspect(row.task.specReferences)
+    local context_lines = {}
+    local function add_context(value)
+      if value and value ~= "" then context_lines[#context_lines + 1] = value end
     end
-    copy_context(context)
+    local function add_task_context(task)
+      add_context("TODO task: " .. task.text)
+      add_context("Source: " .. tostring(task.key:match("^(.-)::")) .. ":" .. task.range.startLine)
+      if #(task.description or {}) > 0 then
+        add_context("Description:\\n" .. table.concat(task.description, "\\n"))
+      end
+      for _, path in ipairs(task.filePaths or {}) do add_context("File hint: " .. path) end
+      for _, requirement in ipairs(task.resolvedRequirements or {}) do
+        add_context("SPEC requirement " .. requirement.specPath .. "#" .. requirement.id .. ": " .. requirement.text)
+      end
+      for _, criterion in ipairs(task.resolvedAcceptanceCriteria or {}) do
+        add_context("Acceptance criterion " .. criterion.specPath .. "#" .. criterion.id .. ": " .. criterion.text)
+      end
+      for _, unresolved in ipairs(task.unresolvedReferences or {}) do
+        add_context("Unresolved SPEC reference: " .. unresolved.path .. "#" .. table.concat(unresolved.ids or {}, ", "))
+      end
+    end
+    if row.kind == "planned_file" then
+      add_context("Selected planned file: " .. row.path)
+      add_task_context(row.task)
+    elseif row.kind == "requirement" then
+      add_context("Selected SPEC requirement " .. row.spec_path .. "#" .. row.requirement.id)
+      add_context("Source: " .. row.spec_path .. ":" .. row.requirement.range.startLine)
+      add_context(row.requirement.text)
+      local workspace = vim.b[buf].neolit_workspace
+      for _, task in ipairs(workspace.tasks or {}) do
+        local linked = false
+        for _, reference in ipairs(task.specReferences or {}) do
+          if reference.path == row.spec_path and vim.tbl_contains(reference.ids or {}, row.requirement.id) then
+            linked = true
+            break
+          end
+        end
+        if linked then
+          add_context("")
+          add_task_context(task)
+        end
+      end
+    else
+      add_context("Selected planning task")
+      add_task_context(row.task)
+    end
+    copy_context(table.concat(context_lines, "\\n"))
   end
 
   local function map(lhs, fn, desc)
