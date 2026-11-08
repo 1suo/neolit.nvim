@@ -1342,8 +1342,7 @@ function M.open(opts)
         return
       end
     end
-    local action = archived and "Restore" or "Archive"
-    if vim.fn.confirm(action .. " " .. label .. " in " .. relative .. (archived and " to " or " into ") .. destination_relative .. "?", "&Move\n&Cancel", 2) ~= 1 then
+    -- One `a` press performs the selected archive/restore action.
       return
     end
     if #destination_lines > 0 and destination_lines[#destination_lines] ~= "" then
