@@ -823,7 +823,7 @@ function M.open(opts)
     -- listed state of buffers that were already open before Neolit previewed them.
     if existing_buf < 0 then vim.bo[target_buf].buflisted = false end
     vim.api.nvim_win_set_buf(win, target_buf)
-    vim.keymap.set("n", "a", function()
+    vim.keymap.set("n", "<F6>", function()
       if archive_paragraph then
         archive_paragraph(relative_path, vim.api.nvim_win_get_cursor(win)[1])
       end
