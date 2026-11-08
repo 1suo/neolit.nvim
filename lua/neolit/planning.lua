@@ -6,9 +6,13 @@ local function find_core(opts)
   local cfg = config.merge(opts or {})
   local root = vim.fn.fnamemodify(cfg.directory or vim.fn.getcwd(), ":p")
   local plugin_root = config.plugin_root()
-  local npm_root = vim.fn.system({ "npm", "root", "-g" }):gsub("%s+$", "")
+  local env = vim.fn.environ()
+  local npm_root
+  if not cfg.neolit_dir and not env.NEOLIT_DIR and not (plugin_root and vim.fn.isdirectory(plugin_root .. "/../neolit") == 1) then
+    npm_root = vim.fn.system({ "npm", "root", "-g" }):gsub("%s+$", "")
+  end
   local neolit_dir = config.find_neolit_dir(cfg, {
-    env = vim.fn.environ(),
+    env = env,
     plugin_root = plugin_root,
     npm_root = npm_root ~= "" and npm_root or nil,
     readable = function(file) return vim.fn.filereadable(file) == 1 end,
@@ -160,7 +164,7 @@ local function render(buf, root, workspace, expanded_files)
     local status = statuses[file.path]
     local git_status = status and (status.index .. status.worktree) or "  "
     local doc_marker = file.path:match("%.md$") and "#" or " "
-    local is_expanded = expanded_files[file.path] ~= false
+    local is_expanded = expanded_files[file.path] == true
     local file_key = "file:" .. file.path
     add(string.format("  %s %s [%s] %s %s", marker, doc_marker, git_status, is_expanded and "▾" or "▸", file.path), { kind = "file", key = file_key, file = file, association = association, expanded = is_expanded })
     if is_expanded then
@@ -303,7 +307,7 @@ function M.open(opts)
             return
           end
           for _, file in ipairs(workspace.git.changedFiles or {}) do
-            if expanded_files[file.path] == nil then expanded_files[file.path] = true end
+            if expanded_files[file.path] == nil then expanded_files[file.path] = false end
           end
           render(buf, root, workspace, expanded_files)
           vim.b[buf].neolit_workspace = workspace
