@@ -269,7 +269,7 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
       .. doc_summary .. (status and ("  [" .. git_marker .. "]") or ""),
       { kind = changed and "file" or (kind and "planning_document" or "repository_file"),
         key = "file:" .. path, path = path, file = changed, doc_kind = kind,
-        association = association, expanded = is_expanded, expandable = has_children,
+        association = association, git_status = status, expanded = is_expanded, expandable = has_children,
         parent_key = path:match("^(.*)/[^/]+$") and ("dir:" .. path:match("^(.*)/[^/]+$")) or nil })
     if not is_expanded then return end
     if kind == "TODO" then
@@ -381,17 +381,23 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
         vim.api.nvim_buf_add_highlight(buf, rich_ns, "Title", line - 1, 0, -1)
       elseif row.kind == "tree_directory" then
         vim.api.nvim_buf_add_highlight(buf, rich_ns, "Directory", line - 1, 0, -1)
-      elseif row.kind == "planning_document" or row.doc_kind then
+      elseif row.kind == "planning_document" then
         mark(line, "[" .. tostring(row.doc_kind) .. "]", "Special")
-        mark(line, row.doc_kind == "TODO" and "tasks" or row.doc_kind == "SPEC" and "requirements" or "README", "Comment")
+        if row.doc_kind == "TODO" then mark(line, "tasks", "Comment")
+        elseif row.doc_kind == "SPEC" then mark(line, "requirements", "Comment") end
       elseif row.kind == "task" then
         mark(line, row.task.checked and "[x]" or "[ ]", row.task.checked and "DiagnosticOk" or "Comment")
         local derived = workspace.derived and workspace.derived.tasks and workspace.derived.tasks[row.task.key]
         local state = (derived and derived.state or row.task.state or "planned"):upper()
-        local group = state:find("COMPLETE", 1, true) or state == "DONE" and "DiagnosticOk"
-          or state:find("BLOCK", 1, true) and "DiagnosticError"
-          or state:find("PARTIAL", 1, true) and "DiagnosticWarn" or "DiagnosticInfo"
-        mark(line, state, group or "DiagnosticInfo")
+        local group = "DiagnosticInfo"
+        if state:find("COMPLETE", 1, true) or state == "DONE" or state == "SATISFIED" then
+          group = "DiagnosticOk"
+        elseif state:find("BLOCK", 1, true) then
+          group = "DiagnosticError"
+        elseif state:find("PARTIAL", 1, true) or state:find("PROGRESS", 1, true) then
+          group = "DiagnosticWarn"
+        end
+        mark(line, state, group)
       elseif row.kind == "requirement" then
         mark(line, row.requirement.id, "Identifier")
         local state = (requirement_states[row.spec_path .. "#" .. row.requirement.id] or "unmapped"):upper()
@@ -399,13 +405,18 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
       elseif row.kind == "acceptance_criterion" then
         vim.api.nvim_buf_add_highlight(buf, rich_ns, "DiagnosticOk", line - 1, 0, -1)
       elseif row.kind == "file" then
+        if row.doc_kind then mark(line, "[" .. row.doc_kind .. "]", "Special") end
         local association = row.association or {}
         local group = association.state == "unplanned" and "DiagnosticWarn"
           or association.state == "partially-mapped" and "DiagnosticInfo" or "DiagnosticOk"
         mark(line, association.state == "unplanned" and "?" or association.state == "partially-mapped" and "~" or "✓", group)
-        if row.file and row.file.status then
-          mark(line, row.file.status, row.file.status == "added" and "DiffAdd"
-            or row.file.status == "deleted" and "DiffDelete" or "DiffChange")
+        local git = row.git_status
+        if git then
+          local code = "[" .. tostring(git.index or " ") .. tostring(git.worktree or " ") .. "]"
+          local git_group = (git.index == "A" or git.worktree == "A" or git.index == "?" or git.worktree == "?") and "DiffAdd"
+            or (git.index == "D" or git.worktree == "D") and "DiffDelete"
+            or (git.index ~= " " or git.worktree ~= " ") and "DiffChange" or "Comment"
+          mark(line, code, git_group)
         end
       elseif row.kind == "hunk" then
         mark(line, "@@", "DiagnosticWarn")
