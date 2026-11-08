@@ -150,8 +150,10 @@ local function open_diff(root, file, selected_hunk, comparison_base, selected_li
     -- Keep the two actual diff windows synchronized for both scrolling and
     -- cursor movement, regardless of which side currently has focus.
     for _, diff_win in ipairs({ base_win, win }) do
+      vim.wo[diff_win].wrap = vim.go.wrap
       vim.wo[diff_win].scrollbind = true
       vim.wo[diff_win].cursorbind = true
+      vim.wo[diff_win].scrollopt = "ver,jump"
     end
 
     local base_line = selected_hunk and selected_hunk.oldStart or 1
@@ -189,6 +191,7 @@ local function open_diff(root, file, selected_hunk, comparison_base, selected_li
   vim.api.nvim_buf_set_lines(preview_buf, 0, -1, false, diff_lines)
   vim.bo[preview_buf].modifiable = false
   vim.api.nvim_win_set_buf(win, preview_buf)
+  vim.wo[win].wrap = vim.go.wrap
   if focus then vim.api.nvim_set_current_win(win) else restore_focus() end
 
   local target_line = 1
@@ -761,7 +764,7 @@ function M.open(opts)
   -- Keep the navigation column fixed while preview/diff windows split and
   -- resize the remaining space. The right side then owns all remaining width.
   vim.wo[tree_win].winfixwidth = true
-  vim.wo[tree_win].wrap = false
+  vim.wo[tree_win].wrap = vim.go.wrap
   vim.bo[buf].tabstop = 2
   vim.bo[buf].shiftwidth = 2
   vim.bo[buf].softtabstop = 2
@@ -811,6 +814,7 @@ function M.open(opts)
     -- listed state of buffers that were already open before Neolit previewed them.
     if existing_buf < 0 then vim.bo[target_buf].buflisted = false end
     vim.api.nvim_win_set_buf(win, target_buf)
+    vim.wo[win].wrap = vim.go.wrap
     if focus then
       vim.api.nvim_set_current_win(win)
     elseif vim.api.nvim_win_is_valid(original_win) then
