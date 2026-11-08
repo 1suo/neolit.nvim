@@ -223,18 +223,18 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
     local checkbox = task.checked and "[x]" or "[ ]"
     local indent = string.rep("  ", depth)
     add(prefix .. indent .. (expanded and "▾ " or "▸ ") .. checkbox .. "  " .. state:upper() .. "  " .. task.text,
-      { kind = "task", key = "task:" .. key, task = task, expanded = expanded })
+      { kind = "task", key = "task:" .. key, parent_key = "file:" .. (key:match("^(.-)::") or "TODO.md"), task = task, expanded = expanded })
     if not expanded then return end
     for _, path in ipairs(task.filePaths or {}) do
-      add(prefix .. indent .. "   ↳  " .. path, { kind = "planned_file", path = path, task = task })
+      add(prefix .. indent .. "   ↳  " .. path, { kind = "planned_file", path = path, parent_key = "task:" .. key, task = task })
     end
     for _, reference in ipairs(task.specReferences or {}) do
       add(prefix .. indent .. "   §  " .. reference.path .. "  #" .. table.concat(reference.ids or {}, ", "),
-        { kind = "task_reference", reference = reference, task = task })
+        { kind = "task_reference", parent_key = "task:" .. key, reference = reference, task = task })
     end
     for _, unresolved in ipairs(task.unresolvedReferences or {}) do
       add(prefix .. indent .. "   !  unresolved " .. unresolved.path .. "#" .. table.concat(unresolved.ids or {}, ", "),
-        { kind = "diagnostic", diagnostic = unresolved })
+        { kind = "diagnostic", parent_key = "task:" .. key, diagnostic = unresolved })
     end
   end
   local function render_file(entry, prefix, branch)
@@ -252,7 +252,8 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
       .. (status and ("  [" .. git_marker .. "]") or ""),
       { kind = changed and "file" or (kind and "planning_document" or "repository_file"),
         key = "file:" .. path, path = path, file = changed, doc_kind = kind,
-        association = association, expanded = is_expanded })
+        association = association, expanded = is_expanded,
+        parent_key = path:match("^(.*)/[^/]+$") and ("dir:" .. path:match("^(.*)/[^/]+$")) or nil })
     if not is_expanded then return end
     if kind == "TODO" then
       for _, task in ipairs(tasks_by_doc[path] or {}) do render_task(task, prefix .. "   ", 1) end
@@ -261,7 +262,7 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
         local state = requirement_states[path .. "#" .. requirement.id] or "unmapped"
         add(prefix .. "   §  " .. requirement.id .. "  " .. state:upper() .. "  " .. (requirement.text or ""),
           { kind = "requirement", key = "requirement:" .. path .. "#" .. requirement.id,
-            requirement = requirement, spec_path = path })
+            parent_key = "file:" .. path, requirement = requirement, spec_path = path })
       end
     elseif kind == "README" then
       local readme
@@ -281,11 +282,11 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
         local hunk_key = "file:" .. path .. ":hunk:" .. hunk_index
         add(prefix .. "   " .. (hunk_state == "attributed" and "✓" or hunk_state == "documentation" and "§" or "?")
           .. "  @@ -" .. hunk.oldStart .. "," .. hunk.oldLines .. " +" .. hunk.newStart .. "," .. hunk.newLines .. " @@ " .. (hunk.header or ""),
-          { kind = "hunk", key = hunk_key, file = changed, hunk = hunk,
+          { kind = "hunk", key = hunk_key, parent_key = "file:" .. path, file = changed, hunk = hunk,
             association = association, hunkAssociation = hunk_association })
         for change_index, change in ipairs(hunk.changes or {}) do
           add(prefix .. "      " .. (change.kind == "added" and "+" or "−") .. " " .. change.lineNumber .. "  " .. change.text,
-            { kind = "change_line", key = hunk_key .. ":change:" .. change_index,
+            { kind = "change_line", key = hunk_key .. ":change:" .. change_index, parent_key = hunk_key,
               file = changed, hunk = hunk, hunkAssociation = hunk_association,
               lineNumber = change.lineNumber, lineText = change.text,
               side = change.kind == "added" and "working-tree" or "base" })
@@ -299,7 +300,7 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
     .. "   " .. (filter_mode == "affected" and "AFFECTED PATHS" or "ALL PATHS")
     .. "   [f filter] [? keys]", { kind = "header" })
 
-  local function render_tree(node, ancestors, depth)
+  local function render_tree(node, ancestors, depth, parent_key)
     local entries = {}
     for name, child in pairs(node.children) do
       if filter_mode ~= "affected" or subtree_affected(child) then
@@ -321,14 +322,14 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
       if entry.directory then
         local expanded = expanded_dirs[entry.path] == true
         add(ancestors .. branch .. (expanded and "▾ " or "▸ ") .. entry.name .. "/",
-          { kind = "tree_directory", key = "dir:" .. entry.path, path = entry.path, expanded = expanded })
-        if expanded then render_tree(entry.node, ancestors .. (last and "    " or "│   "), depth + 1) end
+          { kind = "tree_directory", key = "dir:" .. entry.path, parent_key = parent_key, path = entry.path, expanded = expanded })
+        if expanded then render_tree(entry.node, ancestors .. (last and "    " or "│   "), depth + 1, "dir:" .. entry.path) end
       else
         render_file(entry.entry, ancestors, branch)
       end
     end
   end
-  render_tree(tree_root, "", 0)
+  render_tree(tree_root, "", 0, nil)
   if filter_mode == "affected" and #(workspace.git.changedFiles or {}) == 0 then
     add("└── (no affected paths)", { kind = "empty" })
   end
@@ -666,7 +667,11 @@ function M.open(opts)
         details[#details + 1] = line
       end
     end
-    if row.kind == "file" then
+    if row.kind == "planning_document" then
+      put(row.doc_kind .. " DOCUMENT")
+      put(row.path)
+      put("Tasks: " .. tostring(#((vim.b[buf].neolit_workspace.todos or {}))))
+    elseif row.kind == "file" then
       put("CHANGED FILE")
       put(row.file.path)
       put("Git status: " .. tostring(row.file.status or "changed"))
@@ -823,11 +828,14 @@ function M.open(opts)
 
   local function ask_context()
     local row = vim.b[buf].neolit_rows and vim.b[buf].neolit_rows[vim.api.nvim_win_get_cursor(0)[1]]
-    if not row or (row.kind ~= "tree_directory" and row.kind ~= "repository_file" and row.kind ~= "file" and row.kind ~= "hunk" and row.kind ~= "change_line" and row.kind ~= "requirement" and row.kind ~= "task" and row.kind ~= "planned_file") then
+    if not row or (row.kind ~= "tree_directory" and row.kind ~= "repository_file" and row.kind ~= "planning_document" and row.kind ~= "file" and row.kind ~= "hunk" and row.kind ~= "change_line" and row.kind ~= "requirement" and row.kind ~= "task" and row.kind ~= "planned_file") then
       vim.notify("Select a task, requirement, planned file, or changed file first")
       return
     end
-    if row.kind == "tree_directory" then
+    if row.kind == "planning_document" then
+      copy_context("Selected " .. tostring(row.doc_kind) .. " document: " .. row.path .. "\nAsk about this document and inspect its current contents in the working tree.")
+      return
+    elseif row.kind == "tree_directory" then
       local files = {}
       for _, path in ipairs(vim.b[buf].neolit_workspace.git.repositoryFiles or {}) do
         if path:sub(1, #row.path + 1) == row.path .. "/" then files[#files + 1] = path end
@@ -1071,6 +1079,8 @@ function M.open(opts)
     elseif row.kind == "file" or row.kind == "planning_document" then
       expanded_files[row.path or (row.file and row.file.path)] = expanded
       rerender_at(row.key)
+    elseif row.kind == "hunk" then
+      return
     end
   end
   local function toggle_node_at_cursor()
@@ -1091,17 +1101,17 @@ function M.open(opts)
         return
       end
     end
-    local path = row.path or (row.file and row.file.path) or (row.task and row.task.key:match("^(.-)::")) or row.spec_path
-    if type(path) ~= "string" then return end
-    local parent = path:match("^(.*)/[^/]+$")
-    if parent then
-      local parent_key = "dir:" .. parent
-      for _, candidate in pairs(vim.b[buf].neolit_rows or {}) do
-        if candidate.key == parent_key then
-          expanded_dirs[parent] = false
-          rerender_at(parent_key)
-          return
+    local parent_key = row.parent_key
+    if not parent_key then return end
+    for _, candidate in pairs(vim.b[buf].neolit_rows or {}) do
+      if candidate.key == parent_key then
+        if candidate.kind == "tree_directory" then expanded_dirs[candidate.path] = false
+        elseif candidate.kind == "task" then expanded_tasks[candidate.task.key] = false
+        elseif candidate.kind == "file" or candidate.kind == "planning_document" then
+          expanded_files[candidate.path or candidate.file.path] = false
         end
+        rerender_at(parent_key)
+        return
       end
     end
   end
