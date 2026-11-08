@@ -1077,16 +1077,14 @@ function M.open(opts)
   local function copy_selected_text()
     local row = current_row()
     if not row then return end
-    if row.kind == "task" then
-      copy_value(row.task.text, "Task text")
+    if row.kind == "task" or row.kind == "requirement_task" then
+      copy_value((row.task.checked and "- [x] " or "- [ ] ") .. row.task.text, "Task text")
     elseif row.kind == "requirement" then
-      copy_value(row.requirement.text, "Requirement text")
+      copy_value(row.requirement.id .. " " .. row.requirement.text, "Requirement text")
     elseif row.kind == "acceptance_criterion" then
-      copy_value(row.criterion.text, "Acceptance criterion")
-    elseif row.kind == "requirement_task" then
-      copy_value(row.task.text, "Task text")
+      copy_value(row.criterion.id .. " " .. row.criterion.text, "Acceptance criterion")
     elseif row.kind == "requirement_criterion" then
-      copy_value(row.criterion.ref, "Acceptance criterion reference")
+      copy_value(row.criterion.ref .. " " .. row.criterion.text, "Acceptance criterion")
     elseif row.kind == "task_requirement" then
       copy_value(row.requirement.specPath .. "#" .. row.requirement.id .. " " .. row.requirement.text, "Requirement")
     elseif row.kind == "task_acceptance" then
