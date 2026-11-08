@@ -52,7 +52,10 @@ function M.find_neolit_dir(cfg, ctx)
   if ctx.npm_root then add(ctx.npm_root .. "/neolit") end
 
   for _, candidate in ipairs(candidates) do
-    if ctx.readable(candidate .. "/dist/index.js") then return candidate end
+    if ctx.readable(candidate .. "/dist/index.js")
+      and ctx.readable(candidate .. "/dist/planning/workspace.js") then
+      return candidate
+    end
   end
   return nil, candidates
 end
