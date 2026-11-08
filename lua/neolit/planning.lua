@@ -20,11 +20,11 @@ local function find_core(opts)
   return cfg, root, neolit_dir
 end
 
-local function diff_command(file)
+local function diff_command(file, base)
   if file.untracked or (file.status == "added" and #file.hunks == 0) then
     return { "git", "-c", "core.quotePath=false", "diff", "--no-index", "--no-ext-diff", "--no-color", "--", "/dev/null", file.path }
   end
-  local command = { "git", "-c", "core.quotePath=false", "diff", "--no-ext-diff", "--no-color", "--find-renames", "HEAD", "--" }
+  local command = { "git", "-c", "core.quotePath=false", "diff", "--no-ext-diff", "--no-color", "--find-renames", base or "HEAD", "--" }
   if file.previousPath then command[#command + 1] = file.previousPath end
   command[#command + 1] = file.path
   return command
@@ -34,12 +34,12 @@ local function normalize_diff(diff)
   return (diff or ""):gsub("\r\n", "\n"):gsub("\n+$", "")
 end
 
-local function open_diff(root, file, selected_hunk, on_line_context)
-  local initial_result = vim.system(diff_command(file), { cwd = root, text = true }):wait()
+local function open_diff(root, file, selected_hunk, on_line_context, comparison_base)
+  local initial_result = vim.system(diff_command(file, comparison_base), { cwd = root, text = true }):wait()
   local initial_diff = initial_result.stdout or ""
   local initial_diff_identity = vim.fn.sha256(initial_diff)
   local base_path = file.previousPath or file.path
-  local base_result = vim.system({ "git", "show", "HEAD:" .. base_path }, { cwd = root, text = true }):wait()
+  local base_result = vim.system({ "git", "show", (comparison_base or "HEAD") .. ":" .. base_path }, { cwd = root, text = true }):wait()
   local base_lines = vim.split(base_result.code == 0 and (base_result.stdout or "") or "", "\n", { plain = true })
   if base_lines[#base_lines] == "" then table.remove(base_lines) end
   local filetype = vim.filetype.match({ filename = file.path }) or ""
@@ -111,7 +111,7 @@ local function render(buf, root, workspace)
     rows[#lines] = row
   end
 
-  add("PLANNING  " .. workspace.git.branch .. " @ " .. workspace.git.head:sub(1, 8), { kind = "header" })
+  add("PLANNING  " .. workspace.git.branch .. " @ " .. (workspace.git.base or workspace.git.head):sub(1, 8), { kind = "header" })
   add("", nil)
   local requirement_states = {}
   for _, item in ipairs(workspace.derived and workspace.derived.requirements or {}) do
@@ -195,7 +195,8 @@ function M.open(opts)
     local revision = refresh_revision
     if refresh_job then pcall(vim.fn.jobstop, refresh_job) end
     local url = vim.uri_from_fname(neolit_dir .. "/dist/planning/workspace.js")
-    local js = "const m = await import(" .. string.format("%q", url) .. "); const w = await m.loadPlanningWorkspace(process.cwd()); process.stdout.write(JSON.stringify(w));"
+    local comparison_base = vim.json.encode(cfg.comparison_base or "HEAD")
+    local js = "const m = await import(" .. string.format("%q", url) .. "); const w = await m.loadPlanningWorkspace(process.cwd(), { comparisonBase: " .. comparison_base .. " }); process.stdout.write(JSON.stringify(w));"
     local command = { cfg.node, "--input-type=module", "-e", js }
     refresh_job = vim.fn.jobstart(command, {
       cwd = root,
@@ -258,23 +259,24 @@ function M.open(opts)
       vim.notify("Save the working-tree buffer before asking about its diff context.", vim.log.levels.WARN)
       return
     end
-    local result = vim.system(diff_command(file), { cwd = root, text = true }):wait()
+    local workspace = vim.b[buf].neolit_workspace
+    local base = workspace and workspace.git.base or "HEAD"
+    local result = vim.system(diff_command(file, base), { cwd = root, text = true }):wait()
     local current_diff = result.stdout or ""
     if vim.fn.sha256(current_diff) ~= opened_diff_identity then
       vim.notify("Selected diff changed since it was opened; refresh and select it again.", vim.log.levels.WARN)
       refresh()
       return
     end
-    local workspace = vim.b[buf].neolit_workspace
-    local head = vim.system({ "git", "rev-parse", "--verify", "HEAD" }, { cwd = root, text = true }):wait()
-    local current_head = (head.stdout or ""):gsub("%s+$", "")
-    if workspace and workspace.git.head ~= current_head then
-      vim.notify("Diff anchor is stale because HEAD changed; refresh and select it again.", vim.log.levels.WARN)
+    local head = vim.system({ "git", "rev-parse", "--verify", "--end-of-options", (cfg.comparison_base or "HEAD") .. "^{commit}" }, { cwd = root, text = true }):wait()
+    local current_base = (head.stdout or ""):gsub("%s+$", "")
+    if workspace and workspace.git.base ~= current_base then
+      vim.notify("Diff anchor is stale because the comparison base changed; refresh and select it again.", vim.log.levels.WARN)
       refresh()
       return
     end
 
-    local anchor_base = current_head ~= "" and current_head or "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+    local anchor_base = current_base ~= "" and current_base or "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
     local selected_path = side == "base" and (file.previousPath or file.path) or file.path
     local related_tasks = {}
     for _, association in ipairs(workspace and workspace.git.associations or {}) do
@@ -357,9 +359,9 @@ function M.open(opts)
         vim.api.nvim_win_set_cursor(0, { req.range.startLine, 0 })
       end
     elseif row.kind == "file" then
-      open_diff(root, row.file, nil, ask_line_context)
+      open_diff(root, row.file, nil, ask_line_context, workspace and workspace.git.base)
     elseif row.kind == "hunk" then
-      open_diff(root, row.file, row.hunk, ask_line_context)
+      open_diff(root, row.file, row.hunk, ask_line_context, workspace and workspace.git.base)
     end
   end
 
@@ -370,13 +372,14 @@ function M.open(opts)
       return
     end
     if row.kind == "file" or row.kind == "hunk" then
-      local result = vim.system(diff_command(row.file), { cwd = root, text = true }):wait()
-      local full_diff = result.stdout or ""
       local workspace = vim.b[buf].neolit_workspace
-      local head = vim.system({ "git", "rev-parse", "--verify", "HEAD" }, { cwd = root, text = true }):wait()
-      local current_head = (head.stdout or ""):gsub("%s+$", "")
-      if workspace and workspace.git.head ~= current_head then
-        vim.notify("Diff anchor is stale because HEAD changed; refresh and select it again.", vim.log.levels.WARN)
+      local base = workspace and workspace.git.base or "HEAD"
+      local result = vim.system(diff_command(row.file, base), { cwd = root, text = true }):wait()
+      local full_diff = result.stdout or ""
+      local head = vim.system({ "git", "rev-parse", "--verify", "--end-of-options", (cfg.comparison_base or "HEAD") .. "^{commit}" }, { cwd = root, text = true }):wait()
+      local current_base = (head.stdout or ""):gsub("%s+$", "")
+      if workspace and workspace.git.base ~= current_base then
+        vim.notify("Diff anchor is stale because the comparison base changed; refresh and select it again.", vim.log.levels.WARN)
         refresh()
         return
       end
