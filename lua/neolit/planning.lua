@@ -1303,7 +1303,8 @@ function M.open(opts)
       vim.notify("The selected SPEC requirement changed; refresh before archiving", vim.log.levels.WARN)
       return
     end
-    local block = vim.list_slice(source_lines, first, last)
+    local block = {}
+    for line = first, last do block[#block + 1] = source_lines[line] end
     if #block == 0 then return end
     local destination_lines = vim.fn.filereadable(destination) == 1 and vim.fn.readfile(destination) or {}
     for start = 1, #destination_lines - #block + 1 do
