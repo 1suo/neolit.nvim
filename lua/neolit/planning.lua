@@ -54,116 +54,66 @@ local function normalize_diff(diff)
 end
 
 local function open_diff(root, file, selected_hunk, on_line_context, comparison_base, selected_line, diff_state)
-  -- Git paths are repository-relative, but a changed path may itself be a
-  -- symlink. Never let native editor navigation follow it outside the
-  -- selected worktree (the shared core applies the same boundary).
-  local working_path = safe_repo_path(root, file.path)
+  local path = safe_repo_path(root, file.path)
   local base_path = file.previousPath or file.path
-  if not working_path or not safe_repo_path(root, base_path) then
+  if not path or not safe_repo_path(root, base_path) then
     vim.notify("Refusing to open a diff path outside the repository: " .. tostring(file.path), vim.log.levels.ERROR)
     return
   end
 
-  local initial_result = vim.system(diff_command(file, comparison_base), { cwd = root, text = true }):wait()
-  local initial_diff = initial_result.stdout or ""
-  local initial_diff_identity = vim.fn.sha256(initial_diff)
-  local base_result = vim.system({ "git", "show", (comparison_base or "HEAD") .. ":" .. base_path }, { cwd = root, text = true }):wait()
-  local base_lines = vim.split(base_result.code == 0 and (base_result.stdout or "") or "", "\n", { plain = true })
-  if base_lines[#base_lines] == "" then table.remove(base_lines) end
-  local filetype = vim.filetype.match({ filename = file.path }) or ""
+  -- The right side is a single preview surface. Render the unified diff in
+  -- that buffer instead of creating a second split for a side-by-side diff.
+  local result = vim.system(diff_command(file, comparison_base), { cwd = root, text = true }):wait()
+  local diff_lines = vim.split(result.stdout or "", "\n", { plain = true })
+  if diff_lines[#diff_lines] == "" then table.remove(diff_lines) end
+  if #diff_lines == 0 then diff_lines = { "(no diff available)" } end
 
-  local base_buf = vim.api.nvim_create_buf(false, true)
-  vim.api.nvim_buf_set_name(base_buf, "neolit-base://" .. base_path .. "#" .. base_buf)
-  vim.api.nvim_buf_set_lines(base_buf, 0, -1, false, base_lines)
-  vim.bo[base_buf].buftype = "nofile"
-  vim.bo[base_buf].bufhidden = "hide"
-  vim.bo[base_buf].swapfile = false
-  vim.bo[base_buf].filetype = filetype
-
-  local working_buf
-  if vim.fn.filereadable(working_path) == 1 then
-    working_buf = vim.fn.bufadd(working_path)
-    vim.fn.bufload(working_buf)
-  else
-    working_buf = vim.api.nvim_create_buf(false, true)
-    vim.api.nvim_buf_set_name(working_buf, "neolit-working://" .. file.path .. "#" .. working_buf)
-    vim.api.nvim_buf_set_lines(working_buf, 0, -1, false, {})
-    vim.bo[working_buf].buftype = "nofile"
-    vim.bo[working_buf].bufhidden = "hide"
-    vim.bo[working_buf].swapfile = false
-    vim.bo[working_buf].filetype = filetype
+  local win = diff_state and diff_state.preview_win
+  if not win or not vim.api.nvim_win_is_valid(win) then
+    local origin = diff_state and diff_state.tree_win or vim.api.nvim_get_current_win()
+    if not vim.api.nvim_win_is_valid(origin) then return end
+    vim.api.nvim_set_current_win(origin)
+    vim.cmd("rightbelow vsplit")
+    win = vim.api.nvim_get_current_win()
+    if diff_state then diff_state.preview_win = win end
   end
 
-  local base_win, working_win
-  if diff_state and diff_state.base_win and diff_state.working_win
-    and vim.api.nvim_win_is_valid(diff_state.base_win)
-    and vim.api.nvim_win_is_valid(diff_state.working_win) then
-    base_win, working_win = diff_state.base_win, diff_state.working_win
-    for _, win in ipairs({ base_win, working_win }) do
-      vim.api.nvim_set_current_win(win)
-      pcall(vim.cmd, "diffoff")
-    end
-    vim.api.nvim_win_set_buf(base_win, base_buf)
-    vim.api.nvim_win_set_buf(working_win, working_buf)
-  else
-    if diff_state and diff_state.preview_win and vim.api.nvim_win_is_valid(diff_state.preview_win) then
-      working_win = diff_state.preview_win
-      vim.api.nvim_set_current_win(working_win)
-      vim.cmd("leftabove vsplit")
-      base_win = vim.api.nvim_get_current_win()
-      vim.api.nvim_win_set_buf(base_win, base_buf)
-      vim.api.nvim_win_set_buf(working_win, working_buf)
-    else
-      local origin = diff_state and diff_state.tree_win or vim.api.nvim_get_current_win()
-      vim.api.nvim_set_current_win(origin)
-      vim.cmd("rightbelow vsplit")
-      base_win = vim.api.nvim_get_current_win()
-      vim.api.nvim_win_set_buf(base_win, base_buf)
-      vim.cmd("rightbelow vsplit")
-      working_win = vim.api.nvim_get_current_win()
-      vim.api.nvim_win_set_buf(working_win, working_buf)
-    end
-    if diff_state then
-      diff_state.base_win, diff_state.working_win = base_win, working_win
-      diff_state.preview_win = working_win
-    end
+  local preview_buf = diff_state and diff_state.preview_buf
+  if not preview_buf or not vim.api.nvim_buf_is_valid(preview_buf) then
+    preview_buf = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_name(preview_buf, "neolit-diff-preview://" .. vim.fn.sha256(file.path):sub(1, 12))
+    vim.bo[preview_buf].buftype = "nofile"
+    vim.bo[preview_buf].bufhidden = "hide"
+    vim.bo[preview_buf].swapfile = false
+    vim.bo[preview_buf].filetype = "diff"
+    if diff_state then diff_state.preview_buf = preview_buf end
   end
-  vim.api.nvim_set_current_win(base_win)
-  vim.cmd("diffthis")
-  vim.api.nvim_set_current_win(working_win)
-  vim.cmd("diffthis")
+  vim.bo[preview_buf].modifiable = true
+  vim.api.nvim_buf_set_lines(preview_buf, 0, -1, false, diff_lines)
+  vim.bo[preview_buf].modifiable = false
+  vim.api.nvim_win_set_buf(win, preview_buf)
+  vim.api.nvim_set_current_win(win)
+
+  local target_line = 1
   if selected_hunk then
-    local target = file.status == "deleted" and selected_hunk.oldStart or selected_hunk.newStart
-    vim.api.nvim_set_current_win(file.status == "deleted" and base_win or working_win)
-    vim.api.nvim_win_set_cursor(0, { math.max(1, target), 0 })
-  end
-  if selected_line then
-    local target_win = selected_line.side == "base" and base_win or working_win
-    vim.api.nvim_set_current_win(target_win)
-    vim.api.nvim_win_set_cursor(0, { math.max(1, selected_line.lineNumber), 0 })
-  end
-
-  if on_line_context then
-    local function install_line_context(target_buf, side)
-      local function send_range(first, last)
-        local start_line, end_line = math.min(first, last), math.max(first, last)
-        local selected = vim.api.nvim_buf_get_lines(target_buf, start_line - 1, end_line, false)
-        on_line_context(file, side, { startLine = start_line, endLine = end_line },
-          table.concat(selected, "\n"), initial_diff_identity, target_buf, selected_hunk)
+    for index, line in ipairs(diff_lines) do
+      if line:match("^@@ ") then
+        local old, old_count, new, new_count = line:match("^@@ %-(%d+),?(%d*) %+(%d+),?(%d*) @@")
+        if tonumber(old) == selected_hunk.oldStart
+          and (old_count == "" and 1 or tonumber(old_count)) == selected_hunk.oldLines
+          and tonumber(new) == selected_hunk.newStart
+          and (new_count == "" and 1 or tonumber(new_count)) == selected_hunk.newLines then
+          target_line = index
+          break
+        end
       end
-      vim.keymap.set("n", "<leader>nx", function()
-        local line = vim.api.nvim_win_get_cursor(0)[1]
-        send_range(line, line)
-      end, { buffer = target_buf, silent = true, desc = "Ask existing agent about this line" })
-      vim.keymap.set("x", "<leader>nx", function()
-        local first = vim.fn.getpos("v")[2]
-        local last = vim.api.nvim_win_get_cursor(0)[1]
-        send_range(first, last)
-      end, { buffer = target_buf, silent = true, desc = "Ask existing agent about selected lines" })
     end
-    install_line_context(base_buf, "base")
-    install_line_context(working_buf, "working-tree")
+  elseif selected_line then
+    for index, line in ipairs(diff_lines) do
+      if line:match("^@@ ") then target_line = index; break end
+    end
   end
+  pcall(vim.api.nvim_win_set_cursor, win, { target_line, 0 })
 end
 
 local function render(buf, root, workspace, expanded_files, expanded_dirs, expanded_tasks, filter_mode_value)
@@ -832,6 +782,41 @@ function M.open(opts)
     end
   end
 
+  local function preview_row(row)
+    if not row then return end
+    local workspace = vim.b[buf].neolit_workspace
+    if row.kind == "planning_document" then
+      open_in_preview(row.path)
+    elseif row.kind == "repository_file" then
+      local changed
+      for _, file in ipairs(workspace and workspace.git.changedFiles or {}) do
+        if file.path == row.path or file.previousPath == row.path then changed = file; break end
+      end
+      if changed then
+        open_diff(root, changed, nil, ask_line_context, workspace.git.base, nil, diff_state)
+      else
+        open_in_preview(row.path)
+      end
+    elseif row.kind == "file" then
+      open_diff(root, row.file, nil, ask_line_context, workspace and workspace.git.base, nil, diff_state)
+    elseif row.kind == "hunk" or row.kind == "change_line" then
+      open_diff(root, row.file, row.hunk, ask_line_context, workspace and workspace.git.base,
+        row.kind == "change_line" and { side = row.side, lineNumber = row.lineNumber } or nil, diff_state)
+    elseif row.kind == "task" then
+      local path = row.task.key:match("^(.-)::")
+      if path then open_in_preview(path, row.task.range.startLine) end
+    elseif row.kind == "requirement" then
+      open_in_preview(row.spec_path, row.requirement.range.startLine)
+    elseif row.kind == "planned_file" then
+      local changed
+      for _, file in ipairs(workspace and workspace.git.changedFiles or {}) do
+        if file.path == row.path or file.previousPath == row.path then changed = file; break end
+      end
+      if changed then open_diff(root, changed, nil, ask_line_context, workspace.git.base, nil, diff_state)
+      else open_in_preview(row.path) end
+    end
+  end
+
   local function show_details()
     local row = vim.b[buf].neolit_rows and vim.b[buf].neolit_rows[vim.api.nvim_win_get_cursor(0)[1]]
     if not row then return end
@@ -1461,7 +1446,10 @@ function M.open(opts)
   vim.api.nvim_create_autocmd("CursorMoved", {
     group = refresh_group,
     buffer = buf,
-    callback = highlight_related,
+    callback = function()
+      highlight_related()
+      preview_row(current_row())
+    end,
   })
   vim.api.nvim_create_autocmd({ "BufWritePost", "FileChangedShellPost" }, {
     group = refresh_group,
