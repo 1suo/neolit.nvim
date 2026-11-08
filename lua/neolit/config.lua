@@ -1,104 +1,46 @@
---- neolit.nvim configuration: defaults, merge, and neolit dist resolution.
---- Pure: every function takes its environment (env table, readable probe,
---- plugin root) as an argument so tests can drive it without Vim state.
-
+--- Configuration and local-core resolution for the Git-native planning host.
 local M = {}
 
 M.defaults = {
-  --- Path to a neolit checkout containing dist/ (built with `npm run build`).
-  --- Default resolution order: this option, $NEOLIT_DIR, a `neolit` sibling
-  --- directory of this plugin, then the npm global root.
   neolit_dir = nil,
-  --- Node executable used to run the host shim.
   node = "node",
-  --- Repository root the plan operates on; defaults to the working directory
-  --- at open time.
   directory = nil,
-  --- Git ref used as the planning diff base (default HEAD).
   comparison_base = "HEAD",
-  --- Force the no-model mode (same as AUGMENT_TUI_NO_MODEL=1 in the TUI).
-  no_model = false,
-  --- Serve no agent socket (AUGMENT_TUI_NO_SOCKET=1). Without this the
-  --- panel serves a directory-keyed address —
-  --- `$XDG_RUNTIME_DIR/neolit/augment-nvim-<basename>-<hash>.sock`, the
-  --- TUI's own default with an `nvim` marker — so a TUI in the same
-  --- repository never collides and panels in different projects never
-  --- starve each other. External agents can attach with
-  --- `augmentd --mcp --connect`.
-  no_socket = false,
-  --- Persist the active task to disk and resume the newest one on open
-  --- (AUGMENT_TUI_TASKS semantics; the TUI default is on).
-  persist_tasks = true,
-  --- Panel geometry: sidebar width in columns (default 42, capped at half
-  --- the screen), diff-column width (nil = half the non-sidebar space;
-  --- the description column keeps a 24-column minimum).
-  sidebar_width = 42,
-  detail_width = nil,
-  --- Palette for the panel: "system" links every color to the active
-  --- colorscheme's semantic groups; "tui" uses the terminal TUI's exact
-  --- hexes (with an xterm-256 fallback for termguicolors=off).
-  palette = "system",
-  --- Global prefix (e.g. "<leader>n") binding the TUI operation keys
-  --- (n e <CR> 1-9 d a c l w m t x o s q <Tab> <Esc>) from any buffer. Motion
-  --- keys stay pane-local. nil disables global maps.
-  keymap_prefix = nil,
-  --- Test seam: { input = function(opts, cb) end, select = function(items, opts, cb) end }
-  --- overriding vim.ui.input / vim.ui.select.
-  hooks = nil,
-  --- Extra argv appended to the host shim (advanced; tests use --stub-runtime).
-  host_args = nil,
 }
 
 function M.merge(user)
   local merged = {}
-  for key, value in pairs(M.defaults) do
-    merged[key] = value
-  end
-  for key, value in pairs(user or {}) do
-    merged[key] = value
-  end
+  for key, value in pairs(M.defaults) do merged[key] = value end
+  for key, value in pairs(user or {}) do merged[key] = value end
   return merged
 end
 
---- Panel window widths for an editor `columns` cells wide. The panel takes
---- the whole editor: a fixed-width tree sidebar, then the remaining width
---- halves between the diff column and the description column (the
---- description keeps a 24-column minimum).
-function M.geometry(columns, cfg)
-  cfg = cfg or {}
-  local sidebar = cfg.sidebar_width or M.defaults.sidebar_width
-  sidebar = math.max(20, math.min(sidebar, math.floor(columns / 2)))
-  local rest = math.max(0, columns - sidebar)
-  local detail = cfg.detail_width or math.floor(rest / 2)
-  detail = math.max(0, math.min(detail, math.max(0, rest - 24)))
-  return { sidebar = sidebar, detail = detail }
-end
-
---- Lexically normalizes a path: collapses `.` and `seg/..` pairs without
---- touching the filesystem, so sibling candidates like
---- `/x/neolit.nvim/../neolit` compare and dedupe as `/x/neolit`.
 local function normalize(path)
-  if not path:find("/%.%.") and not path:find("/%./") then return path end
+  local absolute = path:sub(1, 1) == "/"
   local parts = {}
   for part in path:gmatch("[^/]+") do
     if part == ".." then
-      if #parts > 0 and parts[#parts] ~= ".." then parts[#parts] = nil else parts[#parts + 1] = part end
-    elseif part ~= "." then
+      if #parts > 0 and parts[#parts] ~= ".." then
+        parts[#parts] = nil
+      elseif not absolute then
+        parts[#parts + 1] = part
+      end
+    elseif part ~= "." and part ~= "" then
       parts[#parts + 1] = part
     end
   end
-  return (path:sub(1, 1) == "/" and "/" or "") .. table.concat(parts, "/")
+  local result = table.concat(parts, "/")
+  if absolute then result = "/" .. result end
+  return result == "" and (absolute and "/" or ".") or result
 end
 
---- Returns the first candidate directory whose dist/index.js exists, or nil
---- plus the list of candidates tried. ctx: { env = table, plugin_root = path,
---- readable = function(path) -> boolean, npm_root = path|nil }.
 function M.find_neolit_dir(cfg, ctx)
-  local candidates = {}
+  local candidates, seen = {}, {}
   local function add(path)
-    if path and path ~= "" then
+    if type(path) == "string" and path ~= "" then
       path = normalize(path)
-      if not vim.tbl_contains(candidates, path) then
+      if not seen[path] then
+        seen[path] = true
         candidates[#candidates + 1] = path
       end
     end
@@ -106,36 +48,24 @@ function M.find_neolit_dir(cfg, ctx)
 
   add(cfg.neolit_dir)
   add(ctx.env.NEOLIT_DIR)
-  if ctx.plugin_root then
-    add(ctx.plugin_root .. "/../neolit")
-  end
-  if ctx.npm_root then
-    add(ctx.npm_root .. "/neolit")
-  end
+  if ctx.plugin_root then add(ctx.plugin_root .. "/../neolit") end
+  if ctx.npm_root then add(ctx.npm_root .. "/neolit") end
 
   for _, candidate in ipairs(candidates) do
-    if ctx.readable(candidate .. "/dist/index.js") then
-      return candidate, nil
-    end
+    if ctx.readable(candidate .. "/dist/index.js") then return candidate end
   end
   return nil, candidates
 end
 
---- Absolute path of this plugin's root directory (the one containing lua/,
---- host/), or nil when the source path cannot be resolved. Paths are made
---- absolute and normalized because :lua sourcing and -l scripts report
---- relative source paths.
 function M.plugin_root()
   local info = debug.getinfo(1, "S")
   local source = info and info.source
   if type(source) ~= "string" or source:sub(1, 1) ~= "@" then return nil end
-  local file = source:sub(2)                            -- <root>/lua/neolit/config.lua
-  if file:sub(1, 1) ~= "/" then
-    file = vim.fn.getcwd() .. "/" .. file
-  end
-  local module_dir = file:match("^(.*)/")               -- <root>/lua/neolit
-  local lua_dir = module_dir and module_dir:match("^(.*)/") -- <root>/lua
-  local root = lua_dir and lua_dir:match("^(.*)/")      -- <root>
+  local file = source:sub(2)
+  if file:sub(1, 1) ~= "/" then file = vim.fn.getcwd() .. "/" .. file end
+  local module_dir = file:match("^(.*)/")
+  local lua_dir = module_dir and module_dir:match("^(.*)/")
+  local root = lua_dir and lua_dir:match("^(.*)/")
   return root and normalize(root)
 end
 
