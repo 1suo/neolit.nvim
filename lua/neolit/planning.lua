@@ -212,6 +212,33 @@ local function open_diff(root, file, selected_hunk, on_line_context, comparison_
   end
   pcall(vim.api.nvim_win_set_cursor, win, { target_line, 0 })
 end
+local function collect_affected_paths(workspace)
+  local affected = {}
+  local tasks_by_key = {}
+  for _, task in ipairs(workspace.tasks or {}) do tasks_by_key[task.key] = task end
+  for _, file in ipairs(workspace.git.changedFiles or {}) do affected[file.path] = true end
+  local function include_task(task_key)
+    local task = tasks_by_key[task_key]
+    if not task then return end
+    local todo_path = task.key:match("^(.-)::")
+    if todo_path then affected[todo_path] = true end
+    for _, requirement in ipairs(task.resolvedRequirements or {}) do
+      affected[requirement.specPath] = true
+    end
+  end
+  for _, association in ipairs(workspace.git.associations or {}) do
+    for _, task_key in ipairs(association.taskKeys or {}) do include_task(task_key) end
+  end
+  for _, association in ipairs(workspace.git.hunkAssociations or {}) do
+    for _, task_key in ipairs(association.candidateTaskKeys or {}) do include_task(task_key) end
+    for _, ref in ipairs(association.candidateRequirementRefs or {}) do
+      local spec_path = ref:match("^(.-)#")
+      if spec_path then affected[spec_path] = true end
+    end
+  end
+  return affected
+end
+
 local function render(buf, root, workspace, expanded_files, expanded_dirs, expanded_tasks, filter_mode_value)
   local lines, rows = {}, {}
   expanded_files, expanded_dirs, expanded_tasks = expanded_files or {}, expanded_dirs or {}, expanded_tasks or {}
@@ -278,27 +305,7 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
     return "Derived from Markdown and current Git evidence"
   end
 
-  local affected_paths = {}
-  for path in pairs(changed_by_path) do affected_paths[path] = true end
-  local function include_task_sources(task_key)
-    local task = tasks_by_key[task_key]
-    if not task then return end
-    local todo_path = task.key:match("^(.-)::")
-    if todo_path then affected_paths[todo_path] = true end
-    for _, requirement in ipairs(task.resolvedRequirements or {}) do
-      affected_paths[requirement.specPath] = true
-    end
-  end
-  for _, association in ipairs(workspace.git.associations or {}) do
-    for _, task_key in ipairs(association.taskKeys or {}) do include_task_sources(task_key) end
-  end
-  for _, association in ipairs(workspace.git.hunkAssociations or {}) do
-    for _, task_key in ipairs(association.candidateTaskKeys or {}) do include_task_sources(task_key) end
-    for _, ref in ipairs(association.candidateRequirementRefs or {}) do
-      local spec_path = ref:match("^(.-)#")
-      if spec_path then affected_paths[spec_path] = true end
-    end
-  end
+  local affected_paths = collect_affected_paths(workspace)
 
   local tree_root = { children = {}, files = {} }
   local seen_paths = {}
@@ -1571,6 +1578,7 @@ function M.open(opts)
     filter_mode = filter_mode == "all" and "affected" or "all"
     if filter_mode == "affected" then
       local workspace = vim.b[buf].neolit_workspace or {}
+      local affected_paths = collect_affected_paths(workspace)
       for path in pairs(affected_paths) do
         local parent = path:match("^(.*)/[^/]+$")
         while parent do expanded_dirs[parent] = true; parent = parent:match("^(.*)/[^/]+$") end
