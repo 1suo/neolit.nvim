@@ -53,7 +53,7 @@ local function normalize_diff(diff)
   return (diff or ""):gsub("\r\n", "\n"):gsub("\n+$", "")
 end
 
-local function open_diff(root, file, selected_hunk, on_line_context, comparison_base, selected_line, diff_state)
+local function open_diff(root, file, selected_hunk, on_line_context, comparison_base, selected_line, diff_state, focus)
   local path = safe_repo_path(root, file.path)
   local base_path = file.previousPath or file.path
   if not path or not safe_repo_path(root, base_path) then
@@ -92,7 +92,7 @@ local function open_diff(root, file, selected_hunk, on_line_context, comparison_
   vim.api.nvim_buf_set_lines(preview_buf, 0, -1, false, diff_lines)
   vim.bo[preview_buf].modifiable = false
   vim.api.nvim_win_set_buf(win, preview_buf)
-  vim.api.nvim_set_current_win(win)
+  if focus then vim.api.nvim_set_current_win(win) end
 
   local target_line = 1
   if selected_hunk then
@@ -447,7 +447,7 @@ function M.open(opts)
   local diff_state = { tree_win = tree_win, preview_win = preview_win }
   local filter_mode = "all"
 
-  local function open_in_preview(relative_path, line)
+  local function open_in_preview(relative_path, line, focus)
     local target = safe_repo_path(root, relative_path)
     if not target or vim.fn.filereadable(target) ~= 1 then
       vim.notify("File is no longer available: " .. tostring(relative_path), vim.log.levels.WARN)
@@ -473,7 +473,7 @@ function M.open(opts)
     local target_buf = vim.fn.bufadd(target)
     vim.fn.bufload(target_buf)
     vim.api.nvim_win_set_buf(win, target_buf)
-    vim.api.nvim_set_current_win(win)
+    if focus then vim.api.nvim_set_current_win(win) end
     if line then
       vim.api.nvim_win_set_cursor(win, { math.max(1, line), 0 })
     end
@@ -783,34 +783,34 @@ function M.open(opts)
     if not row then return end
     local workspace = vim.b[buf].neolit_workspace
     if row.kind == "planning_document" then
-      open_in_preview(row.path)
+      open_in_preview(row.path, nil, false)
     elseif row.kind == "repository_file" then
       local changed
       for _, file in ipairs(workspace and workspace.git.changedFiles or {}) do
         if file.path == row.path or file.previousPath == row.path then changed = file; break end
       end
       if changed then
-        open_diff(root, changed, nil, ask_line_context, workspace.git.base, nil, diff_state)
+        open_diff(root, changed, nil, ask_line_context, workspace.git.base, nil, diff_state, false)
       else
-        open_in_preview(row.path)
+        open_in_preview(row.path, nil, false)
       end
     elseif row.kind == "file" then
-      open_diff(root, row.file, nil, ask_line_context, workspace and workspace.git.base, nil, diff_state)
+      open_diff(root, row.file, nil, ask_line_context, workspace and workspace.git.base, nil, diff_state, false)
     elseif row.kind == "hunk" or row.kind == "change_line" then
       open_diff(root, row.file, row.hunk, ask_line_context, workspace and workspace.git.base,
-        row.kind == "change_line" and { side = row.side, lineNumber = row.lineNumber } or nil, diff_state)
+        row.kind == "change_line" and { side = row.side, lineNumber = row.lineNumber } or nil, diff_state, false)
     elseif row.kind == "task" then
       local path = row.task.key:match("^(.-)::")
-      if path then open_in_preview(path, row.task.range.startLine) end
+      if path then open_in_preview(path, row.task.range.startLine, false) end
     elseif row.kind == "requirement" then
-      open_in_preview(row.spec_path, row.requirement.range.startLine)
+      open_in_preview(row.spec_path, row.requirement.range.startLine, false)
     elseif row.kind == "planned_file" then
       local changed
       for _, file in ipairs(workspace and workspace.git.changedFiles or {}) do
         if file.path == row.path or file.previousPath == row.path then changed = file; break end
       end
-      if changed then open_diff(root, changed, nil, ask_line_context, workspace.git.base, nil, diff_state)
-      else open_in_preview(row.path) end
+      if changed then open_diff(root, changed, nil, ask_line_context, workspace.git.base, nil, diff_state, false)
+      else open_in_preview(row.path, nil, false) end
     end
   end
 
