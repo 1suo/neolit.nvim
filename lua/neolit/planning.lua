@@ -181,6 +181,15 @@ local function render(buf, root, workspace, expanded_files)
       add(string.format("    %s @@ -%d,%d +%d,%d @@ %s%s", hunk_marker, hunk.oldStart, hunk.oldLines, hunk.newStart, hunk.newLines, hunk.header, candidate_label), {
         kind = "hunk", key = file_key .. ":hunk:" .. hunk_index, file = file, hunk = hunk, association = association, hunkAssociation = hunk_association,
       })
+      for line_index, changed_text in ipairs(hunk.addedLines or {}) do
+        local line_number = hunk.addedLineNumbers and hunk.addedLineNumbers[line_index]
+          or (hunk.newStart + line_index - 1)
+        add(string.format("      + %d  %s", line_number, changed_text), {
+          kind = "change_line", key = file_key .. ":hunk:" .. hunk_index .. ":add:" .. line_index,
+          file = file, hunk = hunk, hunkAssociation = hunk_association,
+          lineNumber = line_number, lineText = changed_text, side = "working-tree",
+        })
+      end
     end
     end
   end
@@ -466,18 +475,18 @@ function M.open(opts)
       end
     elseif row.kind == "file" then
       open_diff(root, row.file, nil, ask_line_context, workspace and workspace.git.base)
-    elseif row.kind == "hunk" then
+    elseif row.kind == "hunk" or row.kind == "change_line" then
       open_diff(root, row.file, row.hunk, ask_line_context, workspace and workspace.git.base)
     end
   end
 
   local function ask_context()
     local row = vim.b[buf].neolit_rows and vim.b[buf].neolit_rows[vim.api.nvim_win_get_cursor(0)[1]]
-    if not row or (row.kind ~= "file" and row.kind ~= "hunk" and row.kind ~= "requirement" and row.kind ~= "task" and row.kind ~= "planned_file") then
+    if not row or (row.kind ~= "file" and row.kind ~= "hunk" and row.kind ~= "change_line" and row.kind ~= "requirement" and row.kind ~= "task" and row.kind ~= "planned_file") then
       vim.notify("Select a task, requirement, planned file, or changed file first")
       return
     end
-    if row.kind == "file" or row.kind == "hunk" then
+    if row.kind == "file" or row.kind == "hunk" or row.kind == "change_line" then
       local workspace = vim.b[buf].neolit_workspace
       local base = workspace and workspace.git.base or "HEAD"
       local result = vim.system(diff_command(row.file, base), { cwd = root, text = true }):wait()
@@ -495,7 +504,7 @@ function M.open(opts)
         return
       end
       local selected_diff = full_diff
-      if row.kind == "hunk" then
+      if row.kind == "hunk" or row.kind == "change_line" then
         local lines, capture, selected = vim.split(full_diff, "\n", { plain = true }), {}, false
         for _, line in ipairs(lines) do
           if line:match("^@@ ") then
@@ -535,7 +544,7 @@ function M.open(opts)
           }
         end
       end
-      if row.kind == "hunk" and row.hunkAssociation then
+      if (row.kind == "hunk" or row.kind == "change_line") and row.hunkAssociation then
         for _, reference in ipairs(row.hunkAssociation.candidateRequirementRefs or {}) do
           local spec_path, requirement_id = reference:match("^(.-)#([^#]+)$")
           for _, spec in ipairs(workspace and workspace.specs or {}) do
@@ -558,7 +567,9 @@ function M.open(opts)
           baseCommit = current_base ~= "" and current_base or "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
           diffText = full_diff,
           selectedDiffText = selected_diff,
-          hunk = row.kind == "hunk" and row.hunk or nil,
+          hunk = (row.kind == "hunk" or row.kind == "change_line") and row.hunk or nil,
+          selectedLinesText = row.kind == "change_line" and row.lineText or nil,
+          lineRange = row.kind == "change_line" and { startLine = row.lineNumber, endLine = row.lineNumber } or nil,
           relatedTasks = related_tasks,
           relatedRequirements = related_requirements,
         }
