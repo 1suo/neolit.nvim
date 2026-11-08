@@ -790,6 +790,8 @@ function M.open(opts)
   local diff_state = { tree_win = tree_win, preview_win = preview_win, diff_view = cfg.diff_view or "side_by_side" }
   local filter_mode = "all"
 
+  local archive_paragraph
+
   local function open_in_preview(relative_path, line, focus)
     local original_win = vim.api.nvim_get_current_win()
     local target = safe_repo_path(root, relative_path)
@@ -821,6 +823,11 @@ function M.open(opts)
     -- listed state of buffers that were already open before Neolit previewed them.
     if existing_buf < 0 then vim.bo[target_buf].buflisted = false end
     vim.api.nvim_win_set_buf(win, target_buf)
+    vim.keymap.set("n", "a", function()
+      if archive_paragraph then
+        archive_paragraph(relative_path, vim.api.nvim_win_get_cursor(win)[1])
+      end
+    end, { buffer = target_buf, silent = true, nowait = true, desc = "Archive/restore SPEC paragraph under cursor" })
     vim.wo[win].wrap = vim.go.wrap
     if focus then
       vim.api.nvim_set_current_win(win)
@@ -1314,7 +1321,7 @@ function M.open(opts)
     refresh()
   end
 
-  local function archive_paragraph(relative, cursor_line)
+  archive_paragraph = function(relative, cursor_line)
     local is_spec = false
     for _, spec in ipairs((vim.b[buf].neolit_workspace or {}).specs or {}) do
       if spec.path == relative or spec.referencePath == relative then is_spec = true; break end
