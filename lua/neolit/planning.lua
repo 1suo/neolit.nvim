@@ -488,6 +488,10 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
         local ref = path .. "#" .. requirement.id
         local projection = requirement_projections[ref]
         local state = requirement_states[ref] or "unplanned"
+        local reference_path = path
+        for _, document in ipairs(workspace.specs or {}) do
+          if document.path == path then reference_path = document.referencePath or path; break end
+        end
         local requirement_key = "requirement:" .. ref
         local requirement_expanded = expanded_tasks[requirement_key] == true
         local linked_tasks = {}
@@ -539,7 +543,7 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
         add(child_prefix .. string.rep(" ", child_depth) .. (has_details and (requirement_expanded and "- " or "+ ") or "  ")
           .. requirement.id .. " " .. state:upper() .. " " .. (requirement.text or ""),
           { kind = "requirement", key = requirement_key, parent_key = "file:" .. path,
-            requirement = requirement, spec_path = path, projection = projection,
+            requirement = requirement, spec_path = path, reference_path = reference_path, projection = projection,
             expanded = requirement_expanded, expandable = has_details })
         if requirement_expanded then
           if #(requirement.headingPath or {}) > 0 then
@@ -1491,7 +1495,7 @@ function M.open(opts)
     local requirement_ref
     if selected_row.kind == "requirement" and type(selected_row.spec_path) == "string"
       and selected_requirement and type(selected_requirement.id) == "string" then
-      requirement_ref = selected_row.spec_path .. "#" .. selected_requirement.id
+      requirement_ref = (selected_row.reference_path or selected_row.spec_path) .. "#" .. selected_requirement.id
     end
 
     local function list(value)
@@ -1503,7 +1507,7 @@ function M.open(opts)
       for _, task in ipairs(list(workspace.tasks)) do
         if type(task) == "table" then
           for _, requirement in ipairs(list(task.resolvedRequirements)) do
-            if type(requirement) == "table" and requirement.specPath == selected_row.spec_path
+            if type(requirement) == "table" and requirement.specPath == (selected_row.reference_path or selected_row.spec_path)
               and requirement.id == selected_requirement.id then
               if type(task.key) == "string" then linked_task_keys[task.key] = true end
             end
@@ -1531,7 +1535,7 @@ function M.open(opts)
             local requirement = candidate.requirement
             for _, item in ipairs(list(selected_task.resolvedRequirements)) do
               if type(item) == "table" and type(requirement) == "table"
-                and item.specPath == (candidate.spec_path or requirement.specPath)
+                and item.specPath == (candidate.reference_path or requirement.specPath)
                 and item.id == requirement.id then
                 related = true
                 break
@@ -1542,7 +1546,7 @@ function M.open(opts)
           if candidate.kind == "task" or candidate.kind == "requirement_task" then
             local task = type(candidate.task) == "table" and candidate.task or nil
             for _, item in ipairs(list(task and task.resolvedRequirements)) do
-              if type(item) == "table" and item.specPath == selected_row.spec_path
+              if type(item) == "table" and item.specPath == (selected_row.reference_path or selected_row.spec_path)
                 and item.id == selected_requirement.id then
                 related = true
                 break
