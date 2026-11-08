@@ -1265,6 +1265,11 @@ function M.open(opts)
       range = row.requirement.range
       label = "SPEC requirement " .. tostring(row.requirement.id)
       marker = row.requirement.id
+    elseif (row.kind == "requirement_criterion" or row.kind == "task_acceptance") and row.criterion then
+      relative = row.criterion.sourcePath or row.criterion.specPath
+      range = row.criterion.range
+      label = "SPEC acceptance criterion " .. tostring(row.criterion.id)
+      marker = row.criterion.id
     else
       vim.notify("Select a TODO task or SPEC requirement to archive", vim.log.levels.INFO)
       return
