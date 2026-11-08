@@ -403,6 +403,10 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
       add(prefix .. indent .. " " .. description,
         { kind = "task_description", parent_key = "task:" .. key, task = task })
     end
+    for _, note in ipairs(task.agentNotes or {}) do
+      add(prefix .. indent .. " AGENT " .. note,
+        { kind = "task_agent_note", parent_key = "task:" .. key, task = task })
+    end
     for _, requirement in ipairs(task.resolvedRequirements or {}) do
       add(prefix .. indent .. " SPEC " .. requirement.specPath .. "#" .. requirement.id .. " " .. requirement.text,
         { kind = "task_requirement", parent_key = "task:" .. key, requirement = requirement, task = task })
@@ -957,11 +961,11 @@ function M.open(opts)
         open_in_preview(todo_path, row.task.range.startLine, true)
       end
     elseif row.kind == "task_requirement" then
-      open_in_preview(row.requirement.specPath, row.requirement.range.startLine, true)
+      open_in_preview((row.requirement.sourcePath or row.requirement.specPath), row.requirement.range.startLine, true)
     elseif row.kind == "task_acceptance" then
-      open_in_preview(row.criterion.specPath, row.criterion.range.startLine, true)
+      open_in_preview((row.criterion.sourcePath or row.criterion.specPath), row.criterion.range.startLine, true)
     elseif row.kind == "requirement_criterion" then
-      open_in_preview(row.criterion.specPath, row.criterion.range.startLine, true)
+      open_in_preview((row.criterion.sourcePath or row.criterion.specPath), row.criterion.range.startLine, true)
     elseif row.kind == "planned_file" then
       local changed
       for _, file in ipairs(workspace and workspace.git.changedFiles or {}) do
@@ -1032,11 +1036,11 @@ function M.open(opts)
       local path = row.task.key:match("^(.-)::")
       if path then open_in_preview(path, row.task.range.startLine, false) end
     elseif row.kind == "task_requirement" then
-      open_in_preview(row.requirement.specPath, row.requirement.range.startLine, false)
+      open_in_preview((row.requirement.sourcePath or row.requirement.specPath), row.requirement.range.startLine, false)
     elseif row.kind == "task_acceptance" then
-      open_in_preview(row.criterion.specPath, row.criterion.range.startLine, false)
+      open_in_preview((row.criterion.sourcePath or row.criterion.specPath), row.criterion.range.startLine, false)
     elseif row.kind == "requirement_criterion" then
-      open_in_preview(row.criterion.specPath, row.criterion.range.startLine, false)
+      open_in_preview((row.criterion.sourcePath or row.criterion.specPath), row.criterion.range.startLine, false)
     elseif row.kind == "requirement" then
       open_in_preview(row.spec_path, row.requirement.range.startLine, false)
     elseif row.kind == "planned_file" then
@@ -1066,11 +1070,11 @@ function M.open(opts)
     elseif row.kind == "task_description" or row.kind == "task_heading" then
       return row.task.key:match("^(.-)::")
     elseif row.kind == "task_requirement" then
-      return row.requirement.specPath, row.requirement.range and row.requirement.range.startLine
+      return (row.requirement.sourcePath or row.requirement.specPath), row.requirement.range and row.requirement.range.startLine
     elseif row.kind == "task_acceptance" then
-      return row.criterion.specPath, row.criterion.range and row.criterion.range.startLine
+      return (row.criterion.sourcePath or row.criterion.specPath), row.criterion.range and row.criterion.range.startLine
     elseif row.kind == "requirement_criterion" then
-      return row.criterion.specPath, row.criterion.range and row.criterion.range.startLine
+      return (row.criterion.sourcePath or row.criterion.specPath), row.criterion.range and row.criterion.range.startLine
     end
     return nil
   end
@@ -1148,15 +1152,15 @@ function M.open(opts)
         copy_value(row.requirement.text, "Requirement text")
       end
     elseif row.kind == "acceptance_criterion" or row.kind == "requirement_criterion" then
-      if not copy_source_line(row.criterion.specPath, row.criterion.range and row.criterion.range.startLine, "Acceptance criterion source") then
+      if not copy_source_line((row.criterion.sourcePath or row.criterion.specPath), row.criterion.range and row.criterion.range.startLine, "Acceptance criterion source") then
         copy_value(row.criterion.text, "Acceptance criterion")
       end
     elseif row.kind == "task_requirement" then
-      if not copy_source_line(row.requirement.specPath, row.requirement.range and row.requirement.range.startLine, "Requirement source") then
+      if not copy_source_line((row.requirement.sourcePath or row.requirement.specPath), row.requirement.range and row.requirement.range.startLine, "Requirement source") then
         copy_value(row.requirement.text, "Requirement text")
       end
     elseif row.kind == "task_acceptance" then
-      if not copy_source_line(row.criterion.specPath, row.criterion.range and row.criterion.range.startLine, "Acceptance criterion source") then
+      if not copy_source_line((row.criterion.sourcePath or row.criterion.specPath), row.criterion.range and row.criterion.range.startLine, "Acceptance criterion source") then
         copy_value(row.criterion.text, "Acceptance criterion")
       end
     elseif row.kind == "task_change" then
