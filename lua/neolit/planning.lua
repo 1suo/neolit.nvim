@@ -49,7 +49,7 @@ local function normalize_diff(diff)
   return (diff or ""):gsub("\r\n", "\n"):gsub("\n+$", "")
 end
 
-local function open_diff(root, file, selected_hunk, on_line_context, comparison_base)
+local function open_diff(root, file, selected_hunk, on_line_context, comparison_base, selected_line)
   -- Git paths are repository-relative, but a changed path may itself be a
   -- symlink. Never let native editor navigation follow it outside the
   -- selected worktree (the shared core applies the same boundary).
@@ -103,6 +103,11 @@ local function open_diff(root, file, selected_hunk, on_line_context, comparison_
     local target = file.status == "deleted" and selected_hunk.oldStart or selected_hunk.newStart
     vim.api.nvim_set_current_win(file.status == "deleted" and base_win or working_win)
     vim.api.nvim_win_set_cursor(0, { math.max(1, target), 0 })
+  end
+  if selected_line then
+    local target_win = selected_line.side == "base" and base_win or working_win
+    vim.api.nvim_set_current_win(target_win)
+    vim.api.nvim_win_set_cursor(0, { math.max(1, selected_line.lineNumber), 0 })
   end
 
   if on_line_context then
@@ -485,7 +490,8 @@ function M.open(opts)
     elseif row.kind == "file" then
       open_diff(root, row.file, nil, ask_line_context, workspace and workspace.git.base)
     elseif row.kind == "hunk" or row.kind == "change_line" then
-      open_diff(root, row.file, row.hunk, ask_line_context, workspace and workspace.git.base)
+      open_diff(root, row.file, row.hunk, ask_line_context, workspace and workspace.git.base,
+        row.kind == "change_line" and { side = row.side, lineNumber = row.lineNumber } or nil)
     end
   end
 
