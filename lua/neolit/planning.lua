@@ -326,9 +326,10 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
     local is_expanded = expanded_files[path] == true
     local has_children = (kind == "TODO" and #(tasks_by_doc[path] or {}) > 0)
       or (kind == "SPEC" and #(requirements_by_doc[path] or {}) > 0)
-    add(prefix .. branch .. (has_children and (is_expanded and "- " or "+ ") or "")
+    add(prefix .. branch
       .. (kind and kind ~= "README" and ("[" .. kind .. "] ") or "")
-      .. (marker ~= "" and (marker .. " ") or "") .. entry.name
+      .. entry.name
+      .. (marker ~= "" and (" " .. marker) or "")
       .. doc_summary .. (status and (" [" .. git_marker .. "]") or ""),
       { kind = changed and "file" or (kind and "planning_document" or "repository_file"),
         key = "file:" .. path, path = path, file = changed, doc_kind = kind,
@@ -390,7 +391,7 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
       local child_prefix = prefix .. (last and "   " or "│  ")
       if entry.directory then
         local expanded = expanded_dirs[entry.path] == true
-        add(prefix .. branch .. (expanded and "- " or "+ ") .. entry.name .. "/",
+        add(prefix .. branch .. entry.name .. "/",
           { kind = "tree_directory", key = "dir:" .. entry.path, parent_key = parent_key, path = entry.path, expanded = expanded, expandable = true })
         if expanded then render_tree(entry.node, child_prefix, "dir:" .. entry.path) end
       else
