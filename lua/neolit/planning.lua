@@ -404,6 +404,15 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
         mark(line, state, state == "SATISFIED" and "DiagnosticOk" or state == "PARTIAL" and "DiagnosticWarn" or "DiagnosticInfo")
       elseif row.kind == "acceptance_criterion" then
         vim.api.nvim_buf_add_highlight(buf, rich_ns, "DiagnosticOk", line - 1, 0, -1)
+      elseif row.kind == "repository_file" then
+        local git = row.git_status
+        if git then
+          local code = "[" .. tostring(git.index or " ") .. tostring(git.worktree or " ") .. "]"
+          local git_group = (git.index == "A" or git.worktree == "A" or git.index == "?" or git.worktree == "?") and "DiffAdd"
+            or (git.index == "D" or git.worktree == "D") and "DiffDelete"
+            or (git.index ~= " " or git.worktree ~= " ") and "DiffChange" or "Comment"
+          mark(line, code, git_group)
+        end
       elseif row.kind == "file" then
         if row.doc_kind then mark(line, "[" .. row.doc_kind .. "]", "Special") end
         local association = row.association or {}
@@ -766,9 +775,24 @@ function M.open(opts)
       end
     end
     if row.kind == "planning_document" then
+      local workspace = vim.b[buf].neolit_workspace
       put(row.doc_kind .. " DOCUMENT")
       put(row.path)
-      put("Tasks: " .. tostring(#((vim.b[buf].neolit_workspace.todos or {}))))
+      if row.doc_kind == "TODO" then
+        local count = 0
+        for _, task in ipairs(workspace.tasks or {}) do
+          if task.key:match("^(.-)::") == row.path then count = count + 1 end
+        end
+        put("Tasks: " .. count)
+      elseif row.doc_kind == "SPEC" then
+        for _, spec in ipairs(workspace.specs or {}) do
+          if spec.path == row.path then put("Requirements: " .. #(spec.requirements or {})); break end
+        end
+      elseif row.doc_kind == "README" then
+        for _, item in ipairs(workspace.readmeContents or {}) do
+          if item.path == row.path then put("Characters: " .. #item.content); break end
+        end
+      end
     elseif row.kind == "file" then
       put("CHANGED FILE")
       put(row.file.path)
@@ -1407,13 +1431,23 @@ function M.open(opts)
     rerender_at()
   end, "Collapse all folders, documents, tasks, and diffs")
   map("f", function()
+    local row = current_row()
     filter_mode = filter_mode == "all" and "affected" or "all"
-    local workspace = vim.b[buf].neolit_workspace
-    if workspace then render(buf, root, workspace, expanded_files, expanded_dirs, expanded_tasks, filter_mode) end
-  end, "Toggle all files / affected files")
+    if filter_mode == "affected" then
+      local workspace = vim.b[buf].neolit_workspace or {}
+      for _, file in ipairs(workspace.git and workspace.git.changedFiles or {}) do
+        local parent = file.path:match("^(.*)/[^/]+$")
+        while parent do expanded_dirs[parent] = true; parent = parent:match("^(.*)/[^/]+$") end
+      end
+    end
+    rerender_at(row and row.key)
+  end, "Show all repository paths / affected paths only")
   map("r", refresh, "Refresh Git-native planning workspace")
   map("x", ask_context, "Ask about selected diff/task and copy context for existing agent")
   map("K", show_details, "Show selected file, hunk, task, or requirement details")
+  map("?", function()
+    vim.notify("Tree: <CR> expand/open · za toggle · zo open · zc close · h/l expand/collapse-or-parent · zr/zm one level · zR/zM all · f affected-only · x context · K details · r refresh · q close", vim.log.levels.INFO)
+  end, "Show Neolit tree keys")
   map("q", function()
     refresh_revision = refresh_revision + 1
     if refresh_job then pcall(vim.fn.jobstop, refresh_job); refresh_job = nil end
