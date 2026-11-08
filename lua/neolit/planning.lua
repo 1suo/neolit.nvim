@@ -104,6 +104,12 @@ local function open_diff(root, file, selected_hunk, on_line_context, comparison_
       or { "" }
     if base_lines[#base_lines] == "" and #base_lines > 1 then table.remove(base_lines) end
 
+    -- Leave diff mode before replacing either window's buffer. Otherwise
+    -- Neovim retains the old diff participants while the new buffers are
+    -- attached, eventually hitting E96 during ordinary tree hover.
+    pcall(vim.api.nvim_win_call, base_win, function() vim.cmd("diffoff") end)
+    pcall(vim.api.nvim_win_call, win, function() vim.cmd("diffoff") end)
+
     vim.bo[base_buf].modifiable = true
     vim.api.nvim_buf_set_lines(base_buf, 0, -1, false, base_lines)
     vim.bo[base_buf].modifiable = false
@@ -129,8 +135,8 @@ local function open_diff(root, file, selected_hunk, on_line_context, comparison_
       vim.bo[working_buf].modifiable = false
     end
     vim.api.nvim_win_set_buf(win, working_buf)
-    pcall(vim.api.nvim_win_call, base_win, function() vim.cmd("diffoff"); vim.cmd("diffthis") end)
-    pcall(vim.api.nvim_win_call, win, function() vim.cmd("diffoff"); vim.cmd("diffthis") end)
+    pcall(vim.api.nvim_win_call, base_win, function() vim.cmd("diffthis") end)
+    pcall(vim.api.nvim_win_call, win, function() vim.cmd("diffthis") end)
     if focus then vim.api.nvim_set_current_win(win) end
 
     local base_line = selected_hunk and selected_hunk.oldStart or 1
