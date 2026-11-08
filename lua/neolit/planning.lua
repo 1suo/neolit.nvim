@@ -452,15 +452,37 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
         for _, item in ipairs(projection and projection.acceptanceCriteria or {}) do
           verified_by_ref[item.ref] = item.verified == true
         end
+        local spec_document
         for _, spec in ipairs(workspace.specs or {}) do
-          if spec.path == path then
-            for _, criterion in ipairs(spec.acceptanceCriteria or {}) do
-              if vim.tbl_contains(criterion.requirementIds or {}, requirement.id) then
-                local criterion_ref = path .. "#" .. criterion.id
-                criteria[#criteria + 1] = {
-                  ref = criterion_ref, text = criterion.text, range = criterion.range,
-                  specPath = path, verified = verified_by_ref[criterion_ref] == true,
-                }
+          if spec.path == path then spec_document = spec; break end
+        end
+        if spec_document then
+          for _, criterion in ipairs(spec_document.acceptanceCriteria or {}) do
+            if vim.tbl_contains(criterion.requirementIds or {}, requirement.id) then
+              local criterion_ref = path .. "#" .. criterion.id
+              criteria[#criteria + 1] = {
+                ref = criterion_ref, text = criterion.text, range = criterion.range,
+                specPath = path, verified = verified_by_ref[criterion_ref] == true,
+              }
+            end
+          end
+          -- The core also links an AC without explicit R-IDs when its task has
+          -- exactly one requirement in this SPEC. Preserve that resolved link.
+          for _, coverage in ipairs(projection and projection.acceptanceCriteria or {}) do
+            local exists = false
+            for _, criterion in ipairs(criteria) do
+              if criterion.ref == coverage.ref then exists = true; break end
+            end
+            if not exists then
+              local id = coverage.ref:match("#([^#]+)$")
+              for _, criterion in ipairs(spec_document.acceptanceCriteria or {}) do
+                if criterion.id == id then
+                  criteria[#criteria + 1] = {
+                    ref = coverage.ref, text = criterion.text, range = criterion.range,
+                    specPath = path, verified = coverage.verified == true,
+                  }
+                  break
+                end
               end
             end
           end
