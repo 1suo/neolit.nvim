@@ -151,6 +151,40 @@ local function render(buf, root, workspace, expanded_files)
   for _, item in ipairs(workspace.derived and workspace.derived.requirements or {}) do
     requirement_states[item.specPath .. "#" .. item.requirementId] = item.state
   end
+  add("FILE TREE (" .. #(workspace.git.repositoryFiles or {}) .. " files)", nil)
+  local tree_root = { children = {}, files = {} }
+  for _, path in ipairs(workspace.git.repositoryFiles or {}) do
+    local node = tree_root
+    local parts = vim.split(path, "/", { plain = true })
+    for index = 1, #parts - 1 do
+      local name = parts[index]
+      node.children[name] = node.children[name] or { children = {}, files = {} }
+      node = node.children[name]
+    end
+    node.files[#node.files + 1] = parts[#parts]
+  end
+  local function render_tree(node, prefix, ancestors)
+    local entries = {}
+    for name, child in pairs(node.children) do entries[#entries + 1] = { name = name, directory = true, node = child } end
+    for _, name in ipairs(node.files) do entries[#entries + 1] = { name = name, directory = false } end
+    table.sort(entries, function(a, b)
+      if a.directory ~= b.directory then return a.directory end
+      return a.name:lower() < b.name:lower()
+    end)
+    for index, entry in ipairs(entries) do
+      local last = index == #entries
+      local branch = last and "└── " or "├── "
+      local full_path = prefix == "" and entry.name or (prefix .. "/" .. entry.name)
+      if entry.directory then
+        add("  " .. (ancestors or "") .. branch .. entry.name .. "/", { kind = "tree_directory", path = full_path })
+        render_tree(entry.node, full_path, (ancestors or "") .. (last and "    " or "│   "))
+      else
+        add("  " .. (ancestors or "") .. branch .. entry.name, { kind = "repository_file", path = full_path })
+      end
+    end
+  end
+  render_tree(tree_root, "", "")
+  add("", nil)
   add("DIFF TREE (" .. #workspace.git.changedFiles .. " files)", nil)
   local associations, statuses, hunk_associations = {}, {}, {}
   for _, association in ipairs(workspace.git.associations) do associations[association.path] = association end
@@ -290,8 +324,10 @@ function M.open(opts)
     if refresh_job then pcall(vim.fn.jobstop, refresh_job) end
     local url = vim.uri_from_fname(neolit_dir .. "/dist/planning/workspace.js")
     local comparison_base = vim.json.encode(cfg.comparison_base or "HEAD")
-    local js = "const m = await import(" .. string.format("%q", url) .. "); "
+    local js = "import { execFileSync } from \"node:child_process\"; "
+      .. "const m = await import(" .. string.format("%q", url) .. "); "
       .. "const w = await m.loadPlanningWorkspace(process.cwd(), { comparisonBase: " .. comparison_base .. " }); "
+      .. "w.git.repositoryFiles = execFileSync(\"git\", [\"ls-files\", \"--cached\", \"--others\", \"--exclude-standard\", \"-z\"], { cwd: process.cwd(), encoding: \"utf8\" }).split(\"\\0\").filter(Boolean).sort(); "
       .. "w.git.diff = ''; "
       .. "for (const f of w.git.changedFiles) for (const h of f.hunks) { "
       .. "delete h.changes; delete h.addedLines; delete h.removedLines; "
@@ -484,7 +520,14 @@ function M.open(opts)
     local workspace = vim.b[buf].neolit_workspace
     local row = vim.b[buf].neolit_rows and vim.b[buf].neolit_rows[vim.api.nvim_win_get_cursor(0)[1]]
     if not row then return end
-    if row.kind == "task" then
+    if row.kind == "repository_file" then
+      local target = safe_repo_path(root, row.path)
+      if target and vim.fn.filereadable(target) == 1 then
+        vim.cmd("tabedit " .. vim.fn.fnameescape(target))
+      else
+        vim.notify("Repository file is no longer available: " .. row.path, vim.log.levels.WARN)
+      end
+    elseif row.kind == "task" then
       local task = row.task
       local todo_path = task.key:match("^(.-)::")
       local todo_file = todo_path and safe_repo_path(root, todo_path)
