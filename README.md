@@ -5,7 +5,7 @@ Neovim host for [neolit](https://github.com/1suo/neolit).
 > **Git-native rewrite in progress:** `:NeolitPlan` opens a separate,
 > read-only planning workspace backed by the new Markdown/Git core. It
 > follows linked README → SPEC/TODO documents, shows derived task/requirement
-> states beside their Markdown checkboxes, actual changed files/hunks, opens
+> states beside their Markdown checkboxes, actual changed files/hunks with per-hunk candidate/review markers, opens
 > native diff-syntax buffers, and copies
 > selected task/requirement/file/hunk context for an existing coding-agent
 > conversation. It does not use the legacy planned-diff controller, start an
@@ -57,8 +57,7 @@ separate planning buffer. Use:
 - Repository saves and editor focus refresh the view automatically; `r` forces a refresh and `q` closes it. Set `comparison_base` in Neolit configuration (default `HEAD`) to review against another commit/ref; the resolved base SHA is shown in the planning header and used for native diffs and contextual-question freshness checks.
 
 This view is read-only. It does not stage, apply, commit, or rewrite files.
-File/hunk association is based on explicit TODO file hints; it is not a claim
-that a diff semantically fulfills a requirement. Agent handoff is clipboard
+File-level association is based on explicit TODO file hints. Hunk rows independently show unresolved candidate matches, unplanned changes, or documentation changes; a candidate is navigation context, not a claim that the hunk semantically fulfills a requirement. Hunk questions use only that hunk's candidate tasks. Agent handoff is clipboard
 based for now; there is no Neolit-owned chat or session layer.
 
 ## Requirements
