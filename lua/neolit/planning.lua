@@ -222,9 +222,10 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
     local state = derived and derived.state or task.state or "planned"
     local checkbox = task.checked and "[x]" or "[ ]"
     local indent = string.rep("  ", depth)
-    add(prefix .. indent .. (expanded and "▾ " or "▸ ") .. checkbox .. "  " .. state:upper() .. "  " .. task.text,
+    local expandable = #(task.filePaths or {}) + #(task.specReferences or {}) + #(task.description or {}) + #(task.unresolvedReferences or {}) > 0
+    add(prefix .. indent .. (expandable and (expanded and "▾ " or "▸ ") or "• ") .. checkbox .. "  " .. state:upper() .. "  " .. task.text,
       { kind = "task", key = "task:" .. key, parent_key = "file:" .. (key:match("^(.-)::") or "TODO.md"), task = task, expanded = expanded,
-        expandable = #(task.filePaths or {}) + #(task.specReferences or {}) + #(task.description or {}) + #(task.unresolvedReferences or {}) > 0 })
+        expandable = expandable })
     if not expanded then return end
     for _, path in ipairs(task.filePaths or {}) do
       add(prefix .. indent .. "   ↳  " .. path, { kind = "planned_file", path = path, parent_key = "task:" .. key, task = task })
