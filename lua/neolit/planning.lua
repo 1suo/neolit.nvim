@@ -691,8 +691,8 @@ function M.open(opts)
         local url = vim.uri_from_fname(neolit_dir .. "/dist/planning/context.js")
         local js = "const m = await import(" .. string.format("%q", url) .. "); "
           .. "const p = JSON.parse(process.argv[1]); "
-          .. "const anchor = m.createDiffAnchor({ path: p.path, side: p.side, baseCommit: p.baseCommit, diffText: p.diffText, hunk: p.hunk }); "
-          .. "const result = m.buildDiffQuestionPacket({ question: p.question, anchor, currentBaseCommit: p.baseCommit, currentDiffText: p.diffText, selectedDiffText: p.selectedDiffText, relatedTasks: p.relatedTasks, relatedRequirements: p.relatedRequirements }); "
+          .. "const anchor = m.createDiffAnchor({ path: p.path, side: p.side, baseCommit: p.baseCommit, diffText: p.diffText, hunk: p.hunk, lineRange: p.lineRange }); "
+          .. "const result = m.buildDiffQuestionPacket({ question: p.question, anchor, currentBaseCommit: p.baseCommit, currentDiffText: p.diffText, selectedDiffText: p.selectedDiffText, selectedLinesText: p.selectedLinesText, relatedTasks: p.relatedTasks, relatedRequirements: p.relatedRequirements }); "
           .. "process.stdout.write(JSON.stringify(result));"
         local packet_result = vim.system({
           cfg.node, "--input-type=module", "-e", js, vim.json.encode(payload),
