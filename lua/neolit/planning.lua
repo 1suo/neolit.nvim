@@ -383,6 +383,7 @@ function M.open(opts)
   end
 
   local function selected()
+    local workspace = vim.b[buf].neolit_workspace
     local row = vim.b[buf].neolit_rows and vim.b[buf].neolit_rows[vim.api.nvim_win_get_cursor(0)[1]]
     if not row then return end
     if row.kind == "task" then
@@ -402,7 +403,6 @@ function M.open(opts)
         vim.api.nvim_win_set_cursor(0, { req.range.startLine, 0 })
       end
     elseif row.kind == "planned_file" then
-      local workspace = vim.b[buf].neolit_workspace
       local changed
       for _, file in ipairs(workspace and workspace.git.changedFiles or {}) do
         if file.path == row.path or file.previousPath == row.path then changed = file; break end
