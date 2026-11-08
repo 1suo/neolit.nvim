@@ -309,20 +309,6 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
     local git_marker = status and (status.index .. status.worktree) or "  "
     local association = associations[path] or { state = "unplanned", taskKeys = {} }
     local marker = changed and (association.state == "unplanned" and "?" or (association.state == "partially-mapped" and "~" or "✓")) or ""
-    local doc_summary = ""
-    if kind == "TODO" then
-      doc_summary = string.format(" · %d tasks", #(tasks_by_doc[path] or {}))
-    elseif kind == "SPEC" then
-      doc_summary = string.format(" · %d requirements", #(requirements_by_doc[path] or {}))
-    elseif kind == "README" then
-      for _, item in ipairs(workspace.readmeContents or {}) do
-        if item.path == path then
-          local heading = item.content:match("^%s*#%s+([^\r\n]+)")
-          if heading then doc_summary = " · " .. heading end
-          break
-        end
-      end
-    end
     local is_expanded = expanded_files[path] == true
     local has_children = (kind == "TODO" and #(tasks_by_doc[path] or {}) > 0)
       or (kind == "SPEC" and #(requirements_by_doc[path] or {}) > 0)
@@ -330,7 +316,7 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
       .. (kind and kind ~= "README" and ("[" .. kind .. "] ") or "")
       .. entry.name
       .. (marker ~= "" and (" " .. marker) or "")
-      .. doc_summary .. (status and (" [" .. git_marker .. "]") or ""),
+      .. (status and (" [" .. git_marker .. "]") or ""),
       { kind = changed and "file" or (kind and "planning_document" or "repository_file"),
         key = "file:" .. path, path = path, file = changed, doc_kind = kind,
         association = association, git_status = status, expanded = is_expanded, expandable = has_children,
