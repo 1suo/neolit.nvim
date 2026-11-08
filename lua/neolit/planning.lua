@@ -230,7 +230,7 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
   for _, association in ipairs(workspace.git.associations or {}) do associations[association.path] = association end
   for _, association in ipairs(workspace.git.hunkAssociations or {}) do hunk_associations[association.path .. "#" .. association.hunkIndex] = association end
 
-  local tasks_by_doc, requirements_by_doc, doc_kind = {}, {}, {}
+  local tasks_by_doc, tasks_by_key, requirements_by_doc, doc_kind = {}, {}, {}, {}
   for _, path in ipairs(workspace.readmes or {}) do doc_kind[path] = "README" end
   for _, spec in ipairs(workspace.specs or {}) do
     doc_kind[spec.path] = "SPEC"
@@ -241,6 +241,7 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
     local path = task.key:match("^(.-)::") or "TODO.md"
     tasks_by_doc[path] = tasks_by_doc[path] or {}
     tasks_by_doc[path][#tasks_by_doc[path] + 1] = task
+    tasks_by_key[task.key] = task
   end
   local derived = type(workspace.derived) == "table" and workspace.derived or {}
   local derived_requirements = type(derived.requirements) == "table" and derived.requirements or {}
@@ -335,8 +336,14 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
     local association = associations[path] or { state = "unplanned", taskKeys = {} }
     local marker = changed and (association.state == "unplanned" and "?" or (association.state == "partially-mapped" and "~" or "✓")) or ""
     local is_expanded = expanded_files[path] == true
+    local file_association = associations[path]
+    local file_hunks = {}
+    for _, item in ipairs(workspace.git.hunkAssociations or {}) do
+      if item.path == path then file_hunks[#file_hunks + 1] = item end
+    end
     local has_children = (kind == "TODO" and #(tasks_by_doc[path] or {}) > 0)
       or (kind == "SPEC" and #(requirements_by_doc[path] or {}) > 0)
+      or (changed ~= nil and ((file_association and #(file_association.taskKeys or {}) > 0) or #file_hunks > 0))
     add(prefix .. branch .. (has_children and (is_expanded and "-" or "+") or " ")
       .. (kind and kind ~= "README" and ("[" .. kind .. "] ") or "")
       .. entry.name
@@ -391,6 +398,29 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
             { kind = "acceptance_criterion", parent_key = requirement_key, criterion = criterion, spec_path = path })
         end
         end
+      end
+    elseif changed then
+      for _, task_key in ipairs(file_association and file_association.taskKeys or {}) do
+        local task = tasks_by_key[task_key]
+        if task then
+          add(child_prefix .. " TASK " .. task.text,
+            { kind = "task_change", key = "file-task:" .. path .. ":" .. task_key,
+              parent_key = "file:" .. path, file = changed, association = file_association, task = task })
+        end
+      end
+      for _, association in ipairs(file_hunks) do
+        local task_names = {}
+        for _, task_key in ipairs(association.candidateTaskKeys or {}) do
+          local task = tasks_by_key[task_key]
+          if task then task_names[#task_names + 1] = task.text end
+        end
+        local req_refs = association.candidateRequirementRefs or {}
+        local detail = #task_names > 0 and table.concat(task_names, ", ")
+          or (#req_refs > 0 and table.concat(req_refs, ", ") or "no task or requirement candidate")
+        add(child_prefix .. " HUNK " .. tostring(association.hunkIndex + 1) .. " "
+          .. tostring(association.state):upper() .. " · " .. tostring(association.reason) .. " · " .. detail,
+          { kind = "task_hunk", key = "file-hunk:" .. path .. ":" .. tostring(association.hunkIndex),
+            parent_key = "file:" .. path, file = changed, hunkAssociation = association })
       end
     end
   end
