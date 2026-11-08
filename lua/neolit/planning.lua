@@ -1307,13 +1307,25 @@ function M.open(opts)
       return
     end
     local first_line = source_lines[first] or ""
-    if row.kind == "task" then
+    local marker_count = 0
+    for _, line in ipairs(source_lines) do
+      if row.kind == "task" or row.kind == "requirement_task" then
+        if line:find(marker, 1, true) and line:match("%[[ xX]%]") then marker_count = marker_count + 1 end
+      elseif line:find("**" .. marker .. "**", 1, true) then
+        marker_count = marker_count + 1
+      end
+    end
+    if marker_count ~= 1 then
+      vim.notify("The selected Markdown entry is ambiguous or changed; refresh before archiving", vim.log.levels.WARN)
+      return
+    end
+    if row.kind == "task" or row.kind == "requirement_task" then
       if not first_line:find(marker, 1, true) or not first_line:match("%[[ xX]%]") then
         vim.notify("The selected TODO task changed; refresh before archiving", vim.log.levels.WARN)
         return
       end
-    elseif not first_line:find(marker, 1, true) then
-      vim.notify("The selected SPEC requirement changed; refresh before archiving", vim.log.levels.WARN)
+    elseif not first_line:find("**" .. marker .. "**", 1, true) then
+      vim.notify("The selected SPEC paragraph changed; refresh before archiving", vim.log.levels.WARN)
       return
     end
     local block = {}
