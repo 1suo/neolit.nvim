@@ -61,13 +61,6 @@ local function open_diff(root, file, selected_hunk, on_line_context, comparison_
     return
   end
 
-  -- The right side is a single preview surface. Render the unified diff in
-  -- that buffer instead of creating a second split for a side-by-side diff.
-  local result = vim.system(diff_command(file, comparison_base), { cwd = root, text = true }):wait()
-  local diff_lines = vim.split(result.stdout or "", "\n", { plain = true })
-  if diff_lines[#diff_lines] == "" then table.remove(diff_lines) end
-  if #diff_lines == 0 then diff_lines = { "(no diff available)" } end
-
   local win = diff_state and diff_state.preview_win
   if not win or not vim.api.nvim_win_is_valid(win) then
     local origin = diff_state and diff_state.tree_win or vim.api.nvim_get_current_win()
@@ -77,6 +70,82 @@ local function open_diff(root, file, selected_hunk, on_line_context, comparison_
     win = vim.api.nvim_get_current_win()
     if diff_state then diff_state.preview_win = win end
   end
+
+  local view = diff_state and diff_state.diff_view or "side_by_side"
+  if view == "side_by_side" then
+    local base_win = diff_state and diff_state.base_win
+    if not base_win or not vim.api.nvim_win_is_valid(base_win) then
+      base_win = vim.api.nvim_win_call(win, function()
+        vim.cmd("leftabove vsplit")
+        return vim.api.nvim_get_current_win()
+      end)
+      if diff_state then diff_state.base_win = base_win end
+    end
+
+    local base_buf = diff_state and diff_state.base_buf
+    if not base_buf or not vim.api.nvim_buf_is_valid(base_buf) then
+      base_buf = vim.api.nvim_create_buf(false, true)
+      vim.api.nvim_buf_set_name(base_buf, "neolit-diff-base://" .. vim.fn.sha256(file.path):sub(1, 12))
+      vim.bo[base_buf].buftype = "nofile"
+      vim.bo[base_buf].bufhidden = "hide"
+      vim.bo[base_buf].swapfile = false
+      if diff_state then diff_state.base_buf = base_buf end
+    end
+    local base_result = vim.system({
+      "git", "show", (comparison_base or "HEAD") .. ":" .. base_path,
+    }, { cwd = root, text = true }):wait()
+    local base_lines = base_result.code == 0
+      and vim.split(base_result.stdout or "", "\n", { plain = true })
+      or { "" }
+    if base_lines[#base_lines] == "" and #base_lines > 1 then table.remove(base_lines) end
+
+    vim.bo[base_buf].modifiable = true
+    vim.api.nvim_buf_set_lines(base_buf, 0, -1, false, base_lines)
+    vim.bo[base_buf].modifiable = false
+    vim.bo[base_buf].filetype = vim.filetype.match({ filename = base_path }) or ""
+    vim.api.nvim_win_set_buf(base_win, base_buf)
+
+    local working_buf
+    if vim.fn.filereadable(path) == 1 then
+      working_buf = vim.fn.bufadd(path)
+      vim.fn.bufload(working_buf)
+    else
+      working_buf = diff_state and diff_state.deleted_buf
+      if not working_buf or not vim.api.nvim_buf_is_valid(working_buf) then
+        working_buf = vim.api.nvim_create_buf(false, true)
+        vim.api.nvim_buf_set_name(working_buf, "neolit-diff-empty://" .. vim.fn.sha256(file.path):sub(1, 12))
+        vim.bo[working_buf].buftype = "nofile"
+        vim.bo[working_buf].bufhidden = "hide"
+        vim.bo[working_buf].swapfile = false
+        if diff_state then diff_state.deleted_buf = working_buf end
+      end
+      vim.bo[working_buf].modifiable = true
+      vim.api.nvim_buf_set_lines(working_buf, 0, -1, false, { "" })
+      vim.bo[working_buf].modifiable = false
+    end
+    vim.api.nvim_win_set_buf(win, working_buf)
+    pcall(vim.api.nvim_win_call, base_win, function() vim.cmd("diffoff"); vim.cmd("diffthis") end)
+    pcall(vim.api.nvim_win_call, win, function() vim.cmd("diffoff"); vim.cmd("diffthis") end)
+    if focus then vim.api.nvim_set_current_win(win) end
+
+    local base_line = selected_hunk and selected_hunk.oldStart or 1
+    local working_line = selected_hunk and selected_hunk.newStart or (selected_line and selected_line.lineNumber or 1)
+    pcall(vim.api.nvim_win_set_cursor, base_win, { math.max(1, base_line), 0 })
+    pcall(vim.api.nvim_win_set_cursor, win, { math.max(1, working_line), 0 })
+    return
+  end
+
+  local base_win = diff_state and diff_state.base_win
+  if base_win and vim.api.nvim_win_is_valid(base_win) then
+    pcall(vim.api.nvim_win_call, base_win, function() vim.cmd("diffoff") end)
+    pcall(vim.api.nvim_win_close, base_win, true)
+    if diff_state then diff_state.base_win = nil end
+  end
+
+  local result = vim.system(diff_command(file, comparison_base), { cwd = root, text = true }):wait()
+  local diff_lines = vim.split(result.stdout or "", "\n", { plain = true })
+  if diff_lines[#diff_lines] == "" then table.remove(diff_lines) end
+  if #diff_lines == 0 then diff_lines = { "(no diff available)" } end
 
   local preview_buf = diff_state and diff_state.preview_buf
   if not preview_buf or not vim.api.nvim_buf_is_valid(preview_buf) then
@@ -115,7 +184,6 @@ local function open_diff(root, file, selected_hunk, on_line_context, comparison_
   end
   pcall(vim.api.nvim_win_set_cursor, win, { target_line, 0 })
 end
-
 local function render(buf, root, workspace, expanded_files, expanded_dirs, expanded_tasks, filter_mode_value)
   local lines, rows = {}, {}
   expanded_files, expanded_dirs, expanded_tasks = expanded_files or {}, expanded_dirs or {}, expanded_tasks or {}
@@ -448,7 +516,7 @@ function M.open(opts)
   local expanded_files = {}
   local expanded_dirs = {}
   local expanded_tasks = {}
-  local diff_state = { tree_win = tree_win, preview_win = preview_win }
+  local diff_state = { tree_win = tree_win, preview_win = preview_win, diff_view = cfg.diff_view or "side_by_side" }
   local filter_mode = "all"
 
   local function open_in_preview(relative_path, line, focus)
@@ -1459,7 +1527,7 @@ function M.open(opts)
       if name ~= "" and name:sub(1, #root + 1) == root .. "/" then refresh() end
     end,
   })
-  vim.api.nvim_create_autocmd("FocusGained", {
+  vim.api.nvim_create_autocmd({ "FocusGained", "CursorHold", "CursorHoldI" }, {
     group = refresh_group,
     callback = refresh,
   })
@@ -1505,10 +1573,16 @@ function M.open(opts)
     rerender_at(row and row.key)
   end, "Show all repository paths / affected paths only")
   map("r", refresh, "Refresh Git-native planning workspace")
+  map("D", function()
+    diff_state.diff_view = diff_state.diff_view == "side_by_side" and "unified" or "side_by_side"
+    local row = current_row()
+    if row then preview_row(row) end
+    vim.notify("Neolit diff view: " .. diff_state.diff_view)
+  end, "Toggle side-by-side / unified diff preview")
   map("x", ask_context, "Ask about selected diff/task and copy context for existing agent")
   map("K", show_details, "Show selected file, hunk, task, or requirement details")
   map("?", function()
-    vim.notify("Tree: <CR> expand/open · za toggle · zo open · zc close · h/l expand/collapse-or-parent · zr/zm one level · zR/zM all · f affected-only · x context · K details · r refresh · q close", vim.log.levels.INFO)
+    vim.notify("Tree: <CR> expand/open · za toggle · zo open · zc close · h/l expand/collapse-or-parent · zr/zm one level · zR/zM all · f affected-only · D diff view · x context · K details · r refresh · q/<Esc> close", vim.log.levels.INFO)
   end, "Show Neolit tree keys")
   local function close_workspace()
     refresh_revision = refresh_revision + 1
