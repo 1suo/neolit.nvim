@@ -54,6 +54,11 @@ local function normalize_diff(diff)
 end
 
 local function open_diff(root, file, selected_hunk, on_line_context, comparison_base, selected_line, diff_state, focus)
+  local original_win = vim.api.nvim_get_current_win()
+  local function restore_focus()
+    if focus then return end
+    if vim.api.nvim_win_is_valid(original_win) then vim.api.nvim_set_current_win(original_win) end
+  end
   local path = safe_repo_path(root, file.path)
   local base_path = file.previousPath or file.path
   if not path or not safe_repo_path(root, base_path) then
@@ -154,7 +159,7 @@ local function open_diff(root, file, selected_hunk, on_line_context, comparison_
     pcall(vim.api.nvim_win_set_cursor, base_win, { math.max(1, base_line), 0 })
     pcall(vim.api.nvim_win_set_cursor, win, { math.max(1, working_line), 0 })
     pcall(vim.api.nvim_win_call, win, function() vim.cmd("syncbind") end)
-    if focus then vim.api.nvim_set_current_win(win) end
+    if focus then vim.api.nvim_set_current_win(win) else restore_focus() end
     return
   end
 
@@ -184,7 +189,7 @@ local function open_diff(root, file, selected_hunk, on_line_context, comparison_
   vim.api.nvim_buf_set_lines(preview_buf, 0, -1, false, diff_lines)
   vim.bo[preview_buf].modifiable = false
   vim.api.nvim_win_set_buf(win, preview_buf)
-  if focus then vim.api.nvim_set_current_win(win) end
+  if focus then vim.api.nvim_set_current_win(win) else restore_focus() end
 
   local target_line = 1
   if selected_hunk then
@@ -543,6 +548,7 @@ function M.open(opts)
   local filter_mode = "all"
 
   local function open_in_preview(relative_path, line, focus)
+    local original_win = vim.api.nvim_get_current_win()
     local target = safe_repo_path(root, relative_path)
     if not target or vim.fn.filereadable(target) ~= 1 then
       vim.notify("File is no longer available: " .. tostring(relative_path), vim.log.levels.WARN)
@@ -572,7 +578,11 @@ function M.open(opts)
     -- listed state of buffers that were already open before Neolit previewed them.
     if existing_buf < 0 then vim.bo[target_buf].buflisted = false end
     vim.api.nvim_win_set_buf(win, target_buf)
-    if focus then vim.api.nvim_set_current_win(win) end
+    if focus then
+      vim.api.nvim_set_current_win(win)
+    elseif vim.api.nvim_win_is_valid(original_win) then
+      vim.api.nvim_set_current_win(original_win)
+    end
     if line then
       vim.api.nvim_win_set_cursor(win, { math.max(1, line), 0 })
     end
