@@ -690,6 +690,8 @@ function M.open(opts)
     end)
   end
 
+  local rerender_at
+
   local function selected()
     local workspace = vim.b[buf].neolit_workspace
     local row = vim.b[buf].neolit_rows and vim.b[buf].neolit_rows[vim.api.nvim_win_get_cursor(0)[1]]
@@ -1178,7 +1180,7 @@ function M.open(opts)
   local function map(lhs, fn, desc)
     vim.keymap.set("n", lhs, fn, { buffer = buf, silent = true, nowait = true, desc = desc })
   end
-  local function rerender_at(key)
+  rerender_at = function(key)
     local workspace = vim.b[buf].neolit_workspace
     if not workspace then return end
     render(buf, root, workspace, expanded_files, expanded_dirs, expanded_tasks, filter_mode)
