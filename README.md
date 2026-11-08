@@ -31,6 +31,7 @@ Install the plugin:
     neolit_dir = "/path/to/neolit",
     -- directory = "/path/to/repository", -- defaults to current working directory
     -- comparison_base = "HEAD",          -- any commit/ref; defaults to HEAD
+    -- diff_view = "side_by_side",       -- or "unified"; toggle at runtime with D
     -- node = "node",
   },
   cmd = { "Neolit", "NeolitPlan", "NeolitClose" },
@@ -50,7 +51,7 @@ Install the plugin:
   bounded context packet for the user's existing agent conversation. Task/requirement packets include resolved linked SPEC text and acceptance criteria; line packets carry the exact side and line coordinate.
 - In a native diff, `<leader>nx` on a line or visual selection copies context
   for those exact lines. Stale diff/base anchors are rejected.
-- `r` refreshes; `q` or `:NeolitClose` closes the workspace.
+- `D` toggles side-by-side and unified diff presentation. `r` refreshes; the workspace also refreshes after writes, on focus return, and while idle so external agent edits are picked up. `q`, `<Esc>`, or `:NeolitClose` closes the workspace.
 
 The diff tree displays every changed file and its hunks first, with Git status,
 conservative mapping markers, and exact candidate task/requirement references
@@ -71,6 +72,7 @@ require("neolit").setup({
   node = "node",
   directory = nil,                -- repository root; default: cwd
   comparison_base = "HEAD",
+  diff_view = "side_by_side", -- or "unified"; toggle at runtime with D
 })
 ```
 
