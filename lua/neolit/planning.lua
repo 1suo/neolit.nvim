@@ -33,6 +33,9 @@ local function safe_repo_path(root, relative)
   if type(relative) ~= "string" or relative == "" or relative:sub(1, 1) == "/" or relative:sub(1, 1) == "\\" or relative:match("^%a:") then
     return nil
   end
+  for segment in relative:gmatch("[^/]+") do
+    if segment == ".." or segment == "." then return nil end
+  end
   local root_path = vim.fn.resolve(vim.fn.fnamemodify(root, ":p"))
   local absolute = vim.fn.fnamemodify(root_path .. "/" .. relative, ":p")
   local resolved = vim.fn.resolve(absolute)
