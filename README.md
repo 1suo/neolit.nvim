@@ -44,6 +44,10 @@ separate planning buffer. Use:
 - Task and requirement rows show derived states (`planned`, `in-progress`,
   `implemented`, `verified`, `blocked`, `unmapped`); the TODO checkbox remains
   a separate note and never proves implementation or verification.
+- Explicit TODO file hints appear beneath their task. Selecting an unchanged
+  planned file opens it when it exists; once it changes, the same row opens the
+  actual native diff. `x` includes the selected planned path, task description,
+  and linked SPEC references in the copyable agent context.
 - `<CR>` on a changed file or hunk to open a native side-by-side Neovim diff between the selected Git comparison base and the working
   file; hunk selection navigates to that hunk.
 - `x` on a task, requirement, file, or hunk in the planning buffer to enter a
