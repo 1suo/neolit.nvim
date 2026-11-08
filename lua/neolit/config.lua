@@ -14,6 +14,8 @@ M.defaults = {
   --- Repository root the plan operates on; defaults to the working directory
   --- at open time.
   directory = nil,
+  --- Git ref used as the planning diff base (default HEAD).
+  comparison_base = "HEAD",
   --- Force the no-model mode (same as AUGMENT_TUI_NO_MODEL=1 in the TUI).
   no_model = false,
   --- Serve no agent socket (AUGMENT_TUI_NO_SOCKET=1). Without this the
