@@ -6,6 +6,7 @@ M.defaults = {
   node = "node",
   directory = nil,
   comparison_base = "HEAD",
+  diff_view = "side_by_side",
 }
 
 function M.merge(user)
