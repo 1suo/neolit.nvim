@@ -194,7 +194,7 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
   local tree_root = { children = {}, files = {} }
   local seen_paths = {}
   local function insert_path(path)
-    if type(path) ~= "string" or path == "" or path:sub(1, 1) == "/" or path:match("(^|/)%.%.(/|$)") or seen_paths[path] then return end
+    if type(path) ~= "string" or path == "" or path:sub(1, 1) == "/" or (path == ".." or path:sub(1, 3) == "../" or path:find("/../", 1, true) or path:sub(-3) == "/..") or seen_paths[path] then return end
     seen_paths[path] = true
     local node, parts = tree_root, vim.split(path, "/", { plain = true })
     for index = 1, #parts - 1 do
@@ -223,7 +223,8 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
     local checkbox = task.checked and "[x]" or "[ ]"
     local indent = string.rep("  ", depth)
     add(prefix .. indent .. (expanded and "▾ " or "▸ ") .. checkbox .. "  " .. state:upper() .. "  " .. task.text,
-      { kind = "task", key = "task:" .. key, parent_key = "file:" .. (key:match("^(.-)::") or "TODO.md"), task = task, expanded = expanded })
+      { kind = "task", key = "task:" .. key, parent_key = "file:" .. (key:match("^(.-)::") or "TODO.md"), task = task, expanded = expanded,
+        expandable = #(task.filePaths or {}) + #(task.specReferences or {}) + #(task.description or {}) + #(task.unresolvedReferences or {}) > 0 })
     if not expanded then return end
     for _, path in ipairs(task.filePaths or {}) do
       add(prefix .. indent .. "   ↳  " .. path, { kind = "planned_file", path = path, parent_key = "task:" .. key, task = task })
@@ -268,7 +269,7 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
       .. doc_summary .. (status and ("  [" .. git_marker .. "]") or ""),
       { kind = changed and "file" or (kind and "planning_document" or "repository_file"),
         key = "file:" .. path, path = path, file = changed, doc_kind = kind,
-        association = association, expanded = is_expanded,
+        association = association, expanded = is_expanded, expandable = has_children,
         parent_key = path:match("^(.*)/[^/]+$") and ("dir:" .. path:match("^(.*)/[^/]+$")) or nil })
     if not is_expanded then return end
     if kind == "TODO" then
@@ -344,7 +345,7 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
       if entry.directory then
         local expanded = expanded_dirs[entry.path] == true
         add(ancestors .. branch .. (expanded and "▾ " or "▸ ") .. entry.name .. "/",
-          { kind = "tree_directory", key = "dir:" .. entry.path, parent_key = parent_key, path = entry.path, expanded = expanded })
+          { kind = "tree_directory", key = "dir:" .. entry.path, parent_key = parent_key, path = entry.path, expanded = expanded, expandable = true })
         if expanded then render_tree(entry.node, ancestors .. (last and "    " or "│   "), depth + 1, "dir:" .. entry.path) end
       else
         render_file(entry.entry, ancestors, branch)
@@ -1125,19 +1126,10 @@ function M.open(opts)
     end
     local parent_key = row.parent_key
     if not parent_key then return end
-    for _, candidate in pairs(vim.b[buf].neolit_rows or {}) do
-      if candidate.key == parent_key then
-        if candidate.kind == "tree_directory" then expanded_dirs[candidate.path] = false
-        elseif candidate.kind == "task" then expanded_tasks[candidate.task.key] = false
-        elseif candidate.kind == "file" or candidate.kind == "planning_document" then
-          expanded_files[candidate.path or candidate.file.path] = false
-        end
-        for line, parent in pairs(vim.b[buf].neolit_rows or {}) do
-          if parent and parent.key == parent_key then
-            vim.api.nvim_win_set_cursor(0, { line, 0 })
-            return
-          end
-        end
+    for line, parent in pairs(vim.b[buf].neolit_rows or {}) do
+      if parent and parent.key == parent_key then
+        vim.api.nvim_win_set_cursor(0, { line, 0 })
+        return
       end
     end
   end
@@ -1157,6 +1149,54 @@ function M.open(opts)
     for _, todo in ipairs(workspace.todos or {}) do expanded_files[todo.path] = expanded end
     for _, task in ipairs(workspace.tasks or {}) do expanded_tasks[task.key] = expanded end
     rerender_at()
+  end
+  local function set_fold_level(mode)
+    local rows = vim.b[buf].neolit_rows or {}
+    local by_key, candidates = {}, {}
+    for _, row in pairs(rows) do if row and row.key then by_key[row.key] = row end end
+    local function depth(row)
+      local value, parent_key, seen = 0, row.parent_key, {}
+      while parent_key and not seen[parent_key] do
+        seen[parent_key] = true
+        local parent = by_key[parent_key]
+        if not parent then break end
+        value = value + 1
+        parent_key = parent.parent_key
+      end
+      return value
+    end
+    for _, row in pairs(rows) do
+      if row and row.expandable then
+        local ancestors_open, parent_key, seen = true, row.parent_key, {}
+        while parent_key and not seen[parent_key] do
+          seen[parent_key] = true
+          local parent = by_key[parent_key]
+          if not parent then break end
+          if parent.expandable and not parent.expanded then ancestors_open = false; break end
+          parent_key = parent.parent_key
+        end
+        if ancestors_open then
+          candidates[#candidates + 1] = { row = row, depth = depth(row), expanded = row.expanded == true }
+        end
+      end
+    end
+    local target_depth
+    for _, item in ipairs(candidates) do
+      local eligible = mode == "open" and not item.expanded or mode == "close" and item.expanded
+      if eligible and (not target_depth or item.depth < target_depth) then target_depth = item.depth end
+    end
+    if not target_depth then return end
+    local first_key
+    for _, item in ipairs(candidates) do
+      if item.depth == target_depth and ((mode == "open" and not item.expanded) or (mode == "close" and item.expanded)) then
+        local row = item.row
+        if row.kind == "tree_directory" then expanded_dirs[row.path] = mode == "open"
+        elseif row.kind == "task" then expanded_tasks[row.task.key] = mode == "open"
+        else expanded_files[row.path or (row.file and row.file.path)] = mode == "open" end
+        first_key = first_key or row.key
+      end
+    end
+    rerender_at(first_key)
   end
   local related_ns = vim.api.nvim_create_namespace("neolit-related-" .. buf)
   local function highlight_related()
@@ -1276,6 +1316,11 @@ function M.open(opts)
   map("za", toggle_node_at_cursor, "Toggle selected folder, document, task, or diff file")
   map("l", expand_node_at_cursor, "Expand selected folder, task, or diff file")
   map("h", collapse_node_at_cursor, "Collapse selected node or move to parent")
+  map("zc", function() toggle_node(current_row(), false) end, "Close selected tree node")
+  map("zo", function() toggle_node(current_row(), true) end, "Open selected tree node")
+  map("F", toggle_node_at_cursor, "Toggle selected tree node")
+  map("zr", function() set_fold_level("open") end, "Open one visible tree level")
+  map("zm", function() set_fold_level("close") end, "Close one visible tree level")
   map("zR", function()
     set_all_expanded(true)
     for _, task in ipairs((vim.b[buf].neolit_workspace or {}).tasks or {}) do expanded_tasks[task.key] = true end
