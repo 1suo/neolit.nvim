@@ -53,7 +53,7 @@ local function normalize_diff(diff)
   return (diff or ""):gsub("\r\n", "\n"):gsub("\n+$", "")
 end
 
-local function open_diff(root, file, selected_hunk, on_line_context, comparison_base, selected_line)
+local function open_diff(root, file, selected_hunk, on_line_context, comparison_base, selected_line, diff_state)
   -- Git paths are repository-relative, but a changed path may itself be a
   -- symlink. Never let native editor navigation follow it outside the
   -- selected worktree (the shared core applies the same boundary).
@@ -72,33 +72,52 @@ local function open_diff(root, file, selected_hunk, on_line_context, comparison_
   if base_lines[#base_lines] == "" then table.remove(base_lines) end
   local filetype = vim.filetype.match({ filename = file.path }) or ""
 
-  vim.cmd("rightbelow vsplit")
-  vim.cmd("enew")
-  local base_buf = vim.api.nvim_get_current_buf()
+  local base_buf = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_buf_set_name(base_buf, "neolit-base://" .. base_path .. "#" .. base_buf)
   vim.api.nvim_buf_set_lines(base_buf, 0, -1, false, base_lines)
   vim.bo[base_buf].buftype = "nofile"
   vim.bo[base_buf].bufhidden = "hide"
   vim.bo[base_buf].swapfile = false
   vim.bo[base_buf].filetype = filetype
-  local base_win = vim.api.nvim_get_current_win()
 
-  vim.cmd("rightbelow vsplit")
   local working_buf
   if vim.fn.filereadable(working_path) == 1 then
-    vim.cmd("edit " .. vim.fn.fnameescape(working_path))
-    working_buf = vim.api.nvim_get_current_buf()
+    working_buf = vim.fn.bufadd(working_path)
+    vim.fn.bufload(working_buf)
   else
     working_buf = vim.api.nvim_create_buf(false, true)
     vim.api.nvim_buf_set_name(working_buf, "neolit-working://" .. file.path .. "#" .. working_buf)
-    vim.api.nvim_win_set_buf(0, working_buf)
+    vim.api.nvim_buf_set_lines(working_buf, 0, -1, false, {})
     vim.bo[working_buf].buftype = "nofile"
     vim.bo[working_buf].bufhidden = "hide"
     vim.bo[working_buf].swapfile = false
     vim.bo[working_buf].filetype = filetype
   end
 
-  local working_win = vim.api.nvim_get_current_win()
+  local base_win, working_win
+  if diff_state and diff_state.base_win and diff_state.working_win
+    and vim.api.nvim_win_is_valid(diff_state.base_win)
+    and vim.api.nvim_win_is_valid(diff_state.working_win) then
+    base_win, working_win = diff_state.base_win, diff_state.working_win
+    for _, win in ipairs({ base_win, working_win }) do
+      vim.api.nvim_set_current_win(win)
+      pcall(vim.cmd, "diffoff")
+    end
+    vim.api.nvim_win_set_buf(base_win, base_buf)
+    vim.api.nvim_win_set_buf(working_win, working_buf)
+  else
+    local origin = diff_state and diff_state.tree_win or vim.api.nvim_get_current_win()
+    vim.api.nvim_set_current_win(origin)
+    vim.cmd("rightbelow vsplit")
+    base_win = vim.api.nvim_get_current_win()
+    vim.api.nvim_win_set_buf(base_win, base_buf)
+    vim.cmd("rightbelow vsplit")
+    working_win = vim.api.nvim_get_current_win()
+    vim.api.nvim_win_set_buf(working_win, working_buf)
+    if diff_state then
+      diff_state.base_win, diff_state.working_win = base_win, working_win
+    end
+  end
   vim.api.nvim_set_current_win(base_win)
   vim.cmd("diffthis")
   vim.api.nvim_set_current_win(working_win)
@@ -325,6 +344,7 @@ function M.open(opts)
   local expanded_files = {}
   local expanded_dirs = {}
   local expanded_tasks = {}
+  local diff_state = { tree_win = tree_win }
   local filter_mode = "all"
   local function refresh()
     refresh_revision = refresh_revision + 1
@@ -534,7 +554,7 @@ function M.open(opts)
         if file.path == row.path or file.previousPath == row.path then changed = file; break end
       end
       if changed then
-        open_diff(root, changed, nil, ask_line_context, workspace.git.base)
+        open_diff(root, changed, nil, ask_line_context, workspace.git.base, nil, diff_state)
       else
         local target = safe_repo_path(root, row.path)
         if target and vim.fn.filereadable(target) == 1 then
@@ -565,7 +585,7 @@ function M.open(opts)
         if file.path == row.path or file.previousPath == row.path then changed = file; break end
       end
       if changed then
-        open_diff(root, changed, nil, ask_line_context, workspace.git.base)
+        open_diff(root, changed, nil, ask_line_context, workspace.git.base, nil, diff_state)
       else
         local target = safe_repo_path(root, row.path)
         if target and vim.fn.filereadable(target) == 1 then
@@ -575,10 +595,10 @@ function M.open(opts)
         end
       end
     elseif row.kind == "file" then
-      open_diff(root, row.file, nil, ask_line_context, workspace and workspace.git.base)
+      open_diff(root, row.file, nil, ask_line_context, workspace and workspace.git.base, nil, diff_state)
     elseif row.kind == "hunk" or row.kind == "change_line" then
       open_diff(root, row.file, row.hunk, ask_line_context, workspace and workspace.git.base,
-        row.kind == "change_line" and { side = row.side, lineNumber = row.lineNumber } or nil)
+        row.kind == "change_line" and { side = row.side, lineNumber = row.lineNumber } or nil, diff_state)
     end
   end
 
