@@ -158,18 +158,10 @@ end
 
 local function render(buf, root, workspace, expanded_files, expanded_dirs, expanded_tasks, filter_mode_value)
   local lines, rows = {}, {}
-  expanded_files = expanded_files or {}
-  expanded_dirs = expanded_dirs or {}
+  expanded_files, expanded_dirs, expanded_tasks = expanded_files or {}, expanded_dirs or {}, expanded_tasks or {}
   local function add(text, row)
     lines[#lines + 1] = text
     rows[#lines] = row
-  end
-
-  add("PLANNING  " .. workspace.git.branch .. " @ " .. (workspace.git.base or workspace.git.head):sub(1, 8), { kind = "header" })
-  add("", nil)
-  local requirement_states = {}
-  for _, item in ipairs(workspace.derived and workspace.derived.requirements or {}) do
-    requirement_states[item.specPath .. "#" .. item.requirementId] = item.state
   end
   local filter_mode = filter_mode_value or "all"
   local changed_by_path, git_status, associations, hunk_associations = {}, {}, {}, {}
@@ -182,10 +174,29 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
   for _, association in ipairs(workspace.git.associations or {}) do associations[association.path] = association end
   for _, association in ipairs(workspace.git.hunkAssociations or {}) do hunk_associations[association.path .. "#" .. association.hunkIndex] = association end
 
+  local tasks_by_doc, requirements_by_doc, doc_kind = {}, {}, {}
+  for _, path in ipairs(workspace.readmes or {}) do doc_kind[path] = "README" end
+  for _, spec in ipairs(workspace.specs or {}) do
+    doc_kind[spec.path] = "SPEC"
+    requirements_by_doc[spec.path] = spec.requirements or {}
+  end
+  for _, todo in ipairs(workspace.todos or {}) do doc_kind[todo.path] = "TODO" end
+  for _, task in ipairs(workspace.tasks or {}) do
+    local path = task.key:match("^(.-)::") or "TODO.md"
+    tasks_by_doc[path] = tasks_by_doc[path] or {}
+    tasks_by_doc[path][#tasks_by_doc[path] + 1] = task
+  end
+  local requirement_states = {}
+  for _, item in ipairs(workspace.derived and workspace.derived.requirements or {}) do
+    requirement_states[item.specPath .. "#" .. item.requirementId] = item.state
+  end
+
   local tree_root = { children = {}, files = {} }
+  local seen_paths = {}
   local function insert_path(path)
-    local node = tree_root
-    local parts = vim.split(path, "/", { plain = true })
+    if type(path) ~= "string" or path == "" or path:sub(1, 1) == "/" or path:match("(^|/)%.%.(/|$)") or seen_paths[path] then return end
+    seen_paths[path] = true
+    local node, parts = tree_root, vim.split(path, "/", { plain = true })
     for index = 1, #parts - 1 do
       local name = parts[index]
       node.children[name] = node.children[name] or { children = {}, files = {}, path = table.concat(parts, "/", 1, index) }
@@ -193,125 +204,133 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
     end
     node.files[#node.files + 1] = { name = parts[#parts], path = path }
   end
-  local seen_paths = {}
-  for _, path in ipairs(workspace.git.repositoryFiles or {}) do
-    if not seen_paths[path] then seen_paths[path] = true; insert_path(path) end
-  end
-  for _, file in ipairs(workspace.git.changedFiles or {}) do
-    if not seen_paths[file.path] then seen_paths[file.path] = true; insert_path(file.path) end
-    if file.previousPath and not seen_paths[file.previousPath] then seen_paths[file.previousPath] = true; insert_path(file.previousPath) end
-  end
+  for _, path in ipairs(workspace.git.repositoryFiles or {}) do insert_path(path) end
+  for _, path in ipairs(workspace.readmes or {}) do insert_path(path) end
+  for _, spec in ipairs(workspace.specs or {}) do insert_path(spec.path) end
+  for _, todo in ipairs(workspace.todos or {}) do insert_path(todo.path) end
+  for _, file in ipairs(workspace.git.changedFiles or {}) do insert_path(file.path); if file.previousPath then insert_path(file.previousPath) end end
+
   local function subtree_affected(node)
     for _, file in ipairs(node.files) do if changed_by_path[file.path] then return true end end
     for _, child in pairs(node.children) do if subtree_affected(child) then return true end end
     return false
   end
-  local function render_changed_file(file, indent)
-    local association = associations[file.path] or { state = "unplanned", taskKeys = {} }
-    local marker = association.state == "unplanned" and "?" or (association.state == "partially-mapped" and "~" or "+")
-    local status = git_status[file.path]
+  local function render_task(task, prefix, depth)
+    local key = task.key
+    local expanded = expanded_tasks[key] == true
+    local derived = workspace.derived and workspace.derived.tasks and workspace.derived.tasks[key]
+    local state = derived and derived.state or task.state or "planned"
+    local checkbox = task.checked and "[x]" or "[ ]"
+    local indent = string.rep("  ", depth)
+    add(prefix .. indent .. (expanded and "▾ " or "▸ ") .. checkbox .. "  " .. state:upper() .. "  " .. task.text,
+      { kind = "task", key = "task:" .. key, task = task, expanded = expanded })
+    if not expanded then return end
+    for _, path in ipairs(task.filePaths or {}) do
+      add(prefix .. indent .. "   ↳  " .. path, { kind = "planned_file", path = path, task = task })
+    end
+    for _, reference in ipairs(task.specReferences or {}) do
+      add(prefix .. indent .. "   §  " .. reference.path .. "  #" .. table.concat(reference.ids or {}, ", "),
+        { kind = "task_reference", reference = reference, task = task })
+    end
+    for _, unresolved in ipairs(task.unresolvedReferences or {}) do
+      add(prefix .. indent .. "   !  unresolved " .. unresolved.path .. "#" .. table.concat(unresolved.ids or {}, ", "),
+        { kind = "diagnostic", diagnostic = unresolved })
+    end
+  end
+  local function render_file(entry, prefix, branch)
+    local path, changed = entry.path, changed_by_path[entry.path]
+    local status, kind = git_status[path], doc_kind[path]
     local git_marker = status and (status.index .. status.worktree) or "  "
-    local is_expanded = expanded_files[file.path] == true
-    local file_key = "file:" .. file.path
-    add("  " .. indent .. (is_expanded and "▾ " or "▸ ") .. marker .. " " .. file.path:match("[^/]+$") .. " [" .. git_marker .. "]",
-      { kind = "file", key = file_key, file = file, association = association, expanded = is_expanded })
+    local association = associations[path] or { state = "unplanned", taskKeys = {} }
+    local doc_label = kind and (kind .. "  ") or ""
+    local marker = changed and (association.state == "unplanned" and "?" or (association.state == "partially-mapped" and "~" or "✓")) or " "
+    local is_expanded = expanded_files[path] == true
+    local has_children = changed ~= nil or (kind == "TODO" and #(tasks_by_doc[path] or {}) > 0)
+      or (kind == "SPEC" and #(requirements_by_doc[path] or {}) > 0)
+    add(prefix .. branch .. (has_children and (is_expanded and "▾ " or "▸ ") or "  ")
+      .. (kind and ("[" .. kind .. "] ") or "") .. marker .. " " .. entry.name
+      .. (status and ("  [" .. git_marker .. "]") or ""),
+      { kind = changed and "file" or (kind and "planning_document" or "repository_file"),
+        key = "file:" .. path, path = path, file = changed, doc_kind = kind,
+        association = association, expanded = is_expanded })
     if not is_expanded then return end
-    for hunk_index, hunk in ipairs(file.hunks or {}) do
-      local hunk_association = hunk_associations[file.path .. "#" .. (hunk_index - 1)]
-      local hunk_marker = not hunk_association and "?" or (hunk_association.state == "unresolved" and "~" or (hunk_association.state == "documentation" and "#" or (hunk_association.state == "attributed" and "=" or "?")))
-      local candidate_labels = {}
-      for _, task_key in ipairs(hunk_association and hunk_association.candidateTaskKeys or {}) do
-        for _, task in ipairs(workspace.tasks or {}) do
-          if task.key == task_key then candidate_labels[#candidate_labels + 1] = "task: " .. (task.key:match("^(.-)::") or "TODO") .. ":" .. task.range.startLine end
+    if kind == "TODO" then
+      for _, task in ipairs(tasks_by_doc[path] or {}) do render_task(task, prefix .. "   ", 1) end
+    elseif kind == "SPEC" then
+      for _, requirement in ipairs(requirements_by_doc[path] or {}) do
+        local state = requirement_states[path .. "#" .. requirement.id] or "unmapped"
+        add(prefix .. "   §  " .. requirement.id .. "  " .. state:upper() .. "  " .. (requirement.text or ""),
+          { kind = "requirement", key = "requirement:" .. path .. "#" .. requirement.id,
+            requirement = requirement, spec_path = path })
+      end
+    elseif kind == "README" then
+      local readme
+      for _, item in ipairs(workspace.readmeContents or {}) do if item.path == path then readme = item; break end end
+      if readme then
+        local links = {}
+        for target in readme.content:gmatch("%[[^%]]-%]%(([^)#]+)") do links[#links + 1] = target end
+        for _, target in ipairs(links) do
+          add(prefix .. "   ↗  " .. target, { kind = "document_link", path = path, target = target })
         end
       end
-      for _, reference in ipairs(hunk_association and hunk_association.candidateRequirementRefs or {}) do candidate_labels[#candidate_labels + 1] = "requirement: " .. reference end
-      local candidate_label = #candidate_labels > 0 and (" [" .. table.concat(candidate_labels, "; ") .. "]") or ""
-      add("    " .. hunk_marker .. " @@ -" .. hunk.oldStart .. "," .. hunk.oldLines .. " +" .. hunk.newStart .. "," .. hunk.newLines .. " @@ " .. hunk.header .. candidate_label,
-        { kind = "hunk", key = file_key .. ":hunk:" .. hunk_index, file = file, hunk = hunk, association = association, hunkAssociation = hunk_association })
-      if hunk.changes and #hunk.changes > 0 then
-        for change_index, change in ipairs(hunk.changes) do
-          add("      " .. (change.kind == "added" and "+" or "-") .. " " .. change.lineNumber .. "  " .. change.text, {
-            kind = "change_line", key = file_key .. ":hunk:" .. hunk_index .. ":change:" .. change_index,
-            file = file, hunk = hunk, hunkAssociation = hunk_association,
-            lineNumber = change.lineNumber, lineText = change.text, side = change.kind == "added" and "working-tree" or "base",
-          })
-        end
-      else
-        for line_index, changed_text in ipairs(hunk.addedLines or {}) do
-          local number = hunk.addedLineNumbers and hunk.addedLineNumbers[line_index] or (hunk.newStart + line_index - 1)
-          add("      + " .. number .. "  " .. changed_text, { kind = "change_line", key = file_key .. ":hunk:" .. hunk_index .. ":add:" .. line_index, file = file, hunk = hunk, hunkAssociation = hunk_association, lineNumber = number, lineText = changed_text, side = "working-tree" })
-        end
-        for line_index, changed_text in ipairs(hunk.removedLines or {}) do
-          local number = hunk.removedLineNumbers and hunk.removedLineNumbers[line_index] or (hunk.oldStart + line_index - 1)
-          add("      - " .. number .. "  " .. changed_text, { kind = "change_line", key = file_key .. ":hunk:" .. hunk_index .. ":remove:" .. line_index, file = file, hunk = hunk, hunkAssociation = hunk_association, lineNumber = number, lineText = changed_text, side = "base" })
+    end
+    if changed then
+      for hunk_index, hunk in ipairs(changed.hunks or {}) do
+        local hunk_association = hunk_associations[path .. "#" .. (hunk_index - 1)]
+        local hunk_state = hunk_association and hunk_association.state or "unmapped"
+        local hunk_key = "file:" .. path .. ":hunk:" .. hunk_index
+        add(prefix .. "   " .. (hunk_state == "attributed" and "✓" or hunk_state == "documentation" and "§" or "?")
+          .. "  @@ -" .. hunk.oldStart .. "," .. hunk.oldLines .. " +" .. hunk.newStart .. "," .. hunk.newLines .. " @@ " .. (hunk.header or ""),
+          { kind = "hunk", key = hunk_key, file = changed, hunk = hunk,
+            association = association, hunkAssociation = hunk_association })
+        for change_index, change in ipairs(hunk.changes or {}) do
+          add(prefix .. "      " .. (change.kind == "added" and "+" or "−") .. " " .. change.lineNumber .. "  " .. change.text,
+            { kind = "change_line", key = hunk_key .. ":change:" .. change_index,
+              file = changed, hunk = hunk, hunkAssociation = hunk_association,
+              lineNumber = change.lineNumber, lineText = change.text,
+              side = change.kind == "added" and "working-tree" or "base" })
         end
       end
     end
   end
-  add("REPOSITORY  " .. vim.fn.fnamemodify(root, ":t") .. "  [" .. (filter_mode == "affected" and "affected only" or "all files") .. "]  (f: filter)", nil)
+
+  add("NEOLIT  " .. vim.fn.fnamemodify(root, ":t") .. "  " .. workspace.git.branch
+    .. " @ " .. (workspace.git.base or workspace.git.head):sub(1, 8)
+    .. "   " .. (filter_mode == "affected" and "AFFECTED PATHS" or "ALL PATHS")
+    .. "   [f filter] [? keys]", { kind = "header" })
+
   local function render_tree(node, ancestors, depth)
     local entries = {}
     for name, child in pairs(node.children) do
-      if filter_mode ~= "affected" or subtree_affected(child) then entries[#entries + 1] = { name = name, directory = true, node = child, path = child.path } end
+      if filter_mode ~= "affected" or subtree_affected(child) then
+        entries[#entries + 1] = { name = name, directory = true, node = child, path = child.path }
+      end
     end
-    for _, file in ipairs(node.files) do
-      if filter_mode ~= "affected" or changed_by_path[file.path] then entries[#entries + 1] = { name = file.name, path = file.path, directory = false, file = changed_by_path[file.path] } end
+    for _, entry in ipairs(node.files) do
+      if filter_mode ~= "affected" or changed_by_path[entry.path] then
+        entries[#entries + 1] = { name = entry.name, path = entry.path, directory = false, entry = entry }
+      end
     end
-    table.sort(entries, function(a, b) if a.directory ~= b.directory then return a.directory end return a.name:lower() < b.name:lower() end)
+    table.sort(entries, function(a, b)
+      if a.directory ~= b.directory then return a.directory end
+      return a.name:lower() < b.name:lower()
+    end)
     for index, entry in ipairs(entries) do
       local last = index == #entries
       local branch = last and "└── " or "├── "
-      local indent = ancestors or ""
       if entry.directory then
-        local expanded = expanded_dirs[entry.path] == true or (expanded_dirs[entry.path] == nil and depth == 0)
-        add("  " .. indent .. branch .. (expanded and "▾ " or "▸ ") .. entry.name .. "/", { kind = "tree_directory", key = "dir:" .. entry.path, path = entry.path, expanded = expanded })
-        if expanded then render_tree(entry.node, indent .. (last and "    " or "│   "), depth + 1) end
-      elseif entry.file then
-        render_changed_file(entry.file, indent .. branch)
+        local expanded = expanded_dirs[entry.path] == true
+        add(ancestors .. branch .. (expanded and "▾ " or "▸ ") .. entry.name .. "/",
+          { kind = "tree_directory", key = "dir:" .. entry.path, path = entry.path, expanded = expanded })
+        if expanded then render_tree(entry.node, ancestors .. (last and "    " or "│   "), depth + 1) end
       else
-        local status = git_status[entry.path]
-        local marker = status and (status.index .. status.worktree) or "  "
-        add("  " .. indent .. branch .. "  " .. entry.name .. (status and ("  [" .. marker .. "]") or ""), { kind = "repository_file", path = entry.path, changed = status ~= nil })
+        render_file(entry.entry, ancestors, branch)
       end
     end
   end
   render_tree(tree_root, "", 0)
-  if filter_mode == "affected" and #(workspace.git.changedFiles or {}) == 0 then add("  (no affected files)", nil) end
-  add("TASKS (" .. #workspace.tasks .. ")", { kind = "section", section = "tasks" })
-  for _, task in ipairs(workspace.tasks) do
-    local checkbox = task.checked and "[x]" or "[ ]"
-    local todo_path = task.key:match("^(.-)::") or "TODO.md"
-    local task_state = workspace.derived and workspace.derived.tasks and workspace.derived.tasks[task.key]
-    local expanded = expanded_tasks[task.key] ~= false
-    local state = task_state and task_state.state or task.state
-    add(string.format("  %s %s TASK %-10s %s  (%s:%d)", expanded and "▾" or "▸", checkbox, state, task.text, todo_path, task.range.startLine), {
-      kind = "task", task = task, key = "task:" .. task.key, expanded = expanded,
-    })
-    if expanded then
-      for _, file_path in ipairs(task.filePaths or {}) do
-        add("      ↳ FILE  " .. file_path, { kind = "planned_file", path = file_path, task = task })
-      end
-      for _, requirement in ipairs(task.resolvedRequirements or {}) do
-        local spec_path = requirement.specPath
-        local requirement_state = requirement_states[requirement.specPath .. "#" .. requirement.id] or "planned"
-        add(string.format("      ↳ %s  %-10s  %s", requirement.id, requirement_state, requirement.text or ""), {
-          kind = "requirement", requirement = requirement, spec_path = spec_path,
-        })
-      end
-      for _, unresolved in ipairs(task.unresolvedReferences or {}) do
-        add("      ↳ ! unresolved " .. unresolved.path .. "#" .. table.concat(unresolved.ids, ","), { kind = "diagnostic" })
-      end
-    end
-  end
-  if #workspace.tasks == 0 then add("  (no linked TODO tasks)", nil) end
-  add("", nil)
-  add("", nil)
-  add("DIAGNOSTICS (" .. #workspace.diagnostics .. ")", nil)
-  for _, diagnostic in ipairs(workspace.diagnostics) do
-    add(string.format("  ! %s:%s %s", diagnostic.todoPath, diagnostic.line or "?", diagnostic.message), {
-      kind = "diagnostic", diagnostic = diagnostic,
-    })
+  if filter_mode == "affected" and #(workspace.git.changedFiles or {}) == 0 then
+    add("└── (no affected paths)", { kind = "empty" })
   end
 
   vim.bo[buf].modifiable = true
