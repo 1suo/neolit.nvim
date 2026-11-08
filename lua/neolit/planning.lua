@@ -1248,6 +1248,11 @@ function M.open(opts)
       end
       expanded_files[path] = expanded
     end
+    for _, file in ipairs(workspace.git.changedFiles or {}) do
+      expanded_files[file.path] = expanded
+      local parent = file.path:match("^(.*)/[^/]+$")
+      while parent do expanded_dirs[parent] = expanded; parent = parent:match("^(.*)/[^/]+$") end
+    end
     for _, path in ipairs(workspace.readmes or {}) do expanded_files[path] = expanded end
     for _, spec in ipairs(workspace.specs or {}) do expanded_files[spec.path] = expanded end
     for _, todo in ipairs(workspace.todos or {}) do expanded_files[todo.path] = expanded end
