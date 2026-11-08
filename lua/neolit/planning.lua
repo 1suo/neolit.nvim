@@ -116,6 +116,7 @@ local function open_diff(root, file, selected_hunk, on_line_context, comparison_
     vim.api.nvim_win_set_buf(working_win, working_buf)
     if diff_state then
       diff_state.base_win, diff_state.working_win = base_win, working_win
+      diff_state.preview_win = working_win
     end
   end
   vim.api.nvim_set_current_win(base_win)
