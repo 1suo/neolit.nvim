@@ -75,11 +75,16 @@ local function open_diff(root, file, selected_hunk, on_line_context, comparison_
   if view == "side_by_side" then
     local base_win = diff_state and diff_state.base_win
     if not base_win or not vim.api.nvim_win_is_valid(base_win) then
-      base_win = vim.api.nvim_win_call(win, function()
-        vim.cmd("leftabove vsplit")
-        return vim.api.nvim_get_current_win()
-      end)
-      if diff_state then diff_state.base_win = base_win end
+      -- Create the comparison pane explicitly from the preview window, then
+      -- restore the working pane as the stable preview target.
+      vim.api.nvim_set_current_win(win)
+      vim.cmd("leftabove vsplit")
+      base_win = vim.api.nvim_get_current_win()
+      if diff_state then
+        diff_state.base_win = base_win
+        diff_state.working_win = win
+      end
+      vim.api.nvim_set_current_win(win)
     end
 
     local base_buf = diff_state and diff_state.base_buf
@@ -886,34 +891,51 @@ function M.open(opts)
     end
   end
 
+  local function selected_file_target(row)
+    if not row then return nil end
+    if row.file and type(row.file.path) == "string" then
+      return row.file.path, row.kind == "change_line" and row.lineNumber or nil
+    elseif row.kind == "repository_file" or row.kind == "planning_document" or row.kind == "planned_file" then
+      return row.path
+    elseif row.kind == "task" then
+      return row.task.key:match("^(.-)::"), row.task.range and row.task.range.startLine
+    elseif row.kind == "requirement" then
+      return row.spec_path, row.requirement.range and row.requirement.range.startLine
+    end
+    return nil
+  end
   local function open_selected_file()
     local row = current_row()
-    if not row then return end
-    local path, line
-    if row.file and type(row.file.path) == "string" then
-      path = row.file.path
-    elseif row.kind == "repository_file" or row.kind == "planning_document" or row.kind == "planned_file" then
-      path = row.path
-    elseif row.kind == "task" then
-      path = row.task.key:match("^(.-)::")
-      line = row.task.range and row.task.range.startLine
-    elseif row.kind == "requirement" then
-      path = row.spec_path
-      line = row.requirement.range and row.requirement.range.startLine
-    end
+    local path, line = selected_file_target(row)
     if not path then
-      vim.notify("No source file for this tree entry", vim.log.levels.INFO)
+      vim.notify("Select a file, task, or requirement first", vim.log.levels.INFO)
       return
     end
     open_in_preview(path, line, true)
   end
   local function focus_working_diff()
-    local win = diff_state.preview_win
-    if win and vim.api.nvim_win_is_valid(win) then
-      vim.api.nvim_set_current_win(win)
+    local row = current_row()
+    local path = selected_file_target(row)
+    if not path then
+      vim.notify("Select a file or diff row first", vim.log.levels.INFO)
       return
     end
-    open_selected_file()
+    local workspace = vim.b[buf].neolit_workspace
+    local changed = row.file
+    if not changed then
+      for _, file in ipairs(workspace and workspace.git.changedFiles or {}) do
+        if file.path == path or file.previousPath == path then changed = file; break end
+      end
+    end
+    if changed then
+      open_diff(root, changed, row.hunk, ask_line_context, workspace and workspace.git.base,
+        row.kind == "change_line" and { side = row.side, lineNumber = row.lineNumber } or nil,
+        diff_state, true)
+      local win = diff_state.working_win or diff_state.preview_win
+      if win and vim.api.nvim_win_is_valid(win) then vim.api.nvim_set_current_win(win) end
+    else
+      open_in_preview(path, nil, true)
+    end
   end
 
   local function show_details()
@@ -1572,8 +1594,10 @@ function M.open(opts)
     end,
   })
   map("<CR>", selected, "Show selected diff or expand/open planning entry")
-  map("e", focus_working_diff, "Focus editable working-tree side of the diff")
-  map("o", open_selected_file, "Open the actual file without the diff")
+  map("e", focus_working_diff, "Edit the selected file in the working side of its diff")
+  map("o", open_selected_file, "Open the selected actual file without the diff")
+  map("<leader>ne", focus_working_diff, "Edit selected file in diff")
+  map("<leader>no", open_selected_file, "Open selected file without diff")
   map("za", toggle_node_at_cursor, "Toggle selected folder, document, task, or diff file")
   map("l", expand_node_at_cursor, "Expand selected folder, task, or diff file")
   map("h", collapse_node_at_cursor, "Collapse selected node or move to parent")
@@ -1614,7 +1638,7 @@ function M.open(opts)
   map("x", ask_context, "Ask about selected diff/task and copy context for existing agent")
   map("K", show_details, "Show selected file, hunk, task, or requirement details")
   map("?", function()
-    vim.notify("Tree: <CR> expand/open · za toggle · zo open · zc close · h/l expand/collapse-or-parent · zr/zm one level · zR/zM all · f affected-only · D diff view · e edit working side · o open file · x context · K details · r refresh · q/<Esc> close", vim.log.levels.INFO)
+    vim.notify("Tree: <CR> expand/open · za toggle · zo open · zc close · h/l expand/collapse-or-parent · zr/zm one level · zR/zM all · f affected-only · D diff view · e / <leader>ne edit working side · o / <leader>no open file · x context · K details · r refresh · q/<Esc> close", vim.log.levels.INFO)
   end, "Show Neolit tree keys")
   local function close_workspace()
     refresh_revision = refresh_revision + 1
