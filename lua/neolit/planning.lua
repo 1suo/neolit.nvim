@@ -343,7 +343,12 @@ function M.open(opts)
   local function copy_context(context)
     vim.ui.input({ prompt = "Question about selected context: " }, function(question)
       if not question or question == "" then return end
-      copy_packet("Question: " .. question .. "\n\n" .. context)
+      local packet = "Question: " .. question .. "\n\n" .. context
+      local max_chars = 16000
+      if #packet > max_chars then
+        packet = packet:sub(1, max_chars - 32) .. "\n...[planning context truncated]"
+      end
+      copy_packet(packet)
     end)
   end
 
