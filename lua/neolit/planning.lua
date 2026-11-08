@@ -1269,7 +1269,11 @@ function M.open(opts)
       vim.notify("Select a TODO task or SPEC requirement to archive", vim.log.levels.INFO)
       return
     end
-    local source = relative and safe_repo_path(root, relative)
+    if not relative then
+      vim.notify("Selected planning entry has no source document", vim.log.levels.ERROR)
+      return
+    end
+    local source = safe_repo_path(root, relative)
     local archived = relative and relative:lower():match("%.archive%.md$") ~= nil
     local destination_relative = archived
       and relative:gsub("%.archive%.md$", ".md")
