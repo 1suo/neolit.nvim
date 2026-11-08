@@ -278,6 +278,28 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
     return "Derived from Markdown and current Git evidence"
   end
 
+  local affected_paths = {}
+  for path in pairs(changed_by_path) do affected_paths[path] = true end
+  local function include_task_sources(task_key)
+    local task = tasks_by_key[task_key]
+    if not task then return end
+    local todo_path = task.key:match("^(.-)::")
+    if todo_path then affected_paths[todo_path] = true end
+    for _, requirement in ipairs(task.resolvedRequirements or {}) do
+      affected_paths[requirement.specPath] = true
+    end
+  end
+  for _, association in ipairs(workspace.git.associations or {}) do
+    for _, task_key in ipairs(association.taskKeys or {}) do include_task_sources(task_key) end
+  end
+  for _, association in ipairs(workspace.git.hunkAssociations or {}) do
+    for _, task_key in ipairs(association.candidateTaskKeys or {}) do include_task_sources(task_key) end
+    for _, ref in ipairs(association.candidateRequirementRefs or {}) do
+      local spec_path = ref:match("^(.-)#")
+      if spec_path then affected_paths[spec_path] = true end
+    end
+  end
+
   local tree_root = { children = {}, files = {} }
   local seen_paths = {}
   local function insert_path(path)
@@ -298,7 +320,7 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
   for _, file in ipairs(workspace.git.changedFiles or {}) do insert_path(file.path); if file.previousPath then insert_path(file.previousPath) end end
 
   local function subtree_affected(node)
-    for _, file in ipairs(node.files) do if changed_by_path[file.path] then return true end end
+    for _, file in ipairs(node.files) do if affected_paths[file.path] then return true end end
     for _, child in pairs(node.children) do if subtree_affected(child) then return true end end
     return false
   end
@@ -511,7 +533,7 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
       end
     end
     for _, entry in ipairs(node.files) do
-      if filter_mode ~= "affected" or changed_by_path[entry.path] then
+      if filter_mode ~= "affected" or affected_paths[entry.path] then
         entries[#entries + 1] = { name = entry.name, path = entry.path, directory = false, entry = entry }
       end
     end
@@ -1336,6 +1358,11 @@ function M.open(opts)
     for _, spec in ipairs(workspace.specs or {}) do expanded_files[spec.path] = expanded end
     for _, todo in ipairs(workspace.todos or {}) do expanded_files[todo.path] = expanded end
     for _, task in ipairs(workspace.tasks or {}) do expanded_tasks[task.key] = expanded end
+    for _, spec in ipairs(workspace.specs or {}) do
+      for _, requirement in ipairs(spec.requirements or {}) do
+        expanded_tasks["requirement:" .. spec.path .. "#" .. requirement.id] = expanded
+      end
+    end
     rerender_at()
   end
   local function set_fold_level(mode)
@@ -1544,8 +1571,8 @@ function M.open(opts)
     filter_mode = filter_mode == "all" and "affected" or "all"
     if filter_mode == "affected" then
       local workspace = vim.b[buf].neolit_workspace or {}
-      for _, file in ipairs(workspace.git and workspace.git.changedFiles or {}) do
-        local parent = file.path:match("^(.*)/[^/]+$")
+      for path in pairs(affected_paths) do
+        local parent = path:match("^(.*)/[^/]+$")
         while parent do expanded_dirs[parent] = true; parent = parent:match("^(.*)/[^/]+$") end
       end
     end
