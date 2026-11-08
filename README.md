@@ -95,6 +95,6 @@ Neolit preserves their IDs and resolves active references against archived SPEC
 entries. `Description:` explains intent; `Agent notes:` explains actual changes,
 rationale, deviations, or caveats. Notes are not verification evidence.
 
-The workspace does not modify documents while browsing or refreshing. The explicit `a` archive/restore action is the only document-writing operation; it asks for confirmation and refuses stale ranges or modified source buffers. TODO checkboxes are not verification evidence.
+The workspace does not modify documents while browsing or refreshing. The explicit `a` archive/restore action is the only document-writing operation; it executes immediately and refuses stale ranges or modified source buffers. TODO checkboxes are not verification evidence.
 Derived states come from parsed planning documents and current Git metadata;
 verification requires matching evidence for the current base commit and diff.
