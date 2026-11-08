@@ -21,6 +21,8 @@ return {
       t:eq(merged.node, "node22")
       t:eq(merged.no_model, true)
       t:eq(merged.persist_tasks, true, "default survives")
+      t:eq(merged.comparison_base, "HEAD", "planning diff defaults to HEAD")
+      t:eq(config.merge({ comparison_base = "HEAD~1" }).comparison_base, "HEAD~1", "comparison base can be overridden")
       t:eq(config.merge(nil).node, "node")
     end,
   },
