@@ -292,9 +292,34 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
     for _, description in ipairs(task.description or {}) do
       add(prefix .. indent .. " " .. description, { kind = "task_description", parent_key = "task:" .. key, task = task })
     end
+    for _, requirement in ipairs(task.resolvedRequirements or {}) do
+      add(prefix .. indent .. " " .. requirement.specPath .. "#" .. requirement.id .. " " .. requirement.text,
+        { kind = "task_requirement", parent_key = "task:" .. key, requirement = requirement, task = task })
+    end
+    for _, criterion in ipairs(task.resolvedAcceptanceCriteria or {}) do
+      add(prefix .. indent .. " AC " .. criterion.specPath .. "#" .. criterion.id .. " " .. criterion.text,
+        { kind = "task_acceptance", parent_key = "task:" .. key, criterion = criterion, task = task })
+    end
     for _, reference in ipairs(task.specReferences or {}) do
-      add(prefix .. indent .. " " .. reference.path .. "#" .. table.concat(reference.ids or {}, ", "),
-        { kind = "task_reference", parent_key = "task:" .. key, reference = reference, task = task })
+      if #(task.resolvedRequirements or {}) == 0 and #(task.resolvedAcceptanceCriteria or {}) == 0 then
+        add(prefix .. indent .. " " .. reference.path .. "#" .. table.concat(reference.ids or {}, ", "),
+          { kind = "task_reference", parent_key = "task:" .. key, reference = reference, task = task })
+      end
+    end
+    for _, file in ipairs(workspace.git.changedFiles or {}) do
+      for _, association in ipairs(workspace.git.associations or {}) do
+        if association.path == file.path and vim.tbl_contains(association.taskKeys or {}, task.key) then
+          add(prefix .. indent .. " CHANGE " .. file.path .. " " .. tostring(association.state):upper(),
+            { kind = "task_change", parent_key = "task:" .. key, file = file, association = association, task = task })
+        end
+      end
+      for _, association in ipairs(workspace.git.hunkAssociations or {}) do
+        if association.path == file.path and vim.tbl_contains(association.candidateTaskKeys or {}, task.key) then
+          add(prefix .. indent .. " HUNK " .. file.path .. " " .. tostring(association.state):upper()
+            .. " " .. tostring(association.reason),
+            { kind = "task_hunk", parent_key = "task:" .. key, file = file, hunkAssociation = association, task = task })
+        end
+      end
     end
     for _, unresolved in ipairs(task.unresolvedReferences or {}) do
       add(prefix .. indent .. " ! unresolved " .. unresolved.path .. "#" .. table.concat(unresolved.ids or {}, ", "),
@@ -328,9 +353,28 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
       for _, requirement in ipairs(requirements_by_doc[path] or {}) do
         local state = requirement_states[path .. "#" .. requirement.id] or "unmapped"
         local requirement_key = "requirement:" .. path .. "#" .. requirement.id
-        add(child_prefix .. string.rep(" ", child_depth) .. requirement.id .. " " .. state:upper() .. " " .. (requirement.text or ""),
+        local requirement_expanded = expanded_tasks[requirement_key] == true
+        local linked_tasks = {}
+        for _, task in ipairs(workspace.tasks or {}) do
+          for _, reference in ipairs(task.specReferences or {}) do
+            if reference.path == path and vim.tbl_contains(reference.ids or {}, requirement.id) then
+              linked_tasks[#linked_tasks + 1] = task
+              break
+            end
+          end
+        end
+        add(child_prefix .. string.rep(" ", child_depth) .. (requirement_expanded and "- " or "+ ")
+          .. requirement.id .. " " .. state:upper() .. " " .. (requirement.text or ""),
           { kind = "requirement", key = requirement_key, parent_key = "file:" .. path,
-            requirement = requirement, spec_path = path })
+            requirement = requirement, spec_path = path, expanded = requirement_expanded, expandable = true })
+        if requirement_expanded then
+          for _, task in ipairs(linked_tasks) do
+            add(child_prefix .. string.rep(" ", child_depth + 1) .. "TASK " .. task.text
+              .. " " .. (task.checked and "[x]" or "[ ]"),
+              { kind = "requirement_task", parent_key = requirement_key, task = task })
+          end
+        end
+        if requirement_expanded then
         for _, criterion in ipairs((function()
           for _, spec in ipairs(workspace.specs or {}) do
             if spec.path == path then
@@ -345,6 +389,7 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
         end)()) do
           add(child_prefix .. string.rep(" ", child_depth + 1) .. criterion.id .. " " .. criterion.text,
             { kind = "acceptance_criterion", parent_key = requirement_key, criterion = criterion, spec_path = path })
+        end
         end
       end
     end
@@ -1025,6 +1070,9 @@ function M.open(opts)
     elseif row.kind == "task" then
       expanded_tasks[row.task.key] = expanded
       rerender_at(row.key)
+    elseif row.kind == "requirement" then
+      expanded_tasks[row.key] = expanded
+      rerender_at(row.key)
     elseif row.kind == "file" or row.kind == "planning_document" then
       expanded_files[row.path or (row.file and row.file.path)] = expanded
       rerender_at(row.key)
@@ -1037,14 +1085,14 @@ function M.open(opts)
   end
   local function expand_node_at_cursor()
     local row = current_row()
-    if row and (row.kind == "tree_directory" or row.kind == "task" or row.kind == "file" or row.kind == "planning_document") then
+    if row and (row.kind == "tree_directory" or row.kind == "task" or row.kind == "requirement" or row.kind == "file" or row.kind == "planning_document") then
       toggle_node(row, true)
     end
   end
   local function collapse_node_at_cursor()
     local row = current_row()
     if not row then return end
-    if row.kind == "tree_directory" or row.kind == "task" or row.kind == "file" or row.kind == "planning_document" then
+    if row.kind == "tree_directory" or row.kind == "task" or row.kind == "requirement" or row.kind == "file" or row.kind == "planning_document" then
       if row.expanded then
         toggle_node(row, false)
         return
@@ -1123,6 +1171,7 @@ function M.open(opts)
         local row = item.row
         if row.kind == "tree_directory" then expanded_dirs[row.path] = mode == "open"
         elseif row.kind == "task" then expanded_tasks[row.task.key] = mode == "open"
+        elseif row.kind == "requirement" then expanded_tasks[row.key] = mode == "open"
         else expanded_files[row.path or (row.file and row.file.path)] = mode == "open" end
         first_key = first_key or row.key
       end
