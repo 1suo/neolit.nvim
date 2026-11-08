@@ -40,7 +40,7 @@ Install the plugin:
 ## Commands and workflow
 
 - `:Neolit` or `:NeolitPlan` opens the read-only diff-first workspace. The primary section is an expandable file → hunk → changed-line tree; added and removed lines are individually selectable, while task and requirement traceability follows below it.
-- `za` expands/collapses the selected changed file, `zR` expands all files, and `zM` collapses all files. Expanded hunks list added (`+`) and removed (`-`) lines in Git patch order. `K` opens a focused details window for the selected file, hunk, changed line, task, or requirement; long rationale and candidate lists stay out of the tree. Task details include resolved SPEC requirements, acceptance criteria, and unresolved references. Selecting a task or requirement highlights its known linked rows in the diff tree and traceability section.
+- `za` expands/collapses the selected changed file, `zR` expands all files, and `zM` collapses all files. Expanded hunks list added (`+`) and removed (`-`) lines in Git patch order. `K` opens a focused details window for the selected file, hunk, changed line, task, or requirement; long rationale and candidate lists stay out of the tree. Task details include resolved SPEC requirements, acceptance criteria, and unresolved references. Task questions also include bounded excerpts from the most relevant linked README documents, selected by the shared core. Selecting a task or requirement highlights its known linked rows in the diff tree and traceability section.
 - `<CR>` on a TODO task or SPEC requirement opens its exact Markdown source.
 - `<CR>` on a planned file opens the file, or its actual Git diff once changed.
 - `<CR>` on a changed file/hunk opens a native side-by-side diff against the
