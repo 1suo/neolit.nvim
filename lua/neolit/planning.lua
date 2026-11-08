@@ -501,7 +501,7 @@ function M.open(opts)
     local details = {}
     local function put(value)
       if value == nil or value == "" then return end
-      for _, line in ipairs(vim.split(tostring(value), "\\n", { plain = true })) do
+      for _, line in ipairs(vim.split(tostring(value), "\n", { plain = true })) do
         details[#details + 1] = line
       end
     end
@@ -547,7 +547,7 @@ function M.open(opts)
       put("Source: " .. (task.key:match("^(.-)::") or "TODO") .. ":" .. task.range.startLine)
       put("State: " .. tostring((vim.b[buf].neolit_workspace.derived.tasks[task.key] or {}).state or task.state))
       put("Description:")
-      put(table.concat(task.description or {}, "\\n"))
+      put(table.concat(task.description or {}, "\n"))
       put("File hints:")
       for _, path in ipairs(task.filePaths or {}) do put("  " .. path) end
       put("SPEC references:")
