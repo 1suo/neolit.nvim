@@ -557,7 +557,13 @@ function M.open(opts)
       put(row.requirement.id .. " — " .. row.requirement.text)
       put("Source: " .. row.spec_path .. ":" .. row.requirement.range.startLine)
       put("Acceptance criteria:")
-      for _, criterion in ipairs(row.requirement.acceptanceCriteria or {}) do put("  " .. criterion.id .. " " .. criterion.text) end
+      for _, spec in ipairs(vim.b[buf].neolit_workspace.specs or {}) do
+        if spec.path == row.spec_path then
+          for _, criterion in ipairs(spec.acceptanceCriteria or {}) do
+            if vim.tbl_contains(criterion.requirementIds or {}, row.requirement.id) then put("  " .. criterion.id .. " " .. criterion.text) end
+          end
+        end
+      end
     elseif row.kind == "diagnostic" then
       put("DOCUMENTATION DIAGNOSTIC")
       put(row.diagnostic and row.diagnostic.message or "Unresolved reference")
