@@ -1,5 +1,4 @@
---- Read-only Git-native planning workspace. This is intentionally separate
---- from the legacy planned-diff panel and its controller/session protocol.
+--- Read-only Git-native planning workspace backed by the shared TypeScript core.
 local M = {}
 
 local function find_core(opts)
