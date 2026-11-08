@@ -137,12 +137,20 @@ local function open_diff(root, file, selected_hunk, on_line_context, comparison_
     vim.api.nvim_win_set_buf(win, working_buf)
     pcall(vim.api.nvim_win_call, base_win, function() vim.cmd("diffthis") end)
     pcall(vim.api.nvim_win_call, win, function() vim.cmd("diffthis") end)
-    if focus then vim.api.nvim_set_current_win(win) end
+
+    -- Keep the two actual diff windows synchronized for both scrolling and
+    -- cursor movement, regardless of which side currently has focus.
+    for _, diff_win in ipairs({ base_win, win }) do
+      vim.wo[diff_win].scrollbind = true
+      vim.wo[diff_win].cursorbind = true
+    end
 
     local base_line = selected_hunk and selected_hunk.oldStart or 1
     local working_line = selected_hunk and selected_hunk.newStart or (selected_line and selected_line.lineNumber or 1)
     pcall(vim.api.nvim_win_set_cursor, base_win, { math.max(1, base_line), 0 })
     pcall(vim.api.nvim_win_set_cursor, win, { math.max(1, working_line), 0 })
+    pcall(vim.api.nvim_win_call, win, function() vim.cmd("syncbind") end)
+    if focus then vim.api.nvim_set_current_win(win) end
     return
   end
 
