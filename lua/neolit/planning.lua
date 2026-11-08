@@ -972,10 +972,18 @@ function M.open(opts)
         end
       end
     elseif row.kind == "task_change" then
-      open_diff(root, row.file, nil, workspace and workspace.git.base, nil, diff_state, true)
+      if row.file then
+        open_diff(root, row.file, nil, workspace and workspace.git.base, nil, diff_state, true)
+      else
+        vim.notify("The linked changed file is no longer in the workspace; refresh", vim.log.levels.WARN)
+      end
     elseif row.kind == "task_hunk" then
-      open_diff(root, row.file, row.hunk,
-        workspace and workspace.git.base, nil, diff_state, true)
+      if row.file and row.hunk then
+        open_diff(root, row.file, row.hunk,
+          workspace and workspace.git.base, nil, diff_state, true)
+      else
+        vim.notify("The linked hunk is no longer in the workspace; refresh", vim.log.levels.WARN)
+      end
     elseif row.kind == "file" then
       open_diff(root, row.file, nil, workspace and workspace.git.base, nil, diff_state, true)
     elseif row.kind == "hunk" or row.kind == "change_line" then
@@ -1001,10 +1009,11 @@ function M.open(opts)
         open_in_preview(row.path, nil, false)
       end
     elseif row.kind == "task_change" then
-      open_diff(root, row.file, nil, workspace and workspace.git.base, nil, diff_state, false)
+      if row.file then open_diff(root, row.file, nil, workspace and workspace.git.base, nil, diff_state, false) end
     elseif row.kind == "task_hunk" then
-      open_diff(root, row.file, row.hunk,
-        workspace and workspace.git.base, nil, diff_state, false)
+      if row.file and row.hunk then
+        open_diff(root, row.file, row.hunk, workspace and workspace.git.base, nil, diff_state, false)
+      end
     elseif row.kind == "file" then
       open_diff(root, row.file, nil, workspace and workspace.git.base, nil, diff_state, false)
     elseif row.kind == "hunk" or row.kind == "change_line" then
