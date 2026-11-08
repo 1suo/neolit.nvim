@@ -856,6 +856,7 @@ function M.open(opts)
     end
   end
 
+  local current_row
   local function preview_row(row)
     if not row then return end
     local workspace = vim.b[buf].neolit_workspace
@@ -1360,7 +1361,7 @@ function M.open(opts)
       end
     end
   end
-  local function current_row()
+  current_row = function()
     return vim.b[buf].neolit_rows and vim.b[buf].neolit_rows[vim.api.nvim_win_get_cursor(0)[1]]
   end
   local function toggle_node(row, expanded)
