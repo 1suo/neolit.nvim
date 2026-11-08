@@ -540,11 +540,19 @@ function M.open(opts)
     local row = vim.b[buf].neolit_rows and vim.b[buf].neolit_rows[vim.api.nvim_win_get_cursor(0)[1]]
     if not row then return end
     if row.kind == "repository_file" then
-      local target = safe_repo_path(root, row.path)
-      if target and vim.fn.filereadable(target) == 1 then
-        vim.cmd("tabedit " .. vim.fn.fnameescape(target))
+      local changed
+      for _, file in ipairs(workspace and workspace.git.changedFiles or {}) do
+        if file.path == row.path or file.previousPath == row.path then changed = file; break end
+      end
+      if changed then
+        open_diff(root, changed, nil, ask_line_context, workspace.git.base)
       else
-        vim.notify("Repository file is no longer available: " .. row.path, vim.log.levels.WARN)
+        local target = safe_repo_path(root, row.path)
+        if target and vim.fn.filereadable(target) == 1 then
+          vim.cmd("rightbelow vsplit " .. vim.fn.fnameescape(target))
+        else
+          vim.notify("Repository file is no longer available: " .. row.path, vim.log.levels.WARN)
+        end
       end
     elseif row.kind == "task" then
       local task = row.task
