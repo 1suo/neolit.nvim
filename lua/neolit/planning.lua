@@ -1407,9 +1407,9 @@ function M.open(opts)
     if requirement_ref and type(workspace) == "table" then
       for _, task in ipairs(list(workspace.tasks)) do
         if type(task) == "table" then
-          for _, reference in ipairs(list(task.specReferences)) do
-            if type(reference) == "table" and reference.path == selected_row.spec_path
-              and vim.tbl_contains(list(reference.ids), selected_requirement.id) then
+          for _, requirement in ipairs(list(task.resolvedRequirements)) do
+            if type(requirement) == "table" and requirement.specPath == selected_row.spec_path
+              and requirement.id == selected_requirement.id then
               if type(task.key) == "string" then linked_task_keys[task.key] = true end
             end
           end
@@ -1432,22 +1432,23 @@ function M.open(opts)
           elseif candidate.kind == "planned_file" then
             local task = type(candidate.task) == "table" and candidate.task or nil
             related = task ~= nil and task.key == task_key
-          elseif candidate.kind == "requirement" and selected_task then
-            for _, reference in ipairs(list(selected_task.specReferences)) do
-              if type(reference) == "table" and type(candidate.requirement) == "table"
-                and reference.path == candidate.spec_path
-                and vim.tbl_contains(list(reference.ids), candidate.requirement.id) then
+          elseif (candidate.kind == "requirement" or candidate.kind == "task_requirement") and selected_task then
+            local requirement = candidate.requirement
+            for _, item in ipairs(list(selected_task.resolvedRequirements)) do
+              if type(item) == "table" and type(requirement) == "table"
+                and item.specPath == (candidate.spec_path or requirement.specPath)
+                and item.id == requirement.id then
                 related = true
                 break
               end
             end
           end
         elseif requirement_ref then
-          if candidate.kind == "task" then
+          if candidate.kind == "task" or candidate.kind == "requirement_task" then
             local task = type(candidate.task) == "table" and candidate.task or nil
-            for _, reference in ipairs(list(task and task.specReferences)) do
-              if type(reference) == "table" and reference.path == selected_row.spec_path
-                and vim.tbl_contains(list(reference.ids), selected_requirement.id) then
+            for _, item in ipairs(list(task and task.resolvedRequirements)) do
+              if type(item) == "table" and item.specPath == selected_row.spec_path
+                and item.id == selected_requirement.id then
                 related = true
                 break
               end
@@ -1461,9 +1462,13 @@ function M.open(opts)
             local association = type(candidate.hunkAssociation) == "table" and candidate.hunkAssociation or nil
             related = vim.tbl_contains(list(association and association.candidateRequirementRefs), requirement_ref)
           elseif candidate.kind == "task_change" then
-            local association = type(candidate.association) == "table" and candidate.association or nil
-            for _, key in ipairs(list(association and association.taskKeys)) do
-              if linked_task_keys[key] then related = true; break end
+            if candidate.task and linked_task_keys[candidate.task.key] then
+              related = true
+            else
+              local association = type(candidate.association) == "table" and candidate.association or nil
+              for _, key in ipairs(list(association and association.taskKeys)) do
+                if linked_task_keys[key] then related = true; break end
+              end
             end
           end
         end
