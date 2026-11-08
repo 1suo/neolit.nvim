@@ -32,6 +32,9 @@ local function fixture()
   vim.fn.writefile({ "export const value = 1;", "export const next = 2;" }, directory .. "/sample.ts")
   run({ "git", "add", "." }, directory)
   run({ "git", "commit", "-qm", "fixture" }, directory)
+  vim.fn.writefile({ "export const value = 2;", "export const next = 2;" }, directory .. "/sample.ts")
+  run({ "git", "add", "sample.ts" }, directory)
+  run({ "git", "commit", "-qm", "intermediate" }, directory)
   vim.fn.writefile({ "export const value = 1;", "export const next = 3;" }, directory .. "/sample.ts")
   return directory
 end
@@ -62,7 +65,7 @@ return {
       local original_tab_count = #vim.api.nvim_list_tabpages()
       local panel_buf
       local ok, failure = pcall(function()
-        planning.open({ directory = directory, neolit_dir = neolit_dir })
+        planning.open({ directory = directory, neolit_dir = neolit_dir, comparison_base = "HEAD~1" })
         panel_buf = vim.api.nvim_get_current_buf()
         t:ok(vim.wait(15000, function()
           return vim.api.nvim_buf_is_valid(panel_buf) and vim.b[panel_buf].neolit_rows ~= nil
@@ -78,6 +81,9 @@ return {
         t:ok(file_row ~= nil, "changed file is visible")
         local panel_text = table.concat(vim.api.nvim_buf_get_lines(panel_buf, 0, -1, false), "\n")
         t:ok(panel_text:find("implemented", 1, true) ~= nil, "derived task state is displayed")
+        local expected_base = vim.fn.trim(run({ "git", "rev-parse", "HEAD~1" }, directory))
+        t:eq(vim.b[panel_buf].neolit_workspace.git.base, expected_base, "selected comparison ref is resolved to a commit")
+        t:ok(panel_text:find(expected_base:sub(1, 8), 1, true) ~= nil, "resolved comparison base is shown in the header")
         t:ok(panel_text:find("AC-01", 1, true) == nil, "acceptance criteria remain in the SPEC rather than duplicated in the compact list")
         vim.api.nvim_win_set_cursor(0, { file_row, 0 })
         find_mapping("n", "<CR>", panel_buf)()
