@@ -265,7 +265,7 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
       local indent = ancestors or ""
       if entry.directory then
         local expanded = expanded_dirs[entry.path] == true or (expanded_dirs[entry.path] == nil and depth == 0)
-        add("  " .. indent .. branch .. (expanded and "▾ " or "▸ ") .. entry.name .. "/", { kind = "tree_directory", path = entry.path, expanded = expanded })
+        add("  " .. indent .. branch .. (expanded and "▾ " or "▸ ") .. entry.name .. "/", { kind = "tree_directory", key = "dir:" .. entry.path, path = entry.path, expanded = expanded })
         if expanded then render_tree(entry.node, indent .. (last and "    " or "│   "), depth + 1) end
       elseif entry.file then
         render_changed_file(entry.file, indent .. branch)
@@ -548,7 +548,10 @@ function M.open(opts)
     local workspace = vim.b[buf].neolit_workspace
     local row = vim.b[buf].neolit_rows and vim.b[buf].neolit_rows[vim.api.nvim_win_get_cursor(0)[1]]
     if not row then return end
-    if row.kind == "repository_file" then
+    if row.kind == "tree_directory" then
+      expanded_dirs[row.path] = true
+      rerender_at(row.key)
+    elseif row.kind == "repository_file" then
       local changed
       for _, file in ipairs(workspace and workspace.git.changedFiles or {}) do
         if file.path == row.path or file.previousPath == row.path then changed = file; break end
@@ -1002,28 +1005,69 @@ function M.open(opts)
       end
     end
   end
-  local function toggle_file()
-    local row = vim.b[buf].neolit_rows and vim.b[buf].neolit_rows[vim.api.nvim_win_get_cursor(0)[1]]
+  local function current_row()
+    return vim.b[buf].neolit_rows and vim.b[buf].neolit_rows[vim.api.nvim_win_get_cursor(0)[1]]
+  end
+  local function toggle_node(row, expanded)
     if not row then return end
     if row.kind == "tree_directory" then
-      expanded_dirs[row.path] = not (row.expanded ~= false)
-      rerender_at()
-      return
-    elseif row.kind == "task" then
-      expanded_tasks[row.task.key] = not (row.expanded ~= false)
+      expanded_dirs[row.path] = expanded == nil and not row.expanded or expanded
       rerender_at(row.key)
-      return
+    elseif row.kind == "task" then
+      expanded_tasks[row.task.key] = expanded == nil and not row.expanded or expanded
+      rerender_at(row.key)
+    elseif row.kind == "file" then
+      expanded_files[row.file.path] = expanded == nil and not row.expanded or expanded
+      rerender_at(row.key)
     end
-    local file = row.file
-    if row.kind == "hunk" then file = row.file end
-    if not file then return end
-    expanded_files[file.path] = not (expanded_files[file.path] ~= false)
-    rerender_at("file:" .. file.path)
+  end
+  local function toggle_node_at_cursor()
+    toggle_node(current_row())
+  end
+  local function expand_node_at_cursor()
+    local row = current_row()
+    if row and (row.kind == "tree_directory" or row.kind == "task" or row.kind == "file") then
+      toggle_node(row, true)
+    end
+  end
+  local function collapse_node_at_cursor()
+    local row = current_row()
+    if not row then return end
+    if row.kind == "tree_directory" or row.kind == "task" or row.kind == "file" then
+      if row.expanded then
+        toggle_node(row, false)
+        return
+      end
+    end
+    local path = row.path or (row.file and row.file.path) or (row.task and row.task.key)
+    if type(path) ~= "string" then return end
+    local parent = path:match("^(.*)/[^/]+$")
+    if parent then
+      local parent_key = "dir:" .. parent
+      for _, candidate in pairs(vim.b[buf].neolit_rows or {}) do
+        if candidate.key == parent_key then
+          expanded_dirs[parent] = false
+          rerender_at(parent_key)
+          return
+        end
+      end
+    end
   end
   local function set_all_expanded(expanded)
     local workspace = vim.b[buf].neolit_workspace
     if not workspace then return end
+    for path in pairs(expanded_dirs) do expanded_dirs[path] = expanded end
     for _, file in ipairs(workspace.git.changedFiles or {}) do expanded_files[file.path] = expanded end
+    for _, task in ipairs(workspace.tasks or {}) do expanded_tasks[task.key] = expanded end
+    if expanded then
+      for _, path in ipairs(workspace.git.repositoryFiles or {}) do
+        local parent = path:match("^(.*)/[^/]+$")
+        while parent do
+          expanded_dirs[parent] = true
+          parent = parent:match("^(.*)/[^/]+$")
+        end
+      end
+    end
     rerender_at()
   end
   local related_ns = vim.api.nvim_create_namespace("neolit-related-" .. buf)
@@ -1141,7 +1185,9 @@ function M.open(opts)
     end,
   })
   map("<CR>", selected, "Open selected diff, TODO, or SPEC requirement")
-  map("za", toggle_file, "Expand/collapse selected task, folder, or diff file")
+  map("za", toggle_node_at_cursor, "Toggle selected folder, task, or diff file")
+  map("l", expand_node_at_cursor, "Expand selected folder, task, or diff file")
+  map("h", collapse_node_at_cursor, "Collapse selected node or move to parent")
   map("zR", function()
     set_all_expanded(true)
     for _, task in ipairs((vim.b[buf].neolit_workspace or {}).tasks or {}) do expanded_tasks[task.key] = true end
@@ -1155,7 +1201,7 @@ function M.open(opts)
   map("f", function()
     filter_mode = filter_mode == "all" and "affected" or "all"
     local workspace = vim.b[buf].neolit_workspace
-    if workspace then render(buf, root, workspace, expanded_files, expanded_dirs, filter_mode) end
+    if workspace then render(buf, root, workspace, expanded_files, expanded_dirs, expanded_tasks, filter_mode) end
   end, "Toggle all files / affected files")
   map("r", refresh, "Refresh Git-native planning workspace")
   map("x", ask_context, "Ask about selected diff/task and copy context for existing agent")
