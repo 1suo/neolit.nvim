@@ -716,18 +716,18 @@ function M.open(opts)
         return
       end
       local target = safe_repo_path(root, row.path)
-      if target then open_in_preview(row.path) end
+      if target then open_in_preview(row.path, nil, true) end
     elseif row.kind == "repository_file" then
       local changed
       for _, file in ipairs(workspace and workspace.git.changedFiles or {}) do
         if file.path == row.path or file.previousPath == row.path then changed = file; break end
       end
       if changed then
-        open_diff(root, changed, nil, ask_line_context, workspace.git.base, nil, diff_state)
+        open_diff(root, changed, nil, ask_line_context, workspace.git.base, nil, diff_state, true)
       else
         local target = safe_repo_path(root, row.path)
         if target and vim.fn.filereadable(target) == 1 then
-          open_in_preview(row.path)
+          open_in_preview(row.path, nil, true)
         else
           vim.notify("Repository file is no longer available: " .. row.path, vim.log.levels.WARN)
         end
@@ -742,14 +742,14 @@ function M.open(opts)
       local todo_path = task.key:match("^(.-)::")
       local todo_file = todo_path and safe_repo_path(root, todo_path)
       if todo_file then
-        open_in_preview(todo_path, task.range.startLine)
+        open_in_preview(todo_path, task.range.startLine, true)
       end
     elseif row.kind == "requirement" then
       local req = row.requirement
       local spec_path = row.spec_path
       local spec_file = spec_path and safe_repo_path(root, spec_path)
       if spec_file then
-        open_in_preview(spec_path, req.range.startLine)
+        open_in_preview(spec_path, req.range.startLine, true)
       end
     elseif row.kind == "planned_file" then
       local changed
@@ -757,11 +757,11 @@ function M.open(opts)
         if file.path == row.path or file.previousPath == row.path then changed = file; break end
       end
       if changed then
-        open_diff(root, changed, nil, ask_line_context, workspace.git.base, nil, diff_state)
+        open_diff(root, changed, nil, ask_line_context, workspace.git.base, nil, diff_state, true)
       else
         local target = safe_repo_path(root, row.path)
         if target and vim.fn.filereadable(target) == 1 then
-          open_in_preview(row.path)
+          open_in_preview(row.path, nil, true)
         else
           vim.notify("Planned file does not exist yet: " .. row.path, vim.log.levels.INFO)
         end
@@ -772,7 +772,7 @@ function M.open(opts)
         rerender_at(row.key)
         return
       end
-      open_diff(root, row.file, nil, ask_line_context, workspace and workspace.git.base, nil, diff_state)
+      open_diff(root, row.file, nil, ask_line_context, workspace and workspace.git.base, nil, diff_state, true)
     elseif row.kind == "hunk" or row.kind == "change_line" then
       open_diff(root, row.file, row.hunk, ask_line_context, workspace and workspace.git.base,
         row.kind == "change_line" and { side = row.side, lineNumber = row.lineNumber } or nil, diff_state)
