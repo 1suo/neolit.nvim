@@ -360,6 +360,60 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
   vim.bo[buf].modifiable = true
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
   vim.bo[buf].modifiable = false
+  local rich_ns = vim.api.nvim_create_namespace("neolit-tree-rich-" .. buf)
+  vim.api.nvim_buf_clear_namespace(buf, rich_ns, 0, -1)
+  local function mark(line, needle, group, occurrence)
+    local text = lines[line]
+    local from, to = nil, nil
+    local offset = 1
+    for _ = 1, occurrence or 1 do
+      from, to = text:find(needle, offset, true)
+      if not from then return end
+      offset = to + 1
+    end
+    pcall(vim.api.nvim_buf_set_extmark, buf, rich_ns, line - 1, from - 1, {
+      end_col = to, hl_group = group, priority = 110,
+    })
+  end
+  for line, row in pairs(rows) do
+    if row then
+      if row.kind == "header" then
+        vim.api.nvim_buf_add_highlight(buf, rich_ns, "Title", line - 1, 0, -1)
+      elseif row.kind == "tree_directory" then
+        vim.api.nvim_buf_add_highlight(buf, rich_ns, "Directory", line - 1, 0, -1)
+      elseif row.kind == "planning_document" or row.doc_kind then
+        mark(line, "[" .. tostring(row.doc_kind) .. "]", "Special")
+        mark(line, row.doc_kind == "TODO" and "tasks" or row.doc_kind == "SPEC" and "requirements" or "README", "Comment")
+      elseif row.kind == "task" then
+        mark(line, row.task.checked and "[x]" or "[ ]", row.task.checked and "DiagnosticOk" or "Comment")
+        local derived = workspace.derived and workspace.derived.tasks and workspace.derived.tasks[row.task.key]
+        local state = (derived and derived.state or row.task.state or "planned"):upper()
+        local group = state:find("COMPLETE", 1, true) or state == "DONE" and "DiagnosticOk"
+          or state:find("BLOCK", 1, true) and "DiagnosticError"
+          or state:find("PARTIAL", 1, true) and "DiagnosticWarn" or "DiagnosticInfo"
+        mark(line, state, group or "DiagnosticInfo")
+      elseif row.kind == "requirement" then
+        mark(line, row.requirement.id, "Identifier")
+        local state = (requirement_states[row.spec_path .. "#" .. row.requirement.id] or "unmapped"):upper()
+        mark(line, state, state == "SATISFIED" and "DiagnosticOk" or state == "PARTIAL" and "DiagnosticWarn" or "DiagnosticInfo")
+      elseif row.kind == "acceptance_criterion" then
+        vim.api.nvim_buf_add_highlight(buf, rich_ns, "DiagnosticOk", line - 1, 0, -1)
+      elseif row.kind == "file" then
+        local association = row.association or {}
+        local group = association.state == "unplanned" and "DiagnosticWarn"
+          or association.state == "partially-mapped" and "DiagnosticInfo" or "DiagnosticOk"
+        mark(line, association.state == "unplanned" and "?" or association.state == "partially-mapped" and "~" or "✓", group)
+        if row.file and row.file.status then
+          mark(line, row.file.status, row.file.status == "added" and "DiffAdd"
+            or row.file.status == "deleted" and "DiffDelete" or "DiffChange")
+        end
+      elseif row.kind == "hunk" then
+        mark(line, "@@", "DiagnosticWarn")
+      elseif row.kind == "diagnostic" then
+        vim.api.nvim_buf_add_highlight(buf, rich_ns, "DiagnosticWarn", line - 1, 0, -1)
+      end
+    end
+  end
   vim.b[buf].neolit_rows = rows
   vim.b[buf].neolit_root = root
   return buf
@@ -619,6 +673,11 @@ function M.open(opts)
       expanded_dirs[row.path] = true
       rerender_at(row.key)
     elseif row.kind == "planning_document" then
+      if row.expandable and not row.expanded then
+        expanded_files[row.path] = true
+        rerender_at(row.key)
+        return
+      end
       local target = safe_repo_path(root, row.path)
       if target then vim.cmd("tabedit " .. vim.fn.fnameescape(target)) end
     elseif row.kind == "repository_file" then
@@ -673,6 +732,11 @@ function M.open(opts)
         end
       end
     elseif row.kind == "file" then
+      if row.expandable and not row.expanded then
+        expanded_files[row.path] = true
+        rerender_at(row.key)
+        return
+      end
       open_diff(root, row.file, nil, ask_line_context, workspace and workspace.git.base, nil, diff_state)
     elseif row.kind == "hunk" or row.kind == "change_line" then
       open_diff(root, row.file, row.hunk, ask_line_context, workspace and workspace.git.base,
