@@ -1010,14 +1010,15 @@ function M.open(opts)
   end
   local function toggle_node(row, expanded)
     if not row then return end
+    if expanded == nil then expanded = not row.expanded end
     if row.kind == "tree_directory" then
-      expanded_dirs[row.path] = expanded == nil and not row.expanded or expanded
+      expanded_dirs[row.path] = expanded
       rerender_at(row.key)
     elseif row.kind == "task" then
-      expanded_tasks[row.task.key] = expanded == nil and not row.expanded or expanded
+      expanded_tasks[row.task.key] = expanded
       rerender_at(row.key)
     elseif row.kind == "file" then
-      expanded_files[row.file.path] = expanded == nil and not row.expanded or expanded
+      expanded_files[row.file.path] = expanded
       rerender_at(row.key)
     end
   end
@@ -1056,18 +1057,15 @@ function M.open(opts)
   local function set_all_expanded(expanded)
     local workspace = vim.b[buf].neolit_workspace
     if not workspace then return end
-    for path in pairs(expanded_dirs) do expanded_dirs[path] = expanded end
-    for _, file in ipairs(workspace.git.changedFiles or {}) do expanded_files[file.path] = expanded end
-    for _, task in ipairs(workspace.tasks or {}) do expanded_tasks[task.key] = expanded end
-    if expanded then
-      for _, path in ipairs(workspace.git.repositoryFiles or {}) do
-        local parent = path:match("^(.*)/[^/]+$")
-        while parent do
-          expanded_dirs[parent] = true
-          parent = parent:match("^(.*)/[^/]+$")
-        end
+    for _, path in ipairs(workspace.git.repositoryFiles or {}) do
+      local parent = path:match("^(.*)/[^/]+$")
+      while parent do
+        expanded_dirs[parent] = expanded
+        parent = parent:match("^(.*)/[^/]+$")
       end
     end
+    for _, file in ipairs(workspace.git.changedFiles or {}) do expanded_files[file.path] = expanded end
+    for _, task in ipairs(workspace.tasks or {}) do expanded_tasks[task.key] = expanded end
     rerender_at()
   end
   local related_ns = vim.api.nvim_create_namespace("neolit-related-" .. buf)
