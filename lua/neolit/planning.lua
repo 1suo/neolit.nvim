@@ -468,6 +468,38 @@ function M.open(opts)
   local expanded_tasks = {}
   local diff_state = { tree_win = tree_win }
   local filter_mode = "all"
+
+  local function open_in_preview(relative_path, line)
+    local target = safe_repo_path(root, relative_path)
+    if not target or vim.fn.filereadable(target) ~= 1 then
+      vim.notify("File is no longer available: " .. tostring(relative_path), vim.log.levels.WARN)
+      return
+    end
+    local win = diff_state.preview_win
+    if not win or not vim.api.nvim_win_is_valid(win) then
+      win = diff_state.tree_win
+      if not win or not vim.api.nvim_win_is_valid(win) then return end
+      vim.api.nvim_set_current_win(win)
+      vim.cmd("rightbelow vsplit")
+      win = vim.api.nvim_get_current_win()
+      diff_state.preview_win = win
+    end
+    local base_win = diff_state.base_win
+    if base_win and vim.api.nvim_win_is_valid(base_win) then
+      pcall(vim.api.nvim_win_call, base_win, function() vim.cmd("diffoff") end)
+      pcall(vim.api.nvim_win_close, base_win, true)
+      diff_state.base_win = nil
+      diff_state.working_win = nil
+    end
+    pcall(vim.api.nvim_win_call, win, function() vim.cmd("diffoff") end)
+    local target_buf = vim.fn.bufadd(target)
+    vim.fn.bufload(target_buf)
+    vim.api.nvim_win_set_buf(win, target_buf)
+    vim.api.nvim_set_current_win(win)
+    if line then
+      vim.api.nvim_win_set_cursor(win, { math.max(1, line), 0 })
+    end
+  end
   local function refresh()
     refresh_revision = refresh_revision + 1
     local revision = refresh_revision
@@ -706,7 +738,7 @@ function M.open(opts)
         return
       end
       local target = safe_repo_path(root, row.path)
-      if target then vim.cmd("tabedit " .. vim.fn.fnameescape(target)) end
+      if target then open_in_preview(row.path) end
     elseif row.kind == "repository_file" then
       local changed
       for _, file in ipairs(workspace and workspace.git.changedFiles or {}) do
@@ -717,7 +749,7 @@ function M.open(opts)
       else
         local target = safe_repo_path(root, row.path)
         if target and vim.fn.filereadable(target) == 1 then
-          vim.cmd("rightbelow vsplit " .. vim.fn.fnameescape(target))
+          open_in_preview(row.path)
         else
           vim.notify("Repository file is no longer available: " .. row.path, vim.log.levels.WARN)
         end
@@ -732,16 +764,14 @@ function M.open(opts)
       local todo_path = task.key:match("^(.-)::")
       local todo_file = todo_path and safe_repo_path(root, todo_path)
       if todo_file then
-        vim.cmd("tabedit " .. vim.fn.fnameescape(todo_file))
-        vim.api.nvim_win_set_cursor(0, { task.range.startLine, 0 })
+        open_in_preview(todo_path, task.range.startLine)
       end
     elseif row.kind == "requirement" then
       local req = row.requirement
       local spec_path = row.spec_path
       local spec_file = spec_path and safe_repo_path(root, spec_path)
       if spec_file then
-        vim.cmd("tabedit " .. vim.fn.fnameescape(spec_file))
-        vim.api.nvim_win_set_cursor(0, { req.range.startLine, 0 })
+        open_in_preview(spec_path, req.range.startLine)
       end
     elseif row.kind == "planned_file" then
       local changed
@@ -753,7 +783,7 @@ function M.open(opts)
       else
         local target = safe_repo_path(root, row.path)
         if target and vim.fn.filereadable(target) == 1 then
-          vim.cmd("tabedit " .. vim.fn.fnameescape(target))
+          open_in_preview(row.path)
         else
           vim.notify("Planned file does not exist yet: " .. row.path, vim.log.levels.INFO)
         end
