@@ -1,304 +1,78 @@
 # neolit.nvim
 
-Neovim host for [neolit](https://github.com/1suo/neolit), the planned-diff
-augmentation kernel.
-The plugin gives Neovim the same operational plane as the standalone `augment`
-TUI: the repository tree with integrated plan state on the left, the
-DESCRIPTION/CHANGES detail pane on the right, the message panel below, and the
-same key set driving the same controller.
+Neovim companion for [Neolit](https://github.com/1suo/neolit), the
+Git-native planning and diff-traceability core.
 
-It does not reimplement the TUI. A small Node **host shim**
-(`host/host.mjs`) embeds the exact classes the TUI embeds —
-`AugmentTuiController`, `CliAgentRuntime`, and the pure view model from
-`dist/tui/detail.js` — from a built neolit checkout, and speaks
-newline-delimited JSON-RPC 2.0 over stdio (the `augmentd` framing). The Lua
-side only renders frames into native windows and routes keys. Plan lifecycle,
-model routing, retries, apply/commit transactions, and pane formatting stay
-single-sourced in the neolit package.
+The plugin is deliberately thin: it loads the shared TypeScript core, renders
+ordinary README/SPEC/TODO intent beside actual Git changes, and uses native
+Neovim buffers and diff windows. It does not generate or apply patches, stage
+or commit files, run an agent, or maintain a separate task/session store.
 
 ## Requirements
 
-- Neovim ≥ 0.10 (float titles, `vim.ui`, `vim.json`)
-- Node ≥ 22.12
-- A neolit checkout with `dist/` built (`npm run build`), or an npm-installed
-  `neolit`
-- Optional: an agent CLI on PATH (`opencode`, `claude`, or `codex`) for model
-  operations. Without one, the panel opens in browse-only "NO MODEL" mode —
-  pure tree operations still work.
+- Neovim 0.10+
+- Node.js 22.12+
+- A built Neolit checkout containing `dist/index.js` and `dist/planning/`
 
-## Install
+Build the core:
+
+```sh
+cd /path/to/neolit
+npm install
+npm run build
+```
+
+Install the plugin:
 
 ```lua
 {
   "1suo/neolit.nvim",
-  opts = {}, -- see Configuration
-  cmd = { "Neolit", "NeolitClose" },
+  opts = {
+    neolit_dir = "/path/to/neolit",
+    -- directory = "/path/to/repository", -- defaults to current working directory
+    -- comparison_base = "HEAD",          -- any commit/ref; defaults to HEAD
+    -- node = "node",
+  },
+  cmd = { "Neolit", "NeolitPlan", "NeolitClose" },
 }
 ```
 
-Run `:Neolit` inside the repository you want to plan a change for
-(`:Neolit add retry bounds` starts a task immediately, like
-`augment "add retry bounds"`). The panel opens in **its own tabpage** — the
-native full-screen unit — so your windows, layout, and focus in the current
-tab are untouched; `q` closes the tab and puts you back exactly where you
-were. With task persistence on (default), the active task is resumed on
-next open, exactly like restarting the TUI.
+## Commands and workflow
 
-The `neolit` package is located by trying, in order: the `neolit_dir` option,
-`$NEOLIT_DIR`, a `neolit` directory next to this plugin, then the npm global
-root.
+- `:Neolit` or `:NeolitPlan` opens the read-only diff-first workspace. The primary section is an expandable file → hunk → changed-line tree; added and removed lines are individually selectable, while task and requirement traceability follows below it.
+- `za` expands/collapses the selected changed file, `zR` expands all files, and `zM` collapses all files. Expanded hunks list added (`+`) and removed (`-`) lines in Git patch order. `K` opens a focused details window for the selected file, hunk, changed line, task, or requirement; long rationale and candidate lists stay out of the tree. Task details include resolved SPEC requirements, acceptance criteria, and unresolved references; requirement details also list linked TODO tasks and their derived states. Task questions also include bounded excerpts from the most relevant linked README documents, selected by the shared core. Selecting a task or requirement highlights its known linked rows in the diff tree and traceability section.
+- `<CR>` on a TODO task or SPEC requirement opens its exact Markdown source.
+- `<CR>` on a planned file opens the file, or its actual Git diff once changed.
+- `<CR>` on a changed file/hunk opens a native side-by-side diff against the
+  selected comparison base; on an individual added/removed line it opens at
+  that exact line on the working-tree/base side respectively.
+- `x` on a task, requirement, file, hunk, or individual changed line asks for a question and copies a
+  bounded context packet for the user's existing agent conversation. Task/requirement packets include resolved linked SPEC text and acceptance criteria; line packets carry the exact side and line coordinate.
+- In a native diff, `<leader>nx` on a line or visual selection copies context
+  for those exact lines. Stale diff/base anchors are rejected.
+- `r` refreshes; `q` or `:NeolitClose` closes the workspace.
 
-## Layout
+The diff tree displays every changed file and its hunks first, with Git status,
+conservative mapping markers, and exact candidate task/requirement references
+on each hunk row. TODO/SPEC traceability, derived task/requirement states,
+and planned-file annotations remain available in the sections below.
+File hints are candidates, not proof of implementation. README/SPEC/TODO
+files remain untouched; TODO checkboxes are not verification evidence.
 
-The panel opens in **its own tabpage** — the native full-screen unit, not a
-takeover: your windows, layout, and focus in the current tab are untouched,
-and `q` closes the tab and puts you back exactly where you were:
-
-```text
-┌─ FILES ───┬─ CHANGES ────────┬─ DESCRIPTION ─────┐
-│ ◆ repo/78%│ --- session.ts   │ make retries      │
-│ └─ src/   │ +++ session.ts   │ bounded …         │
-│           │ @@ +gamma        │───────────────────│
-│           │                  │ SESSION (stream)  │
-└───────────┴──────────────────┴───────────────────┘
-```
-
-- `:Neolit` opens the tab: the tree sidebar, a full-height **diff column**
-  (present while drafted patches exist; without one the description column
-  owns the whole remaining width — diff where it exists, description
-  everywhere else), and the **description column**, with a bounded
-  **SESSION stream pane** splitting under the description while an agent
-  session runs. All are real windows, so standard `<C-w>` motion, resizing,
-  `:q`, and `gt` behave normally — manual resizes stick until the diff
-  column (dis)appears. `q` closes the panel tab; closing the sidebar does
-  the same.
-- The diff column is a **real file buffer** whenever it composes with one:
-  named after the selected file (when the name is free), carrying the
-  file's own filetype, and showing the drafted change marked in place
-  gitsigns-style — added lines get full-width `DiffAdd`, removed lines
-  render as `DiffDelete` virtual lines where they were. Because the buffer
-  is a plain code buffer with a real filename and filetype, native syntax,
-  treesitter, **and LSP diagnostics work on the drafted result**. `R` swaps
-  in the raw unified patch as a native `filetype=diff` scratch buffer
-  (colorscheme diff groups, plus `DiffAdd`/`DiffDelete` backgrounds and the
-  source language's syntax inside changed blocks); a repository-only file's
-  body renders with its own filetype's syntax too. The change summary and
-  applied count live in the diff column's winbar.
-- Colors follow the active colorscheme by default: every group links to a
-  semantic target (Special, Directory, diffAdded, WarningMsg, Comment,
-  Visual for the selected row). Set `palette = "tui"` for the terminal
-  TUI's exact colors instead.
-- Status, directory/branch, session(task), and model chips live in the
-  sidebar's **winbar**; while an operation runs, the winbar shows the spinner
-  and operation instead, and a quiet `· related` suffix marks an active
-  related filter (either the host's plan-only toggle or the kernel's).
-  Messages and errors go through **`vim.notify`**.
-- Both panes carry identical buffer-local keymaps (the analog of the TUI's
-  global input handler), so every key behaves the same in either pane.
-- The tree selection is the cursor line (`cursorline` highlight,
-  window-local `scrolloff` keeps it centered). Window settings are
-  **contractual, not decorative**: the tree alone is a widget (no numbers,
-  no wrap, centered selection — local to its window), every content pane
-  (diff, description, session) resets the widget's options back to **your
-  global settings** whenever it is created or recreated (`:q` + `Tab`, the
-  session pane toggling), and the panel never writes a global option. The
-  composed diff buffer goes further — real filename and filetype — so your
-  ftplugins and per-filetype settings apply to it natively; the description
-  and session panes keep stable buffer names (`neolit://desc`,
-  `neolit://session`) as autocmd targets. The panel also owns pane
-  geometry, enforced explicitly on open and resize.
-- Indicators (`◆ ~ + - ✓ ! # ● ? ○ ◐` …) and the two-section detail pane come from
-  the TUI's view model; their meaning is canonical in
-  [neolit's TUI README](https://github.com/1suo/neolit/blob/main/src/tui/README.md).
-- All panel keymaps carry `desc` fields, so which-key lists them natively.
-
-## Keys
-
-Same operations and key letters as the TUI (lowercase), with nvim-native
-additions (`gf`, folds, `?`):
-
-```text
-j k    move selection (tree pane) or scroll detail (detail pane)
-Enter  prompt for the selected path — the message is routed by one bounded
-       model call: a task message regenerates its subtree (empty submit
-       rethinks), an explanation explains around the path, an ambiguous one
-       offers interpretations rendered in the description dock
-1-9    choose the numbered approach, or the numbered interpretation of an
-       offered route while one is open
-d      develop the selected path and everything under it — a chosen approach
-       expands into files, then every undrafted file below is drafted in ONE
-       batched model call (validated all-or-nothing; per-file fallback marks
-       failures × and summarizes "Drafted n/m — press D to retry")
-a      apply drafted patch to the working tree (git-apply preflighted as one
-       rollback-capable unit; nothing is staged)
-g      verify selected applied patches (git diff --check and reverse-apply
-       preflight); commit is blocked until all applied paths verify
-c      commit the session-applied paths only (pathspec commit; unrelated
-       dirty or staged files stay untouched)
-l / w  mark/unmark the selected path in the restriction plain (lock / allow
-       polarity; the other key inverts the plain)
-m      switch the agent, then role, then model — provider → model steps over
-       the chosen backend's catalog (cached 5 minutes; typed fallback when
-       no catalog). Choosing another agent switches the live runtime and
-       persists the choice, exactly like `augment setup`
-t      switch task: a picker over this repository's stored tasks (newest
-       first, the active one marked); choosing one resumes it with its
-       applied set and session-stream tail
-x      send a raw message straight into the task's agent session — no
-       routing, no plan mutation; the reply streams into the SESSION pane
-n      new change task
-o      reopen selected node with a reason
-s      mark a real path changed outside the plan
-gf / o open the selected file as a real buffer (falls back to its patch
-       buffer for drafted new files; directories fold). File visits open
-       inside the panel tab — :q or gt moves on like any window
-p      edit the selected path's drafted patch as a diff buffer — :w saves it
-       back into the plan through patch/set
-za/zc/zo  toggle/close/open the directory under the cursor (o and F also
-       toggle); untouched folders start folded — folders touched by the plan
-       and their ancestors stay open; drafted paths carry +n −n line counts
-zm/zr/zM/zR  fold by level: one level closed/opened, or everything
-h      toggle the related-only filter: planned paths and restriction-plain
-       marks with their connecting ancestors (a [RELATED] chip marks it)
-v      show/hide the agent SESSION stream pane under the tree — the live
-       steps, tool calls, and replies of the running agent session
-r      toggle the diff column between the composed file body and the raw
-       unified patch
-Tab    switch pane (also <Right>; <Left> returns to the tree)
-Esc    cancel the running operation
-q      quit (cancels, closes the panel tab, shuts the host down)
-?      floating cheat-sheet of the panel keys, straight from the keymap
-       descriptions so it can never drift
-```
-
-Every operation key is also reachable globally as `< prefix ><key>` with the
-key identical to the TUI (`<leader>nd`, `<leader>n1`–`n9`, `<leader>n<CR>`,
-… — or any prefix you prefer): `require("neolit").key(key)` opens the panel
-when closed and then acts, so the maps work from any buffer. Motion and
-folding keys stay pane-local. For plugin managers without lazy key specs,
-set `keymap_prefix = "<leader>n"` and the plugin binds them itself.
-
-Prompts (`n`, `Enter`, `o`, `s`, `x`) go through `vim.ui.input`, so
-`dressing.nvim`/`snacks.nvim` style pickers work if installed.
+The context action uses the editor clipboard (with the unnamed register as a
+fallback). It never sends source text to an agent or creates a Neolit-owned
+conversation. Paste the packet into the intended existing session yourself.
 
 ## Configuration
 
 ```lua
 require("neolit").setup({
-  neolit_dir = nil,     -- path to a neolit checkout with dist/ (default: $NEOLIT_DIR,
-                        -- then ../neolit beside this plugin, then npm root -g)
-  node = "node",        -- Node executable for the host shim
-  directory = nil,      -- repository root; default: working directory at open
-  no_model = false,     -- force NO MODEL mode (AUGMENT_TUI_NO_MODEL=1)
-  persist_tasks = true, -- persist and resume the active task (AUGMENT_TUI_TASKS)
-  sidebar_width = 42,   -- tree sidebar width in columns
-  detail_width = nil,   -- diff-column width (nil = half the non-sidebar space; the description column keeps a 24-column minimum)
-  palette = "system",   -- "system": follow the colorscheme via semantic links
-                        -- "tui": the terminal TUI's exact hexes
-  keymap_prefix = nil,  -- e.g. "<leader>n": bind every TUI operation key globally
-  host_args = nil,      -- extra argv for host.mjs (advanced/tests)
-  hooks = nil,          -- { input = …, select = … } test seams
+  neolit_dir = "/path/to/neolit", -- or $NEOLIT_DIR / sibling checkout / npm global root
+  node = "node",
+  directory = nil,                -- repository root; default: cwd
+  comparison_base = "HEAD",
 })
 ```
 
-The **agent socket**: while the panel is open it serves a
-directory-keyed address —
-`$XDG_RUNTIME_DIR/neolit/augment-nvim-<basename>-<hash>.sock`, the TUI's
-own default with an `nvim` marker — so a TUI in the same repository and
-panels in other projects never collide with it. The address is reported in
-every pushed frame's `socketPath` field. External agents attach with
-`augmentd --mcp --connect <path>` and their
-mutations render live. Override with `AUGMENT_TUI_SOCKET`; disable with
-`no_socket = true` or `AUGMENT_TUI_NO_SOCKET=1`.
-
-Model configuration is shared with the TUI: `~/.config/neolit/augment.json`
-(written by `augment setup`), the same `AUGMENT_*` environment variables, and
-the same agent backends (OpenCode by default; `AUGMENT_BACKEND=claude|codex`).
-Authentication belongs to each backend's CLI.
-
-## Attaching an external agent
-
-While the panel is open it serves the same agent socket the TUI does
-(`AUGMENT_TUI_SOCKET` overrides the path, `AUGMENT_TUI_NO_SOCKET=1`
-disables it); every pushed frame reports the address in its `socketPath`
-field. Point an MCP agent
-host at it:
-
-```sh
-augmentd --mcp --connect "$XDG_RUNTIME_DIR/neolit/augment.sock" --directory .
-```
-
-Every tool call (`draft_file`, `select_approach`, `refine_plan`, …) mutates
-the task the panel is rendering: adopted changes repaint the sidebar and
-detail panes as they land, with an "Agent update rendered" notice. A write
-racing a running panel operation queues behind it and then fails the
-optimistic-concurrency check, like any other stale writer.
-
-## Architecture
-
-```text
-┌─ Neovim ─────────────────────────────┐      ┌─ node host/host.mjs ─────────┐
-│ lua/neolit/ui.lua      panel splits  │      │ AugmentTuiController        │
-│ lua/neolit/keys.lua    key routing   │◄────►│ CliAgentRuntime (opencode/  │
-│ lua/neolit/host.lua    JSON-RPC job  │ stdio│   claude/codex)             │
-│ lua/neolit/render.lua  extmarks      │ JSON │ detail.js view model        │
-│ lua/neolit/{theme,config,framing}    │      │ apply/commit transactions   │
-└──────────────────────────────────────┘      └─────────────────────────────┘
-```
-
-- Requests are one JSON-RPC object per line (no batches), like `augmentd`.
-  Every state-changing request answers with a fresh **frame**: header chips,
-  tree rows with colored segments, detail lines, panel state, and the numbered
-  approach choices open on the selected row. Merged diff bodies ship as
-  **structured lines** (`text` + `context`/`add`/`remove`) so the diff
-  column composes them into a native file buffer; `text` always stays the
-  raw unified patch.
-- `backends` lists the agent catalog with the live one marked; `configure`
-  with a `backend` rebuilds the runtime, its tool session, and the persisted
-  config live (the `m` picker's agent step); `tasks` and `task_switch` back
-  the `t` picker; `chat` is the `x` key's raw message into the agent
-  session.
-- Host callbacks are routed by owning session: a previous panel's
-  shutting-down host still pushes frames, and they can never paint — or
-  error-close — a newer panel.
-- Long operations never block: `frame` requests carry the animated spinner
-  while an operation runs; the shim pushes `neolit/frame` notifications when
-  an external agent's mutation over the socket lands while the panel is
-  idle. Approach generation is always explicit (`d`, or a message with an
-  empty submit) — nothing runs as a side effect of starting or opening a
-  task.
-- The singleton adoption inside develop, the develop policy, restriction
-  plain semantics (including its carry across task starts), apply preflight,
-  and pathspec commit all live in the controller and kernel — nothing is
-  duplicated in Lua.
-- `lua/neolit/theme.lua` maps the TUI palette onto `Neolit*` highlight groups
-  (defined with `default = true`, so a user highlight wins); override any
-  `Neolit*` group to restyle.
-
-Known divergences from the TUI: the model picker uses `vim.ui.select`
-steps instead of the embedded picker (same agent → role → provider → model
-order and live backend switching); the input line is `vim.ui.input` instead
-of the embedded panel input; status lives in the winbar and feedback in
-`vim.notify` instead of the TUI's header and message panel; file visits
-(`gf`/`o` and `p`) are nvim-only windows inside the panel tab.
-
-## Development contract
-
-This repository is a thin Neovim host for the shared planned-diff controller.
-Read [AGENTS.md](./AGENTS.md) and the reusable
-[Neovim host workflow skill](./.agents/skills/neolit-neovim-host/SKILL.md)
-before changing the Lua UI, keymap, or Node bridge. Changes to plan lifecycle,
-repository behavior, agent sessions, and apply/verify semantics belong in the
-shared [neolit](https://github.com/1suo/neolit) package.
-
-## Validation
-
-```sh
-npm test                        # host shim end-to-end over stdio (node --test)
-nvim --clean -l test/run.lua    # Lua units + full-stack headless UI smoke test
-```
-
-The tests need a built neolit `dist/` next to this plugin (or `NEOLIT_DIR` /
-`NEOLIT_TEST_DIST`). The Lua suite runs the real UI against the shim's
-deterministic stub model runtime inside a throwaway git fixture; nothing
-touches your repositories or persisted tasks (`AUGMENT_TUI_TASKS=0`).
+The core reads repository documents and Git metadata only. It does not execute
+repository scripts or alter the worktree, index, or history.

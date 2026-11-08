@@ -16,14 +16,7 @@ vim.opt.runtimepath:prepend(base .. "/..")
 vim.opt.runtimepath:prepend(vim.fn.stdpath("data") .. "/site")
 
 local spec_files = {
-  "config_spec",
-  "theme_spec",
-  "framing_spec",
-  "host_spec",
-  "keys_spec",
-  "ui_spec",
-  "init_spec",
-  "ui_smoke_spec",
+  "planning_spec",
 }
 
 local passed, failed = 0, 0
