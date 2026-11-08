@@ -298,6 +298,19 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
     if type(file) ~= "table" or type(hunk_index) ~= "number" then return nil end
     return file.hunks and file.hunks[hunk_index + 1] or nil
   end
+  local function hunk_review_summary(review)
+    local candidates = {}
+    for _, task_key in ipairs(review.candidateTaskKeys or {}) do
+      local task = tasks_by_key[task_key]
+      candidates[#candidates + 1] = task and task.text or task_key
+    end
+    for _, ref in ipairs(review.candidateRequirementRefs or {}) do
+      candidates[#candidates + 1] = ref
+    end
+    local summary = tostring(review.state):upper() .. " · " .. tostring(review.reason)
+    if #candidates > 0 then summary = summary .. " · candidates: " .. table.concat(candidates, "; ") end
+    return summary
+  end
   local function state_reason(state, projection)
     if state == "unmapped" then return "No valid SPEC requirement reference" end
     if state == "blocked" then return "Blocked by an explicit blocker" end
@@ -403,7 +416,7 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
         if item.path == review.path and item.hunkIndex == review.hunkIndex then hunk_association = item; break end
       end
       add(prefix .. indent .. " HUNK " .. review.path .. "#" .. tostring(review.hunkIndex + 1)
-        .. " " .. tostring(review.state):upper() .. " · " .. tostring(review.reason),
+        .. " " .. hunk_review_summary(review),
         { kind = "task_hunk", parent_key = "task:" .. key, file = file,
           hunk = find_changed_hunk(file, review.hunkIndex),
           hunkAssociation = hunk_association, task = task })
@@ -532,8 +545,7 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
               if item.path == review.path and item.hunkIndex == review.hunkIndex then hunk_association = item; break end
             end
             add(child_prefix .. string.rep(" ", child_depth + 1) .. "HUNK " .. review.path .. "#"
-              .. tostring(review.hunkIndex + 1) .. " " .. tostring(review.state):upper()
-              .. " · " .. tostring(review.reason),
+              .. tostring(review.hunkIndex + 1) .. " " .. hunk_review_summary(review),
               { kind = "task_hunk", parent_key = requirement_key, file = file,
                 hunk = find_changed_hunk(file, review.hunkIndex),
                 hunkAssociation = hunk_association, requirement = requirement })
