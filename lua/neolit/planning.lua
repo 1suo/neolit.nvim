@@ -762,7 +762,60 @@ function M.open(opts)
     for _, file in ipairs(workspace.git.changedFiles or {}) do expanded_files[file.path] = expanded end
     rerender_at()
   end
+  local related_ns = vim.api.nvim_create_namespace("neolit-related-" .. buf)
+  local function highlight_related()
+    if not vim.api.nvim_buf_is_valid(buf) then return end
+    vim.api.nvim_buf_clear_namespace(buf, related_ns, 0, -1)
+    local rows = vim.b[buf].neolit_rows or {}
+    local cursor = vim.api.nvim_win_get_cursor(0)
+    local selected_row = rows[cursor[1]]
+    if not selected_row or (selected_row.kind ~= "task" and selected_row.kind ~= "requirement") then return end
+    local task_key = selected_row.kind == "task" and selected_row.task.key or nil
+    local requirement_ref = selected_row.kind == "requirement"
+      and (selected_row.spec_path .. "#" .. selected_row.requirement.id) or nil
+    local workspace = vim.b[buf].neolit_workspace
+    for line, candidate in pairs(rows) do
+      local related = false
+      if task_key then
+        if candidate.kind == "file" then
+          related = vim.tbl_contains(candidate.association and candidate.association.taskKeys or {}, task_key)
+        elseif candidate.kind == "hunk" or candidate.kind == "change_line" then
+          related = vim.tbl_contains(candidate.hunkAssociation and candidate.hunkAssociation.candidateTaskKeys or {}, task_key)
+        elseif candidate.kind == "planned_file" then
+          related = candidate.task and candidate.task.key == task_key
+        elseif candidate.kind == "requirement" then
+          for _, reference in ipairs(selected_row.task.specReferences or {}) do
+            if reference.path == candidate.spec_path and vim.tbl_contains(reference.ids or {}, candidate.requirement.id) then
+              related = true
+              break
+            end
+          end
+        end
+      elseif requirement_ref then
+        if candidate.kind == "task" then
+          for _, reference in ipairs(candidate.task.specReferences or {}) do
+            if reference.path == selected_row.spec_path and vim.tbl_contains(reference.ids or {}, selected_row.requirement.id) then
+              related = true
+              break
+            end
+          end
+        elseif candidate.kind == "file" then
+          related = vim.tbl_contains(candidate.association and candidate.association.requirementIds or {}, selected_row.requirement.id)
+        elseif candidate.kind == "hunk" or candidate.kind == "change_line" then
+          related = vim.tbl_contains(candidate.hunkAssociation and candidate.hunkAssociation.candidateRequirementRefs or {}, requirement_ref)
+        end
+      end
+      if related then
+        vim.api.nvim_buf_add_highlight(buf, related_ns, "IncSearch", line - 1, 0, -1)
+      end
+    end
+  end
   local refresh_group = vim.api.nvim_create_augroup("NeolitPlanning" .. buf, { clear = true })
+  vim.api.nvim_create_autocmd("CursorMoved", {
+    group = refresh_group,
+    buffer = buf,
+    callback = highlight_related,
+  })
   vim.api.nvim_create_autocmd({ "BufWritePost", "FileChangedShellPost" }, {
     group = refresh_group,
     callback = function(event)
