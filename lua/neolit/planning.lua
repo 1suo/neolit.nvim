@@ -379,7 +379,12 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
     local status, kind = git_status[path], doc_kind[path]
     local git_marker = status and (status.index .. status.worktree) or "  "
     local association = associations[path] or { state = "unplanned", taskKeys = {} }
-    local marker = changed and (association.state == "unplanned" and "?" or (association.state == "partially-mapped" and "~" or "✓")) or ""
+    local marker = changed and (
+      association.state == "unplanned" and "?"
+      or (association.state == "partially-mapped" or association.state == "unresolved") and "~"
+      or association.state == "documentation" and "D"
+      or "✓"
+    ) or ""
     local is_expanded = expanded_files[path] == true
     local file_association = associations[path]
     local file_hunks = {}
@@ -413,7 +418,24 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
           if tasks_by_key[task_key] then linked_tasks[#linked_tasks + 1] = tasks_by_key[task_key] end
         end
         local reviews = projection and projection.hunkReviews or {}
-        local criteria = projection and projection.acceptanceCriteria or {}
+        local criteria = {}
+        local verified_by_ref = {}
+        for _, item in ipairs(projection and projection.acceptanceCriteria or {}) do
+          verified_by_ref[item.ref] = item.verified == true
+        end
+        for _, spec in ipairs(workspace.specs or {}) do
+          if spec.path == path then
+            for _, criterion in ipairs(spec.acceptanceCriteria or {}) do
+              if vim.tbl_contains(criterion.requirementIds or {}, requirement.id) then
+                local criterion_ref = path .. "#" .. criterion.id
+                criteria[#criteria + 1] = {
+                  ref = criterion_ref, text = criterion.text,
+                  verified = verified_by_ref[criterion_ref] == true,
+                }
+              end
+            end
+          end
+        end
         local has_details = #linked_tasks + #reviews + #criteria > 0
         add(child_prefix .. string.rep(" ", child_depth) .. (has_details and (requirement_expanded and "- " or "+ ") or "  ")
           .. requirement.id .. " " .. state:upper() .. " " .. (requirement.text or ""),
@@ -549,20 +571,26 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
         local task_state = derived_tasks[row.task.key]
         local state = (type(task_state) == "table" and task_state.state or row.task.state or "planned"):upper()
         local group = "DiagnosticInfo"
-        if state:find("COMPLETE", 1, true) or state == "DONE" or state == "SATISFIED" then
+        if state == "VERIFIED" or state == "IMPLEMENTED" then
           group = "DiagnosticOk"
-        elseif state:find("BLOCK", 1, true) then
+        elseif state == "BLOCKED" then
           group = "DiagnosticError"
-        elseif state:find("PARTIAL", 1, true) or state:find("PROGRESS", 1, true) then
+        elseif state == "IN-PROGRESS" or state == "UNMAPPED" then
           group = "DiagnosticWarn"
         end
         mark(line, state, group)
       elseif row.kind == "requirement" then
         mark(line, row.requirement.id, "Identifier")
         local state = (requirement_states[row.spec_path .. "#" .. row.requirement.id] or "unmapped"):upper()
-        mark(line, state, state == "SATISFIED" and "DiagnosticOk" or state == "PARTIAL" and "DiagnosticWarn" or "DiagnosticInfo")
-      elseif row.kind == "acceptance_criterion" then
-        vim.api.nvim_buf_add_highlight(buf, rich_ns, "DiagnosticOk", line - 1, 0, -1)
+        local group = state == "VERIFIED" or state == "IMPLEMENTED" and "DiagnosticOk"
+          or (state == "IN-PROGRESS" or state == "UNMAPPED") and "DiagnosticWarn"
+          or state == "BLOCKED" and "DiagnosticError" or "DiagnosticInfo"
+        mark(line, state, group)
+      elseif row.kind == "acceptance_criterion" or row.kind == "requirement_criterion" then
+        vim.api.nvim_buf_add_highlight(buf, rich_ns,
+          row.verified and "DiagnosticOk" or "DiagnosticWarn", line - 1, 0, -1)
+      elseif row.kind == "task_hunk" then
+        vim.api.nvim_buf_add_highlight(buf, rich_ns, "DiagnosticWarn", line - 1, 0, -1)
       elseif row.kind == "repository_file" then
         local git = row.git_status
         if git then
