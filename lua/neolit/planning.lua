@@ -280,7 +280,7 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
     local task_state = derived_tasks[key]
     local state = type(task_state) == "table" and task_state.state or task.state or "planned"
     local checkbox = task.checked and "[x]" or "[ ]"
-    local indent = string.rep("  ", depth)
+    local indent = string.rep(" ", depth)
     local expandable = #(task.filePaths or {}) + #(task.specReferences or {}) + #(task.description or {}) + #(task.unresolvedReferences or {}) > 0
     add(prefix .. indent .. (expandable and (expanded and "▾ " or "▸ ") or "• ") .. checkbox .. "  " .. state:upper() .. "  " .. task.text,
       { kind = "task", key = "task:" .. key, parent_key = "file:" .. (key:match("^(.-)::") or "TODO.md"), task = task, expanded = expanded,
@@ -302,7 +302,7 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
     end
   end
   local function render_file(entry, prefix, branch)
-    local child_prefix = prefix .. (branch == "└─ " and "   " or "│  ")
+    local child_prefix = prefix .. (branch == "└ " and " " or "│ ")
     local path, changed = entry.path, changed_by_path[entry.path]
     local status, kind = git_status[path], doc_kind[path]
     local git_marker = status and (status.index .. status.worktree) or "  "
@@ -326,7 +326,7 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
     local has_children = changed ~= nil or (kind == "TODO" and #(tasks_by_doc[path] or {}) > 0)
       or (kind == "SPEC" and #(requirements_by_doc[path] or {}) > 0)
     add(prefix .. branch .. (has_children and (is_expanded and "▾ " or "▸ ") or "  ")
-      .. (kind and ("[" .. kind .. "] ") or "") .. marker .. " " .. entry.name
+      .. (kind and kind ~= "README" and ("[" .. kind .. "] ") or "") .. marker .. " " .. entry.name
       .. doc_summary .. (status and ("  [" .. git_marker .. "]") or ""),
       { kind = changed and "file" or (kind and "planning_document" or "repository_file"),
         key = "file:" .. path, path = path, file = changed, doc_kind = kind,
@@ -402,12 +402,12 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
     end)
     for index, entry in ipairs(entries) do
       local last = index == #entries
-      local branch = last and "└─ " or "├─ "
+      local branch = last and "└ " or "├ "
       if entry.directory then
         local expanded = expanded_dirs[entry.path] == true
         add(ancestors .. branch .. (expanded and "▾ " or "▸ ") .. entry.name .. "/",
           { kind = "tree_directory", key = "dir:" .. entry.path, parent_key = parent_key, path = entry.path, expanded = expanded, expandable = true })
-        if expanded then render_tree(entry.node, ancestors .. (last and "   " or "│  "), depth + 1, "dir:" .. entry.path) end
+        if expanded then render_tree(entry.node, ancestors .. (last and " " or "│ "), depth + 1, "dir:" .. entry.path) end
       else
         render_file(entry.entry, ancestors, branch)
       end
@@ -415,7 +415,7 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
   end
   render_tree(tree_root, "", 0, nil)
   if filter_mode == "affected" and #(workspace.git.changedFiles or {}) == 0 then
-    add("└── (no affected paths)", { kind = "empty" })
+    add("└ (no affected paths)", { kind = "empty" })
   end
 
   vim.bo[buf].modifiable = true
