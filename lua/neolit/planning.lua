@@ -50,10 +50,19 @@ local function normalize_diff(diff)
 end
 
 local function open_diff(root, file, selected_hunk, on_line_context, comparison_base)
+  -- Git paths are repository-relative, but a changed path may itself be a
+  -- symlink. Never let native editor navigation follow it outside the
+  -- selected worktree (the shared core applies the same boundary).
+  local working_path = safe_repo_path(root, file.path)
+  local base_path = file.previousPath or file.path
+  if not working_path or not safe_repo_path(root, base_path) then
+    vim.notify("Refusing to open a diff path outside the repository: " .. tostring(file.path), vim.log.levels.ERROR)
+    return
+  end
+
   local initial_result = vim.system(diff_command(file, comparison_base), { cwd = root, text = true }):wait()
   local initial_diff = initial_result.stdout or ""
   local initial_diff_identity = vim.fn.sha256(initial_diff)
-  local base_path = file.previousPath or file.path
   local base_result = vim.system({ "git", "show", (comparison_base or "HEAD") .. ":" .. base_path }, { cwd = root, text = true }):wait()
   local base_lines = vim.split(base_result.code == 0 and (base_result.stdout or "") or "", "\n", { plain = true })
   if base_lines[#base_lines] == "" then table.remove(base_lines) end
@@ -72,8 +81,8 @@ local function open_diff(root, file, selected_hunk, on_line_context, comparison_
 
   vim.cmd("vsplit")
   local working_buf
-  if vim.fn.filereadable(root .. "/" .. file.path) == 1 then
-    vim.cmd("edit " .. vim.fn.fnameescape(root .. "/" .. file.path))
+  if vim.fn.filereadable(working_path) == 1 then
+    vim.cmd("edit " .. vim.fn.fnameescape(working_path))
     working_buf = vim.api.nvim_get_current_buf()
   else
     working_buf = vim.api.nvim_create_buf(false, true)
