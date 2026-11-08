@@ -545,7 +545,8 @@ function M.open(opts)
       put("TODO TASK")
       put(task.text)
       put("Source: " .. (task.key:match("^(.-)::") or "TODO") .. ":" .. task.range.startLine)
-      put("State: " .. tostring((vim.b[buf].neolit_workspace.derived.tasks[task.key] or {}).state or task.state))
+      local derived_tasks = (vim.b[buf].neolit_workspace.derived or {}).tasks or {}
+      put("State: " .. tostring((derived_tasks[task.key] or {}).state or task.state))
       put("Description:")
       put(table.concat(task.description or {}, "\n"))
       put("File hints:")
@@ -556,7 +557,8 @@ function M.open(opts)
       put("SPEC REQUIREMENT")
       put(row.requirement.id .. " — " .. row.requirement.text)
       put("Source: " .. row.spec_path .. ":" .. row.requirement.range.startLine)
-      for _, item in ipairs(vim.b[buf].neolit_workspace.derived.requirements or {}) do
+      local derived_requirements = (vim.b[buf].neolit_workspace.derived or {}).requirements or {}
+      for _, item in ipairs(derived_requirements) do
         if item.specPath == row.spec_path and item.requirementId == row.requirement.id then
           put("State: " .. item.state)
           break
