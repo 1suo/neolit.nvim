@@ -349,6 +349,10 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
       { kind = "task", key = "task:" .. key, parent_key = "file:" .. (key:match("^(.-)::") or "TODO.md"),
         task = task, projection = projection, expanded = expanded, expandable = expandable })
     if not expanded then return end
+    if #(task.headingPath or {}) > 0 then
+      add(prefix .. indent .. " SECTION " .. table.concat(task.headingPath, " / "),
+        { kind = "task_heading", parent_key = "task:" .. key, task = task })
+    end
     add(prefix .. indent .. " " .. state_reason(state, projection),
       { kind = "task_explanation", parent_key = "task:" .. key, task = task, projection = projection })
     for _, path in ipairs(task.filePaths or {}) do
@@ -494,6 +498,11 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
             requirement = requirement, spec_path = path, projection = projection,
             expanded = requirement_expanded, expandable = has_details })
         if requirement_expanded then
+          if #(requirement.headingPath or {}) > 0 then
+            add(child_prefix .. string.rep(" ", child_depth + 1)
+              .. "SECTION " .. table.concat(requirement.headingPath, " / "),
+              { kind = "requirement_heading", parent_key = requirement_key, requirement = requirement })
+          end
           add(child_prefix .. string.rep(" ", child_depth + 1)
             .. (#linked_tasks == 0 and "No TODO task references this requirement" or state_reason(state, projection)),
             { kind = "requirement_explanation", parent_key = requirement_key, requirement = requirement, projection = projection })
@@ -1149,7 +1158,7 @@ function M.open(opts)
       return row.file and row.file.path
     elseif row.kind == "requirement_task" then
       return row.task.key:match("^(.-)::"), row.task.range and row.task.range.startLine
-    elseif row.kind == "task_description" then
+    elseif row.kind == "task_description" or row.kind == "task_heading" then
       return row.task.key:match("^(.-)::"), row.task.range and row.task.range.startLine
     elseif row.kind == "task_requirement" then
       return row.requirement.specPath, row.requirement.range and row.requirement.range.startLine
