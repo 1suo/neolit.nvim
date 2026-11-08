@@ -751,7 +751,7 @@ function M.open(opts)
       add_context("TODO task: " .. task.text)
       add_context("Source: " .. tostring(task.key:match("^(.-)::")) .. ":" .. task.range.startLine)
       if #(task.description or {}) > 0 then
-        add_context("Description:\\n" .. table.concat(task.description, "\\n"))
+        add_context("Description:\n" .. table.concat(task.description, "\n"))
       end
       for _, path in ipairs(task.filePaths or {}) do add_context("File hint: " .. path) end
       for _, requirement in ipairs(task.resolvedRequirements or {}) do
@@ -789,7 +789,7 @@ function M.open(opts)
       add_context("Selected planning task")
       add_task_context(row.task)
     end
-    copy_context(table.concat(context_lines, "\\n"))
+    copy_context(table.concat(context_lines, "\n"))
   end
 
   local function map(lhs, fn, desc)
