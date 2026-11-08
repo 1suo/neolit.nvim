@@ -1067,7 +1067,7 @@ function M.open(opts)
       return row.file and row.file.path
     elseif row.kind == "requirement_task" then
       return row.task.key:match("^(.-)::"), row.task.range and row.task.range.startLine
-    elseif row.kind == "task_description" or row.kind == "task_heading" then
+    elseif row.kind == "task_description" or row.kind == "task_agent_note" or row.kind == "task_heading" then
       return row.task.key:match("^(.-)::")
     elseif row.kind == "task_requirement" then
       return (row.requirement.sourcePath or row.requirement.specPath), row.requirement.range and row.requirement.range.startLine
@@ -1190,10 +1190,10 @@ function M.open(opts)
       end
     elseif row.kind == "file" and row.file then
       copy_value(row.file.rawDiff or "", "File diff")
-    elseif row.kind == "task_description" then
+    elseif row.kind == "task_description" or row.kind == "task_agent_note" then
       local line = vim.api.nvim_buf_get_lines(buf, vim.api.nvim_win_get_cursor(0)[1] - 1,
         vim.api.nvim_win_get_cursor(0)[1], false)[1] or ""
-      copy_value(line:gsub("^%s+", ""), "Description")
+      copy_value(line:gsub("^%s+", ""), row.kind == "task_agent_note" and "Agent note" or "Description")
     elseif row.kind == "task_reference" then
       copy_value(row.reference.path .. "#" .. table.concat(row.reference.ids or {}, ", "), "SPEC reference")
     elseif row.kind == "diagnostic" then
