@@ -20,6 +20,7 @@ local OP_LABELS = {
   start = "Starting plan",
   develop = "Developing selected path",
   apply = "Applying drafted changes",
+  verify = "Verifying applied changes",
   commit = "Committing applied changes",
   lock = "Applying restriction",
   allow = "Applying restriction",
@@ -1486,6 +1487,7 @@ end
 
 function M.develop() M.dispatch("develop", {}, OP_LABELS.develop) end
 function M.apply_selected() M.dispatch("apply", {}, OP_LABELS.apply) end
+function M.verify_selected() M.dispatch("verify", {}, OP_LABELS.verify) end
 function M.commit_applied() M.dispatch("commit", {}, OP_LABELS.commit) end
 function M.restrict(mode) M.dispatch(mode, {}, OP_LABELS[mode]) end
 --- ?: a floating cheat-sheet of the panel keys, straight from the keymap
