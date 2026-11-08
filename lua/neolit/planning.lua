@@ -436,7 +436,7 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
       add(prefix .. indent .. " HUNK " .. review.path .. "#" .. tostring(review.hunkIndex + 1)
         .. " " .. hunk_review_summary(review),
         { kind = "task_hunk", parent_key = "task:" .. key, file = file,
-          hunk = find_changed_hunk(file, review.hunkIndex),
+          hunk = find_changed_hunk(file, review.hunkIndex), hunkIndex = review.hunkIndex,
           hunkAssociation = hunk_association, task = task })
     end
     for _, diagnostic in ipairs(diagnostics) do
@@ -564,7 +564,7 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
             add(child_prefix .. string.rep(" ", child_depth + 1) .. "HUNK " .. review.path .. "#"
               .. tostring(review.hunkIndex + 1) .. " " .. hunk_review_summary(review),
               { kind = "task_hunk", parent_key = requirement_key, file = file,
-                hunk = find_changed_hunk(file, review.hunkIndex),
+                hunk = find_changed_hunk(file, review.hunkIndex), hunkIndex = review.hunkIndex,
                 hunkAssociation = hunk_association, requirement = requirement })
           end
         end
@@ -594,7 +594,7 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
         add(child_prefix .. " HUNK " .. tostring(item.hunkIndex + 1) .. " "
           .. tostring(item.state):upper() .. " · " .. tostring(item.reason) .. " · " .. related,
           { kind = "task_hunk", key = "file-hunk:" .. path .. ":" .. tostring(item.hunkIndex),
-            parent_key = "file:" .. path, file = changed,
+            parent_key = "file:" .. path, file = changed, hunkIndex = item.hunkIndex,
             hunk = find_changed_hunk(changed, item.hunkIndex), hunkAssociation = item })
       end
     end
@@ -1129,14 +1129,15 @@ function M.open(opts)
     elseif row.kind == "task_hunk" then
       local hunk = row.hunk
       local raw = row.file and row.file.rawDiff or ""
-      if hunk and raw ~= "" then
+      local hunk_index = row.hunkIndex or (row.hunkAssociation and row.hunkAssociation.hunkIndex)
+      if hunk and raw ~= "" and type(hunk_index) == "number" then
         local lines = vim.split(raw, "\n", { plain = true })
         local index, found, parts = 0, false, {}
         for _, line in ipairs(lines) do
           if line:match("^@@ ") then
             index = index + 1
             if found then break end
-            found = index == row.hunkAssociation.hunkIndex + 1
+            found = index == hunk_index + 1
           end
           if found then parts[#parts + 1] = line end
         end
