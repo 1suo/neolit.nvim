@@ -757,11 +757,11 @@ function M.open(opts)
             open_paths[#open_paths + 1] = path
           end
           for _, spec in ipairs(workspace.specs or {}) do
-            if expanded_files[spec.path] == nil then expanded_files[spec.path] = true end
+            if expanded_files[spec.path] == nil then expanded_files[spec.path] = false end
             open_paths[#open_paths + 1] = spec.path
           end
           for _, todo in ipairs(workspace.todos or {}) do
-            if expanded_files[todo.path] == nil then expanded_files[todo.path] = true end
+            if expanded_files[todo.path] == nil then expanded_files[todo.path] = false end
             open_paths[#open_paths + 1] = todo.path
           end
           for _, task in ipairs(workspace.tasks or {}) do
