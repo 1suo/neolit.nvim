@@ -1014,7 +1014,7 @@ function M.open(opts)
     elseif row.kind == "requirement_task" then
       return row.task.key:match("^(.-)::"), row.task.range and row.task.range.startLine
     elseif row.kind == "task_description" or row.kind == "task_heading" then
-      return row.task.key:match("^(.-)::"), row.task.range and row.task.range.startLine
+      return row.task.key:match("^(.-)::")
     elseif row.kind == "task_requirement" then
       return row.requirement.specPath, row.requirement.range and row.requirement.range.startLine
     elseif row.kind == "task_acceptance" then
@@ -1157,8 +1157,6 @@ function M.open(opts)
         line = row.criterion.range and row.criterion.range.startLine
       elseif row.kind == "task_requirement" then
         line = row.requirement.range and row.requirement.range.startLine
-      elseif row.kind == "task_description" then
-        line = row.task.range and row.task.range.startLine
       end
       copy_value(path .. (line and (":" .. line) or ""), "Path")
     else
