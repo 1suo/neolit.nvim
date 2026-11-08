@@ -176,7 +176,7 @@ local function render(buf, root, workspace, expanded_files)
       local candidate_labels = {}
       for _, task_key in ipairs(hunk_association and hunk_association.candidateTaskKeys or {}) do
         for _, task in ipairs(workspace.tasks or {}) do
-          if task.key == task_key then candidate_labels[#candidate_labels + 1] = "task: " .. task.text end
+          if task.key == task_key then candidate_labels[#candidate_labels + 1] = "task: " .. (task.key:match("^(.-)::") or "TODO") .. ":" .. task.range.startLine end
         end
       end
       for _, reference in ipairs(hunk_association and hunk_association.candidateRequirementRefs or {}) do
@@ -225,7 +225,7 @@ local function render(buf, root, workspace, expanded_files)
     for _, requirement in ipairs(task.resolvedRequirements) do
       local spec_path = requirement.specPath
       local requirement_state = requirement_states[requirement.specPath .. "#" .. requirement.id] or "planned"
-      add(string.format("      %s  %-10s %s", requirement.id, requirement_state, requirement.text), {
+      add(string.format("      %s  %-10s", requirement.id, requirement_state), {
         kind = "requirement", requirement = requirement, spec_path = spec_path,
       })
     end
@@ -495,6 +495,100 @@ function M.open(opts)
     end
   end
 
+  local function show_details()
+    local row = vim.b[buf].neolit_rows and vim.b[buf].neolit_rows[vim.api.nvim_win_get_cursor(0)[1]]
+    if not row then return end
+    local details = {}
+    local function put(value)
+      if value == nil or value == "" then return end
+      for _, line in ipairs(vim.split(tostring(value), "\\n", { plain = true })) do
+        details[#details + 1] = line
+      end
+    end
+    if row.kind == "file" then
+      put("CHANGED FILE")
+      put(row.file.path)
+      put("Git status: " .. tostring(row.file.status or "changed"))
+      put("Mapping: " .. tostring(row.association and row.association.state or "unplanned"))
+      put("Previous path: " .. tostring(row.file.previousPath or "—"))
+      put("Candidate tasks:")
+      for _, key in ipairs(row.association and row.association.taskKeys or {}) do
+        for _, task in ipairs(vim.b[buf].neolit_workspace.tasks or {}) do
+          if task.key == key then put("  " .. task.text .. " (" .. (key:match("^(.-)::") or "TODO") .. ":" .. task.range.startLine .. ")") end
+        end
+      end
+    elseif row.kind == "hunk" then
+      put("DIFF HUNK")
+      put(row.file.path)
+      put(string.format("Base lines %d-%d; working-tree lines %d-%d",
+        row.hunk.oldStart, row.hunk.oldStart + math.max(0, row.hunk.oldLines - 1),
+        row.hunk.newStart, row.hunk.newStart + math.max(0, row.hunk.newLines - 1)))
+      put("Mapping: " .. tostring(row.hunkAssociation and row.hunkAssociation.state or "unmapped"))
+      put("Candidate tasks:")
+      for _, key in ipairs(row.hunkAssociation and row.hunkAssociation.candidateTaskKeys or {}) do
+        for _, task in ipairs(vim.b[buf].neolit_workspace.tasks or {}) do
+          if task.key == key then put("  " .. task.text .. " (" .. (key:match("^(.-)::") or "TODO") .. ":" .. task.range.startLine .. ")") end
+        end
+      end
+      put("Candidate requirements:")
+      for _, reference in ipairs(row.hunkAssociation and row.hunkAssociation.candidateRequirementRefs or {}) do put("  " .. reference) end
+      put("Changed lines:")
+      for _, line in ipairs(row.hunk.addedLines or {}) do put("+ " .. line) end
+      for _, line in ipairs(row.hunk.removedLines or {}) do put("- " .. line) end
+    elseif row.kind == "change_line" then
+      put("CHANGED LINE")
+      put(row.file.path .. ":" .. row.lineNumber .. " (" .. row.side .. ")")
+      put(row.lineText)
+      put("Hunk: " .. row.hunk.oldStart .. " → " .. row.hunk.newStart)
+    elseif row.kind == "task" or row.kind == "planned_file" then
+      local task = row.task
+      put("TODO TASK")
+      put(task.text)
+      put("Source: " .. (task.key:match("^(.-)::") or "TODO") .. ":" .. task.range.startLine)
+      put("State: " .. tostring((vim.b[buf].neolit_workspace.derived.tasks[task.key] or {}).state or task.state))
+      put("Description:")
+      put(table.concat(task.description or {}, "\\n"))
+      put("File hints:")
+      for _, path in ipairs(task.filePaths or {}) do put("  " .. path) end
+      put("SPEC references:")
+      for _, reference in ipairs(task.specReferences or {}) do put("  " .. reference.path .. "#" .. table.concat(reference.ids or {}, ", ")) end
+    elseif row.kind == "requirement" then
+      put("SPEC REQUIREMENT")
+      put(row.requirement.id .. " — " .. row.requirement.text)
+      put("Source: " .. row.spec_path .. ":" .. row.requirement.range.startLine)
+      put("Acceptance criteria:")
+      for _, criterion in ipairs(row.requirement.acceptanceCriteria or {}) do put("  " .. criterion.id .. " " .. criterion.text) end
+    elseif row.kind == "diagnostic" then
+      put("DOCUMENTATION DIAGNOSTIC")
+      put(row.diagnostic and row.diagnostic.message or "Unresolved reference")
+      if row.diagnostic then put(row.diagnostic.todoPath .. ":" .. tostring(row.diagnostic.line or "?")) end
+    else
+      return
+    end
+    local width = math.min(math.max(60, vim.o.columns - 8), 110)
+    local height = math.min(math.max(8, #details), math.max(8, vim.o.lines - 8))
+    local detail_buf = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_lines(detail_buf, 0, -1, false, details)
+    vim.bo[detail_buf].buftype = "nofile"
+    vim.bo[detail_buf].bufhidden = "wipe"
+    vim.bo[detail_buf].swapfile = false
+    vim.bo[detail_buf].filetype = "markdown"
+    vim.bo[detail_buf].modifiable = false
+    local detail_win = vim.api.nvim_open_win(detail_buf, true, {
+      relative = "editor", style = "minimal", border = "rounded",
+      width = width, height = height,
+      row = math.max(1, math.floor((vim.o.lines - height) / 2)),
+      col = math.max(1, math.floor((vim.o.columns - width) / 2)),
+      title = " Neolit details ", title_pos = "center",
+    })
+    vim.wo[detail_win].wrap = true
+    vim.wo[detail_win].linebreak = true
+    vim.keymap.set("n", "q", function() if vim.api.nvim_win_is_valid(detail_win) then vim.api.nvim_win_close(detail_win, true) end end,
+      { buffer = detail_buf, silent = true, nowait = true })
+    vim.keymap.set("n", "<Esc>", function() if vim.api.nvim_win_is_valid(detail_win) then vim.api.nvim_win_close(detail_win, true) end end,
+      { buffer = detail_buf, silent = true, nowait = true })
+  end
+
   local function ask_context()
     local row = vim.b[buf].neolit_rows and vim.b[buf].neolit_rows[vim.api.nvim_win_get_cursor(0)[1]]
     if not row or (row.kind ~= "file" and row.kind ~= "hunk" and row.kind ~= "change_line" and row.kind ~= "requirement" and row.kind ~= "task" and row.kind ~= "planned_file") then
@@ -690,6 +784,7 @@ function M.open(opts)
   map("zM", function() set_all_expanded(false) end, "Collapse all diff files")
   map("r", refresh, "Refresh Git-native planning workspace")
   map("x", ask_context, "Ask about selected diff/task and copy context for existing agent")
+  map("K", show_details, "Show selected file, hunk, task, or requirement details")
   map("q", function()
     refresh_revision = refresh_revision + 1
     if refresh_job then pcall(vim.fn.jobstop, refresh_job); refresh_job = nil end
