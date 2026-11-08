@@ -274,7 +274,7 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
     for _, child in pairs(node.children) do if subtree_affected(child) then return true end end
     return false
   end
-  local function render_task(task, prefix, depth)
+  local function render_task(task, depth)
     local key = task.key
     local expanded = expanded_tasks[key] == true
     local task_state = derived_tasks[key]
@@ -311,14 +311,14 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
     local marker = changed and (association.state == "unplanned" and "?" or (association.state == "partially-mapped" and "~" or "✓")) or ""
     local doc_summary = ""
     if kind == "TODO" then
-      doc_summary = string.format("  · %d tasks", #(tasks_by_doc[path] or {}))
+      doc_summary = string.format(" · %d tasks", #(tasks_by_doc[path] or {}))
     elseif kind == "SPEC" then
-      doc_summary = string.format("  · %d requirements", #(requirements_by_doc[path] or {}))
+      doc_summary = string.format(" · %d requirements", #(requirements_by_doc[path] or {}))
     elseif kind == "README" then
       for _, item in ipairs(workspace.readmeContents or {}) do
         if item.path == path then
           local heading = item.content:match("^%s*#%s+([^\r\n]+)")
-          if heading then doc_summary = "  · " .. heading end
+          if heading then doc_summary = " · " .. heading end
           break
         end
       end
@@ -383,10 +383,10 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
 
   add("NEOLIT  " .. vim.fn.fnamemodify(root, ":t") .. "  " .. workspace.git.branch
     .. " @ " .. (workspace.git.base or workspace.git.head):sub(1, 8)
-    .. "   " .. (filter_mode == "affected" and "AFFECTED PATHS" or "ALL PATHS")
-    .. "   [f filter] [? keys]", { kind = "header" })
+    .. " · " .. (filter_mode == "affected" and "AFFECTED" or "ALL")
+    .. " · f filter · ? keys", { kind = "header" })
 
-  local function render_tree(node, ancestors, depth, parent_key)
+  local function render_tree(node, depth, parent_key)
     local entries = {}
     for name, child in pairs(node.children) do
       if filter_mode ~= "affected" or subtree_affected(child) then
@@ -403,19 +403,18 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
       return a.name:lower() < b.name:lower()
     end)
     for index, entry in ipairs(entries) do
-      local last = index == #entries
       local entry_depth = depth
       if entry.directory then
         local expanded = expanded_dirs[entry.path] == true
         add(string.rep(" ", entry_depth) .. (expanded and "- " or "+ ") .. entry.name .. "/",
           { kind = "tree_directory", key = "dir:" .. entry.path, parent_key = parent_key, path = entry.path, expanded = expanded, expandable = true })
-        if expanded then render_tree(entry.node, "", depth + 1, "dir:" .. entry.path) end
+        if expanded then render_tree(entry.node, depth + 1, "dir:" .. entry.path) end
       else
         render_file(entry.entry, entry_depth)
       end
     end
   end
-  render_tree(tree_root, "", 0, nil)
+  render_tree(tree_root, 0, nil)
   if filter_mode == "affected" and #(workspace.git.changedFiles or {}) == 0 then
     add("(no affected paths)", { kind = "empty" })
   end
