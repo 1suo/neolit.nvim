@@ -324,7 +324,7 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
       end
     end
     local is_expanded = expanded_files[path] == true
-    local has_children = changed ~= nil or (kind == "TODO" and #(tasks_by_doc[path] or {}) > 0)
+    local has_children = (kind == "TODO" and #(tasks_by_doc[path] or {}) > 0)
       or (kind == "SPEC" and #(requirements_by_doc[path] or {}) > 0)
     add(prefix .. branch .. (has_children and (is_expanded and "- " or "+ ") or "")
       .. (kind and kind ~= "README" and ("[" .. kind .. "] ") or "")
@@ -358,24 +358,6 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
         end)()) do
           add(child_prefix .. string.rep(" ", child_depth + 1) .. criterion.id .. " " .. criterion.text,
             { kind = "acceptance_criterion", parent_key = requirement_key, criterion = criterion, spec_path = path })
-        end
-      end
-    end
-    if changed then
-      for hunk_index, hunk in ipairs(changed.hunks or {}) do
-        local hunk_association = hunk_associations[path .. "#" .. (hunk_index - 1)]
-        local hunk_state = hunk_association and hunk_association.state or "unmapped"
-        local hunk_key = "file:" .. path .. ":hunk:" .. hunk_index
-        add(child_prefix .. string.rep(" ", child_depth) .. (hunk_state == "attributed" and "✓ " or hunk_state == "documentation" and "§ " or "? ")
-          .. "@@ -" .. hunk.oldStart .. "," .. hunk.oldLines .. " +" .. hunk.newStart .. "," .. hunk.newLines .. " @@ " .. (hunk.header or ""),
-          { kind = "hunk", key = hunk_key, parent_key = "file:" .. path, file = changed, hunk = hunk,
-            association = association, hunkAssociation = hunk_association })
-        for change_index, change in ipairs(hunk.changes or {}) do
-          add(child_prefix .. string.rep(" ", child_depth + 1) .. (change.kind == "added" and "+" or "−") .. " " .. change.lineNumber .. " " .. change.text,
-            { kind = "change_line", key = hunk_key .. ":change:" .. change_index, parent_key = hunk_key,
-              file = changed, hunk = hunk, hunkAssociation = hunk_association,
-              lineNumber = change.lineNumber, lineText = change.text,
-              side = change.kind == "added" and "working-tree" or "base" })
         end
       end
     end
