@@ -317,7 +317,9 @@ function M.open(opts)
       for _, association in ipairs(workspace and workspace.git.hunkAssociations or {}) do
         if association.path == file.path
           and association.hunk.oldStart == selected_hunk.oldStart
-          and association.hunk.newStart == selected_hunk.newStart then
+          and association.hunk.oldLines == selected_hunk.oldLines
+          and association.hunk.newStart == selected_hunk.newStart
+          and association.hunk.newLines == selected_hunk.newLines then
           candidate_keys = association.candidateTaskKeys
           candidate_requirement_refs = association.candidateRequirementRefs
           break
@@ -471,8 +473,11 @@ function M.open(opts)
         for _, line in ipairs(lines) do
           if line:match("^@@ ") then
             if selected then break end
-            local old, new = line:match("^@@ %-(%d+)[^ ]* %+(%d+)")
-            selected = tonumber(old) == row.hunk.oldStart and tonumber(new) == row.hunk.newStart
+            local old, old_count, new, new_count = line:match("^@@ %-(%d+),?(%d*) %+(%d+),?(%d*) @@")
+            selected = tonumber(old) == row.hunk.oldStart
+              and (old_count == "" and 1 or tonumber(old_count)) == row.hunk.oldLines
+              and tonumber(new) == row.hunk.newStart
+              and (new_count == "" and 1 or tonumber(new_count)) == row.hunk.newLines
           end
           if selected then capture[#capture + 1] = line end
         end
