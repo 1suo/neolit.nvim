@@ -44,9 +44,10 @@ Install the plugin:
 - `<CR>` on a TODO task or SPEC requirement opens its exact Markdown source.
 - `<CR>` on a planned file opens the file, or its actual Git diff once changed.
 - `<CR>` on a changed file/hunk opens a native side-by-side diff against the
-  selected comparison base.
-- `x` on a task, requirement, file, or hunk asks for a question and copies a
-  bounded context packet for the user's existing agent conversation.
+  selected comparison base; on an individual added/removed line it opens at
+  that exact line on the working-tree/base side respectively.
+- `x` on a task, requirement, file, hunk, or individual changed line asks for a question and copies a
+  bounded context packet for the user's existing agent conversation. Line packets carry the exact side and line coordinate.
 - In a native diff, `<leader>nx` on a line or visual selection copies context
   for those exact lines. Stale diff/base anchors are rejected.
 - `r` refreshes; `q` or `:NeolitClose` closes the workspace.
