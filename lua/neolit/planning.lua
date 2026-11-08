@@ -1113,8 +1113,8 @@ function M.open(opts)
       copy_value(row.file and row.file.rawDiff or "", "File diff")
     elseif row.kind == "task_hunk" then
       local hunk = row.hunk
-      if hunk then
-        local raw = row.file and row.file.rawDiff or ""
+      local raw = row.file and row.file.rawDiff or ""
+      if hunk and raw ~= "" then
         local lines = vim.split(raw, "\n", { plain = true })
         local index, found, parts = 0, false, {}
         for _, line in ipairs(lines) do
@@ -1123,21 +1123,15 @@ function M.open(opts)
             if found then break end
             found = index == row.hunkAssociation.hunkIndex + 1
           end
-          if found then
-            if line:match("^diff %-%-git ") and #parts > 0 then break end
-            parts[#parts + 1] = line
-          end
+          if found then parts[#parts + 1] = line end
         end
         if #parts > 0 then
           copy_value(table.concat(parts, "\n"), "Hunk")
         else
-          local fallback = { "@@ -" .. hunk.oldStart .. "," .. hunk.oldLines .. " +" .. hunk.newStart .. "," .. hunk.newLines .. " @@" }
-          for _, line in ipairs(hunk.removedLines or {}) do fallback[#fallback + 1] = "-" .. line end
-          for _, line in ipairs(hunk.addedLines or {}) do fallback[#fallback + 1] = "+" .. line end
-          copy_value(table.concat(fallback, "\n"), "Hunk")
+          vim.notify("Exact hunk patch is no longer available; refresh the workspace", vim.log.levels.WARN)
         end
       else
-        copy_value(row.file and row.file.rawDiff or "", "File diff")
+        vim.notify("Exact hunk patch is unavailable; refresh the workspace", vim.log.levels.WARN)
       end
     elseif row.kind == "file" and row.file then
       copy_value(row.file.rawDiff or "", "File diff")
