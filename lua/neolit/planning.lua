@@ -216,7 +216,10 @@ local function collect_affected_paths(workspace)
   local affected = {}
   local tasks_by_key = {}
   for _, task in ipairs(workspace.tasks or {}) do tasks_by_key[task.key] = task end
-  for _, file in ipairs(workspace.git.changedFiles or {}) do affected[file.path] = true end
+  for _, file in ipairs(workspace.git.changedFiles or {}) do
+    affected[file.path] = true
+    if file.previousPath then affected[file.previousPath] = true end
+  end
   local function include_task(task_key)
     local task = tasks_by_key[task_key]
     if not task then return end
