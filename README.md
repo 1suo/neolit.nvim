@@ -44,7 +44,7 @@ separate planning buffer. Use:
 - Task and requirement rows show derived states (`planned`, `in-progress`,
   `implemented`, `verified`, `blocked`, `unmapped`); the TODO checkbox remains
   a separate note and never proves implementation or verification.
-- `<CR>` on a changed file or hunk to open a native side-by-side Neovim diff between `HEAD` and the working
+- `<CR>` on a changed file or hunk to open a native side-by-side Neovim diff between the selected Git comparison base and the working
   file; hunk selection navigates to that hunk.
 - `x` on a task, requirement, file, or hunk in the planning buffer to enter a
   question and copy it together with the selected context for the existing
@@ -54,7 +54,7 @@ separate planning buffer. Use:
   path, side, line range, base commit, diff SHA-256, selected lines, and current
   file diff. It refuses unsaved working buffers and refreshes rather than
   sending context when HEAD or the opened diff has changed.
-- Repository saves and editor focus refresh the view automatically; `r` forces a refresh and `q` closes it.
+- Repository saves and editor focus refresh the view automatically; `r` forces a refresh and `q` closes it. Set `comparison_base` in Neolit configuration (default `HEAD`) to review against another commit/ref; the resolved base SHA is shown in the planning header and used for native diffs and contextual-question freshness checks.
 
 This view is read-only. It does not stage, apply, commit, or rewrite files.
 File/hunk association is based on explicit TODO file hints; it is not a claim
@@ -232,6 +232,7 @@ require("neolit").setup({
                         -- then ../neolit beside this plugin, then npm root -g)
   node = "node",        -- Node executable for the host shim
   directory = nil,      -- repository root; default: working directory at open
+  comparison_base = "HEAD", -- Git ref to compare against; default: HEAD
   no_model = false,     -- force NO MODEL mode (AUGMENT_TUI_NO_MODEL=1)
   persist_tasks = true, -- persist and resume the active task (AUGMENT_TUI_TASKS)
   sidebar_width = 42,   -- tree sidebar width in columns
