@@ -381,8 +381,8 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
     end
   end
 
-  add("NEOLIT  " .. vim.fn.fnamemodify(root, ":t") .. "  " .. workspace.git.branch
-    .. " @ " .. (workspace.git.base or workspace.git.head):sub(1, 8)
+  add("NEOLIT · " .. vim.fn.fnamemodify(root, ":t") .. " · " .. workspace.git.branch
+    .. "@" .. (workspace.git.base or workspace.git.head):sub(1, 8)
     .. " · " .. (filter_mode == "affected" and "AFFECTED" or "ALL")
     .. " · f filter · ? keys", { kind = "header" })
 
