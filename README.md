@@ -39,7 +39,8 @@ Install the plugin:
 
 ## Commands and workflow
 
-- `:Neolit` or `:NeolitPlan` opens the read-only planning workspace.
+- `:Neolit` or `:NeolitPlan` opens the read-only diff-first workspace. The primary section is a file → hunk tree; task and requirement traceability follows below it.
+- `za` expands/collapses the selected changed file, `zR` expands all files, and `zM` collapses all files.
 - `<CR>` on a TODO task or SPEC requirement opens its exact Markdown source.
 - `<CR>` on a planned file opens the file, or its actual Git diff once changed.
 - `<CR>` on a changed file/hunk opens a native side-by-side diff against the
@@ -50,9 +51,10 @@ Install the plugin:
   for those exact lines. Stale diff/base anchors are rejected.
 - `r` refreshes; `q` or `:NeolitClose` closes the workspace.
 
-The view displays TODO/SPEC traceability, derived task/requirement states,
-planned-file annotations, Git status, per-hunk mapping uncertainty, and exact
-candidate task/requirement references on each hunk row.
+The diff tree displays every changed file and its hunks first, with Git status,
+conservative mapping markers, and exact candidate task/requirement references
+on each hunk row. TODO/SPEC traceability, derived task/requirement states,
+and planned-file annotations remain available in the sections below.
 File hints are candidates, not proof of implementation. README/SPEC/TODO
 files remain untouched; TODO checkboxes are not verification evidence.
 
