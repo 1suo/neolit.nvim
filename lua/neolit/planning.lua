@@ -450,6 +450,30 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
         end
       end
     end
+    if changed then
+      for _, task_key in ipairs(file_association and file_association.taskKeys or {}) do
+        local task = tasks_by_key[task_key]
+        if task then
+          add(child_prefix .. " TASK " .. task.text,
+            { kind = "task_change", key = "file-task:" .. path .. ":" .. task_key,
+              parent_key = "file:" .. path, file = changed, association = file_association, task = task })
+        end
+      end
+      for _, item in ipairs(file_hunks) do
+        local names = {}
+        for _, task_key in ipairs(item.candidateTaskKeys or {}) do
+          local task = tasks_by_key[task_key]
+          if task then names[#names + 1] = task.text end
+        end
+        local requirements = item.candidateRequirementRefs or {}
+        local related = #names > 0 and table.concat(names, ", ")
+          or (#requirements > 0 and table.concat(requirements, ", ") or "no task or requirement candidate")
+        add(child_prefix .. " HUNK " .. tostring(item.hunkIndex + 1) .. " "
+          .. tostring(item.state):upper() .. " · " .. tostring(item.reason) .. " · " .. related,
+          { kind = "task_hunk", key = "file-hunk:" .. path .. ":" .. tostring(item.hunkIndex),
+            parent_key = "file:" .. path, file = changed, hunkAssociation = item })
+      end
+    end
   end
 
   add("NEOLIT · " .. vim.fn.fnamemodify(root, ":t") .. " · " .. workspace.git.branch
@@ -1013,6 +1037,12 @@ function M.open(opts)
       return row.task.key:match("^(.-)::"), row.task.range and row.task.range.startLine
     elseif row.kind == "requirement" then
       return row.spec_path, row.requirement.range and row.requirement.range.startLine
+    elseif row.kind == "task_change" or row.kind == "task_hunk" then
+      return row.file and row.file.path
+    elseif row.kind == "requirement_task" then
+      return row.task.key:match("^(.-)::"), row.task.range and row.task.range.startLine
+    elseif row.kind == "requirement_criterion" then
+      return row.criterion.ref and row.criterion.ref:match("^(.-)#"), nil
     end
     return nil
   end
@@ -1075,6 +1105,28 @@ function M.open(opts)
       copy_value(row.requirement.text, "Requirement text")
     elseif row.kind == "acceptance_criterion" then
       copy_value(row.criterion.text, "Acceptance criterion")
+    elseif row.kind == "requirement_task" then
+      copy_value(row.task.text, "Task text")
+    elseif row.kind == "requirement_criterion" then
+      copy_value(row.criterion.ref, "Acceptance criterion reference")
+    elseif row.kind == "task_requirement" then
+      copy_value(row.requirement.specPath .. "#" .. row.requirement.id .. " " .. row.requirement.text, "Requirement")
+    elseif row.kind == "task_acceptance" then
+      copy_value(row.criterion.specPath .. "#" .. row.criterion.id .. " " .. row.criterion.text, "Acceptance criterion")
+    elseif row.kind == "task_change" then
+      copy_value(row.task.text, "Task text")
+    elseif row.kind == "task_hunk" then
+      local hunk = row.hunkAssociation and row.hunkAssociation.hunk
+      if hunk then
+        local parts = { "@@ -" .. hunk.oldStart .. "," .. hunk.oldLines .. " +" .. hunk.newStart .. "," .. hunk.newLines .. " @@" }
+        for _, line in ipairs(hunk.removedLines or {}) do parts[#parts + 1] = "-" .. line end
+        for _, line in ipairs(hunk.addedLines or {}) do parts[#parts + 1] = "+" .. line end
+        copy_value(table.concat(parts, "\n"), "Hunk")
+      else
+        copy_value(row.file and row.file.rawDiff or "", "File diff")
+      end
+    elseif row.kind == "file" and row.file then
+      copy_value(row.file.rawDiff or "", "File diff")
     elseif row.kind == "task_description" then
       local line = vim.api.nvim_buf_get_lines(buf, vim.api.nvim_win_get_cursor(0)[1] - 1,
         vim.api.nvim_win_get_cursor(0)[1], false)[1] or ""
@@ -1291,9 +1343,11 @@ function M.open(opts)
           if candidate.kind == "file" then
             local association = type(candidate.association) == "table" and candidate.association or nil
             related = vim.tbl_contains(list(association and association.taskKeys), task_key)
-          elseif candidate.kind == "hunk" or candidate.kind == "change_line" then
+          elseif candidate.kind == "task_hunk" or candidate.kind == "hunk" or candidate.kind == "change_line" then
             local association = type(candidate.hunkAssociation) == "table" and candidate.hunkAssociation or nil
             related = vim.tbl_contains(list(association and association.candidateTaskKeys), task_key)
+          elseif candidate.kind == "task_change" then
+            related = candidate.task and candidate.task.key == task_key
           elseif candidate.kind == "planned_file" then
             local task = type(candidate.task) == "table" and candidate.task or nil
             related = task ~= nil and task.key == task_key
@@ -1322,9 +1376,14 @@ function M.open(opts)
             for _, key in ipairs(list(association and association.taskKeys)) do
               if linked_task_keys[key] then related = true; break end
             end
-          elseif candidate.kind == "hunk" or candidate.kind == "change_line" then
+          elseif candidate.kind == "task_hunk" or candidate.kind == "hunk" or candidate.kind == "change_line" then
             local association = type(candidate.hunkAssociation) == "table" and candidate.hunkAssociation or nil
             related = vim.tbl_contains(list(association and association.candidateRequirementRefs), requirement_ref)
+          elseif candidate.kind == "task_change" then
+            local association = type(candidate.association) == "table" and candidate.association or nil
+            for _, key in ipairs(list(association and association.taskKeys)) do
+              if linked_task_keys[key] then related = true; break end
+            end
           end
         end
         if related then
