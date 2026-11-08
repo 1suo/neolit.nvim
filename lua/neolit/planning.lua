@@ -106,14 +106,23 @@ local function open_diff(root, file, selected_hunk, on_line_context, comparison_
     vim.api.nvim_win_set_buf(base_win, base_buf)
     vim.api.nvim_win_set_buf(working_win, working_buf)
   else
-    local origin = diff_state and diff_state.tree_win or vim.api.nvim_get_current_win()
-    vim.api.nvim_set_current_win(origin)
-    vim.cmd("rightbelow vsplit")
-    base_win = vim.api.nvim_get_current_win()
-    vim.api.nvim_win_set_buf(base_win, base_buf)
-    vim.cmd("rightbelow vsplit")
-    working_win = vim.api.nvim_get_current_win()
-    vim.api.nvim_win_set_buf(working_win, working_buf)
+    if diff_state and diff_state.preview_win and vim.api.nvim_win_is_valid(diff_state.preview_win) then
+      working_win = diff_state.preview_win
+      vim.api.nvim_set_current_win(working_win)
+      vim.cmd("leftabove vsplit")
+      base_win = vim.api.nvim_get_current_win()
+      vim.api.nvim_win_set_buf(base_win, base_buf)
+      vim.api.nvim_win_set_buf(working_win, working_buf)
+    else
+      local origin = diff_state and diff_state.tree_win or vim.api.nvim_get_current_win()
+      vim.api.nvim_set_current_win(origin)
+      vim.cmd("rightbelow vsplit")
+      base_win = vim.api.nvim_get_current_win()
+      vim.api.nvim_win_set_buf(base_win, base_buf)
+      vim.cmd("rightbelow vsplit")
+      working_win = vim.api.nvim_get_current_win()
+      vim.api.nvim_win_set_buf(working_win, working_buf)
+    end
     if diff_state then
       diff_state.base_win, diff_state.working_win = base_win, working_win
       diff_state.preview_win = working_win
