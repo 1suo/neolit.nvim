@@ -1018,58 +1018,86 @@ function M.open(opts)
   local function highlight_related()
     if not vim.api.nvim_buf_is_valid(buf) then return end
     vim.api.nvim_buf_clear_namespace(buf, related_ns, 0, -1)
-    local rows = vim.b[buf].neolit_rows or {}
+    local rows = vim.b[buf].neolit_rows
+    if type(rows) ~= "table" then return end
     local cursor = vim.api.nvim_win_get_cursor(0)
     local selected_row = rows[cursor[1]]
-    if not selected_row or (selected_row.kind ~= "task" and selected_row.kind ~= "requirement") then return end
-    local task_key = selected_row.kind == "task" and selected_row.task.key or nil
-    local requirement_ref = selected_row.kind == "requirement"
-      and (selected_row.spec_path .. "#" .. selected_row.requirement.id) or nil
+    if type(selected_row) ~= "table"
+      or (selected_row.kind ~= "task" and selected_row.kind ~= "requirement") then return end
+
+    local selected_task = type(selected_row.task) == "table" and selected_row.task or nil
+    local selected_requirement = type(selected_row.requirement) == "table" and selected_row.requirement or nil
+    local task_key = selected_row.kind == "task" and selected_task and selected_task.key or nil
+    local requirement_ref
+    if selected_row.kind == "requirement" and type(selected_row.spec_path) == "string"
+      and selected_requirement and type(selected_requirement.id) == "string" then
+      requirement_ref = selected_row.spec_path .. "#" .. selected_requirement.id
+    end
+
+    local function list(value)
+      return type(value) == "table" and value or {}
+    end
     local linked_task_keys = {}
-    if requirement_ref then
-      for _, task in ipairs(vim.b[buf].neolit_workspace.tasks or {}) do
-        for _, reference in ipairs(task.specReferences or {}) do
-          if reference.path == selected_row.spec_path and vim.tbl_contains(reference.ids or {}, selected_row.requirement.id) then
-            linked_task_keys[task.key] = true
+    local workspace = vim.b[buf].neolit_workspace
+    if requirement_ref and type(workspace) == "table" then
+      for _, task in ipairs(list(workspace.tasks)) do
+        if type(task) == "table" then
+          for _, reference in ipairs(list(task.specReferences)) do
+            if type(reference) == "table" and reference.path == selected_row.spec_path
+              and vim.tbl_contains(list(reference.ids), selected_requirement.id) then
+              if type(task.key) == "string" then linked_task_keys[task.key] = true end
+            end
           end
         end
       end
     end
+
     for line, candidate in pairs(rows) do
-      local related = false
-      if task_key then
-        if candidate.kind == "file" then
-          related = vim.tbl_contains(type(candidate.association) == "table" and candidate.association.taskKeys or {}, task_key)
-        elseif candidate.kind == "hunk" or candidate.kind == "change_line" then
-          related = vim.tbl_contains(type(candidate.hunkAssociation) == "table" and candidate.hunkAssociation.candidateTaskKeys or {}, task_key)
-        elseif candidate.kind == "planned_file" then
-          related = type(candidate.task) == "table" and candidate.task.key == task_key
-        elseif candidate.kind == "requirement" then
-          for _, reference in ipairs(type(selected_row.task) == "table" and selected_row.task.specReferences or {}) do
-            if reference.path == candidate.spec_path and vim.tbl_contains(reference.ids or {}, candidate.requirement.id) then
-              related = true
-              break
+      if type(candidate) == "table" then
+        local related = false
+        if task_key then
+          if candidate.kind == "file" then
+            local association = type(candidate.association) == "table" and candidate.association or nil
+            related = vim.tbl_contains(list(association and association.taskKeys), task_key)
+          elseif candidate.kind == "hunk" or candidate.kind == "change_line" then
+            local association = type(candidate.hunkAssociation) == "table" and candidate.hunkAssociation or nil
+            related = vim.tbl_contains(list(association and association.candidateTaskKeys), task_key)
+          elseif candidate.kind == "planned_file" then
+            local task = type(candidate.task) == "table" and candidate.task or nil
+            related = task ~= nil and task.key == task_key
+          elseif candidate.kind == "requirement" and selected_task then
+            for _, reference in ipairs(list(selected_task.specReferences)) do
+              if type(reference) == "table" and type(candidate.requirement) == "table"
+                and reference.path == candidate.spec_path
+                and vim.tbl_contains(list(reference.ids), candidate.requirement.id) then
+                related = true
+                break
+              end
             end
           end
-        end
-      elseif requirement_ref then
-        if candidate.kind == "task" then
-          for _, reference in ipairs(type(candidate.task) == "table" and candidate.task.specReferences or {}) do
-            if reference.path == selected_row.spec_path and vim.tbl_contains(reference.ids or {}, selected_row.requirement.id) then
-              related = true
-              break
+        elseif requirement_ref then
+          if candidate.kind == "task" then
+            local task = type(candidate.task) == "table" and candidate.task or nil
+            for _, reference in ipairs(list(task and task.specReferences)) do
+              if type(reference) == "table" and reference.path == selected_row.spec_path
+                and vim.tbl_contains(list(reference.ids), selected_requirement.id) then
+                related = true
+                break
+              end
             end
+          elseif candidate.kind == "file" then
+            local association = type(candidate.association) == "table" and candidate.association or nil
+            for _, key in ipairs(list(association and association.taskKeys)) do
+              if linked_task_keys[key] then related = true; break end
+            end
+          elseif candidate.kind == "hunk" or candidate.kind == "change_line" then
+            local association = type(candidate.hunkAssociation) == "table" and candidate.hunkAssociation or nil
+            related = vim.tbl_contains(list(association and association.candidateRequirementRefs), requirement_ref)
           end
-        elseif candidate.kind == "file" then
-          for _, key in ipairs(type(candidate.association) == "table" and candidate.association.taskKeys or {}) do
-            if linked_task_keys[key] then related = true; break end
-          end
-        elseif candidate.kind == "hunk" or candidate.kind == "change_line" then
-          related = vim.tbl_contains(type(candidate.hunkAssociation) == "table" and candidate.hunkAssociation.candidateRequirementRefs or {}, requirement_ref)
         end
-      end
-      if related then
-        vim.api.nvim_buf_add_highlight(buf, related_ns, "IncSearch", line - 1, 0, -1)
+        if related then
+          vim.api.nvim_buf_add_highlight(buf, related_ns, "IncSearch", line - 1, 0, -1)
+        end
       end
     end
   end
