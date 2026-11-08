@@ -1250,6 +1250,98 @@ function M.open(opts)
   current_row = function()
     return vim.b[buf].neolit_rows and vim.b[buf].neolit_rows[vim.api.nvim_win_get_cursor(0)[1]]
   end
+
+  local function archive_selected()
+    local row = current_row()
+    if not row then return end
+    local relative, range, label, marker
+    if row.kind == "task" and row.task then
+      relative = row.task.key:match("^(.-)::")
+      range = row.task.range
+      label = "TODO task"
+      marker = row.task.text
+    elseif row.kind == "requirement" and row.requirement then
+      relative = row.spec_path
+      range = row.requirement.range
+      label = "SPEC requirement " .. tostring(row.requirement.id)
+      marker = row.requirement.id
+    else
+      vim.notify("Select a TODO task or SPEC requirement to archive", vim.log.levels.INFO)
+      return
+    end
+    local source = relative and safe_repo_path(root, relative)
+    local archived = relative and relative:lower():match("%.archive%.md$") ~= nil
+    local destination_relative = archived
+      and relative:gsub("%.archive%.md$", ".md")
+      or relative:gsub("%.md$", ".archive.md")
+    local destination = safe_repo_path(root, destination_relative)
+    if not source or not destination or source == destination or not range then
+      vim.notify("Cannot resolve a safe archive source/destination", vim.log.levels.ERROR)
+      return
+    end
+    for _, path in ipairs({ source, destination }) do
+      local loaded = vim.fn.bufnr(path)
+      if loaded >= 0 and vim.bo[loaded].modified then
+        vim.notify("Write the modified planning buffer before archiving", vim.log.levels.WARN)
+        return
+      end
+    end
+    local source_lines = vim.fn.readfile(source)
+    local first = tonumber(range.startLine)
+    local last = tonumber(range.endLine)
+    if not first or not last or first < 1 or last < first or last > #source_lines then
+      vim.notify("The selected Markdown range is stale; refresh the workspace", vim.log.levels.WARN)
+      return
+    end
+    local first_line = source_lines[first] or ""
+    if row.kind == "task" then
+      if not first_line:find(marker, 1, true) or not first_line:match("%[[ xX]%]") then
+        vim.notify("The selected TODO task changed; refresh before archiving", vim.log.levels.WARN)
+        return
+      end
+    elseif not first_line:find(marker, 1, true) then
+      vim.notify("The selected SPEC requirement changed; refresh before archiving", vim.log.levels.WARN)
+      return
+    end
+    local block = vim.list_slice(source_lines, first, last)
+    if #block == 0 then return end
+    local destination_lines = vim.fn.filereadable(destination) == 1 and vim.fn.readfile(destination) or {}
+    for start = 1, #destination_lines - #block + 1 do
+      local same = true
+      for offset = 1, #block do
+        if destination_lines[start + offset - 1] ~= block[offset] then same = false; break end
+      end
+      if same then
+        vim.notify("That exact block already exists in " .. destination_relative, vim.log.levels.WARN)
+        return
+      end
+    end
+    local action = archived and "Restore" or "Archive"
+    if vim.fn.confirm(action .. " " .. label .. " in " .. relative .. (archived and " to " or " into ") .. destination_relative .. "?", "&Move\n&Cancel", 2) ~= 1 then
+      return
+    end
+    if #destination_lines > 0 and destination_lines[#destination_lines] ~= "" then
+      destination_lines[#destination_lines + 1] = ""
+    end
+    for _, line in ipairs(block) do destination_lines[#destination_lines + 1] = line end
+    if vim.fn.writefile(destination_lines, destination) ~= 0 then
+      vim.notify("Could not write " .. destination_relative, vim.log.levels.ERROR)
+      return
+    end
+    for _ = first, last do table.remove(source_lines, first) end
+    if vim.fn.writefile(source_lines, source) ~= 0 then
+      vim.notify("Archive was written, but source cleanup failed; reconcile " .. relative, vim.log.levels.ERROR)
+      return
+    end
+    for _, path in ipairs({ source, destination }) do
+      local loaded = vim.fn.bufnr(path)
+      if loaded >= 0 then
+        pcall(vim.api.nvim_buf_call, loaded, function() vim.cmd("checktime") end)
+      end
+    end
+    vim.notify(action .. "d " .. label .. (archived and " from " or " to ") .. destination_relative)
+    refresh()
+  end
   local function toggle_node(row, expanded)
     if not row then return end
     if expanded == nil then expanded = not row.expanded end
@@ -1544,10 +1636,11 @@ function M.open(opts)
     if row then preview_row(row) end
     vim.notify("Neolit diff view: " .. diff_state.diff_view)
   end, "Toggle side-by-side / unified diff preview")
+  map("a", archive_selected, "Move selected TODO task or SPEC requirement to/from its archive file")
   map("x", copy_selected_text, "Copy selected task, requirement, description, or row text")
   map("y", copy_selected_path, "Copy selected repository path and source line")
   map("?", function()
-    vim.notify("Tree: <CR> expand/open · za toggle · zo open · zc close · h/l expand/collapse-or-parent · zr/zm one level · zR/zM all · f affected-only · D diff view · e / <leader>ne edit working side · o / <leader>no open file · x copy text · y copy path · r refresh · q/<Esc> close", vim.log.levels.INFO)
+    vim.notify("Tree: <CR> expand/open · za toggle · zo open · zc close · h/l expand/collapse-or-parent · zr/zm one level · zR/zM all · f affected-only · a archive/restore task or requirement · D diff view · e / <leader>ne edit working side · o / <leader>no open file · x copy text · y copy path · r refresh · q/<Esc> close", vim.log.levels.INFO)
   end, "Show Neolit tree keys")
   local function close_workspace()
     refresh_revision = refresh_revision + 1
