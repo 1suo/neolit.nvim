@@ -140,8 +140,11 @@ local function render(buf, root, workspace)
 
   add("", nil)
   add("CHANGED FILES (" .. #workspace.git.changedFiles .. ")", nil)
-  local associations, statuses = {}, {}
+  local associations, statuses, hunk_associations = {}, {}, {}
   for _, association in ipairs(workspace.git.associations) do associations[association.path] = association end
+  for _, association in ipairs(workspace.git.hunkAssociations or {}) do
+    hunk_associations[association.path .. "#" .. association.hunkIndex] = association
+  end
   for _, status in ipairs(workspace.git.status) do statuses[status.path] = status end
   for _, file in ipairs(workspace.git.changedFiles) do
     local association = associations[file.path] or { state = "unplanned", taskKeys = {} }
@@ -150,9 +153,17 @@ local function render(buf, root, workspace)
     local git_status = status and (status.index .. status.worktree) or "  "
     local doc_marker = file.path:match("%.md$") and "#" or " "
     add(string.format("  %s %s [%s] %s", marker, doc_marker, git_status, file.path), { kind = "file", file = file, association = association })
-    for _, hunk in ipairs(file.hunks) do
-      add(string.format("      @@ -%d,%d +%d,%d @@ %s", hunk.oldStart, hunk.oldLines, hunk.newStart, hunk.newLines, hunk.header), {
-        kind = "hunk", file = file, hunk = hunk, association = association,
+    for hunk_index, hunk in ipairs(file.hunks) do
+      local hunk_association = hunk_associations[file.path .. "#" .. (hunk_index - 1)]
+      local hunk_marker = not hunk_association and "?" or (
+        hunk_association.state == "unresolved" and "~" or (
+          hunk_association.state == "documentation" and "#" or "?"
+        )
+      )
+      local candidate_count = #(hunk_association and hunk_association.candidateTaskKeys or {})
+      local candidate_label = candidate_count > 0 and (" [" .. candidate_count .. " task candidate(s)]") or ""
+      add(string.format("    %s @@ -%d,%d +%d,%d @@ %s%s", hunk_marker, hunk.oldStart, hunk.oldLines, hunk.newStart, hunk.newLines, hunk.header, candidate_label), {
+        kind = "hunk", file = file, hunk = hunk, association = association, hunkAssociation = hunk_association,
       })
     end
   end
@@ -408,7 +419,8 @@ function M.open(opts)
       end
       local related_tasks = {}
       for _, task in ipairs(workspace and workspace.tasks or {}) do
-        if row.association and vim.tbl_contains(row.association.taskKeys or {}, task.key) then
+        local candidate_keys = row.kind == "hunk" and row.hunkAssociation and row.hunkAssociation.candidateTaskKeys or (row.association and row.association.taskKeys or {})
+        if vim.tbl_contains(candidate_keys, task.key) then
           local requirements = {}
           for _, requirement in ipairs(task.resolvedRequirements or {}) do
             for _, reference in ipairs(task.specReferences or {}) do
