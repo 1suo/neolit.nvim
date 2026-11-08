@@ -1234,9 +1234,17 @@ function M.open(opts)
     if not path and row.kind == "diagnostic" then path = row.diagnostic.path or row.diagnostic.todoPath end
     if path then
       local line
-      if row.kind == "task" then line = row.task.range and row.task.range.startLine
-      elseif row.kind == "requirement" then line = row.requirement.range and row.requirement.range.startLine
-      elseif row.kind == "acceptance_criterion" then line = row.criterion.range and row.criterion.range.startLine end
+      if row.kind == "task" or row.kind == "requirement_task" then
+        line = row.task.range and row.task.range.startLine
+      elseif row.kind == "requirement" then
+        line = row.requirement.range and row.requirement.range.startLine
+      elseif row.kind == "acceptance_criterion" or row.kind == "task_acceptance" or row.kind == "requirement_criterion" then
+        line = row.criterion.range and row.criterion.range.startLine
+      elseif row.kind == "task_requirement" then
+        line = row.requirement.range and row.requirement.range.startLine
+      elseif row.kind == "task_description" then
+        line = row.task.range and row.task.range.startLine
+      end
       copy_value(path .. (line and (":" .. line) or ""), "Path")
     else
       vim.notify("This selection has no source path", vim.log.levels.INFO)
