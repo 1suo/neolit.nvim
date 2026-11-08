@@ -228,6 +228,9 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
     for _, path in ipairs(task.filePaths or {}) do
       add(prefix .. indent .. "   ↳  " .. path, { kind = "planned_file", path = path, parent_key = "task:" .. key, task = task })
     end
+    for _, description in ipairs(task.description or {}) do
+      add(prefix .. indent .. "   " .. description, { kind = "task_description", parent_key = "task:" .. key, task = task })
+    end
     for _, reference in ipairs(task.specReferences or {}) do
       add(prefix .. indent .. "   §  " .. reference.path .. "  #" .. table.concat(reference.ids or {}, ", "),
         { kind = "task_reference", parent_key = "task:" .. key, reference = reference, task = task })
@@ -242,14 +245,27 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
     local status, kind = git_status[path], doc_kind[path]
     local git_marker = status and (status.index .. status.worktree) or "  "
     local association = associations[path] or { state = "unplanned", taskKeys = {} }
-    local doc_label = kind and (kind .. "  ") or ""
     local marker = changed and (association.state == "unplanned" and "?" or (association.state == "partially-mapped" and "~" or "✓")) or " "
+    local doc_summary = ""
+    if kind == "TODO" then
+      doc_summary = string.format("  · %d tasks", #(tasks_by_doc[path] or {}))
+    elseif kind == "SPEC" then
+      doc_summary = string.format("  · %d requirements", #(requirements_by_doc[path] or {}))
+    elseif kind == "README" then
+      for _, item in ipairs(workspace.readmeContents or {}) do
+        if item.path == path then
+          local heading = item.content:match("^%s*#%s+([^\r\n]+)")
+          if heading then doc_summary = "  · " .. heading end
+          break
+        end
+      end
+    end
     local is_expanded = expanded_files[path] == true
     local has_children = changed ~= nil or (kind == "TODO" and #(tasks_by_doc[path] or {}) > 0)
       or (kind == "SPEC" and #(requirements_by_doc[path] or {}) > 0)
     add(prefix .. branch .. (has_children and (is_expanded and "▾ " or "▸ ") or "  ")
       .. (kind and ("[" .. kind .. "] ") or "") .. marker .. " " .. entry.name
-      .. (status and ("  [" .. git_marker .. "]") or ""),
+      .. doc_summary .. (status and ("  [" .. git_marker .. "]") or ""),
       { kind = changed and "file" or (kind and "planning_document" or "repository_file"),
         key = "file:" .. path, path = path, file = changed, doc_kind = kind,
         association = association, expanded = is_expanded,
@@ -260,18 +276,24 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
     elseif kind == "SPEC" then
       for _, requirement in ipairs(requirements_by_doc[path] or {}) do
         local state = requirement_states[path .. "#" .. requirement.id] or "unmapped"
+        local requirement_key = "requirement:" .. path .. "#" .. requirement.id
         add(prefix .. "   §  " .. requirement.id .. "  " .. state:upper() .. "  " .. (requirement.text or ""),
-          { kind = "requirement", key = "requirement:" .. path .. "#" .. requirement.id,
-            parent_key = "file:" .. path, requirement = requirement, spec_path = path })
-      end
-    elseif kind == "README" then
-      local readme
-      for _, item in ipairs(workspace.readmeContents or {}) do if item.path == path then readme = item; break end end
-      if readme then
-        local links = {}
-        for target in readme.content:gmatch("%[[^%]]-%]%(([^)#]+)") do links[#links + 1] = target end
-        for _, target in ipairs(links) do
-          add(prefix .. "   ↗  " .. target, { kind = "document_link", path = path, target = target })
+          { kind = "requirement", key = requirement_key, parent_key = "file:" .. path,
+            requirement = requirement, spec_path = path })
+        for _, criterion in ipairs((function()
+          for _, spec in ipairs(workspace.specs or {}) do
+            if spec.path == path then
+              local matches = {}
+              for _, item in ipairs(spec.acceptanceCriteria or {}) do
+                if vim.tbl_contains(item.requirementIds or {}, requirement.id) then matches[#matches + 1] = item end
+              end
+              return matches
+            end
+          end
+          return {}
+        end)()) do
+          add(prefix .. "      ✓ " .. criterion.id .. "  " .. criterion.text,
+            { kind = "acceptance_criterion", parent_key = requirement_key, criterion = criterion, spec_path = path })
         end
       end
     end
@@ -1088,7 +1110,7 @@ function M.open(opts)
   end
   local function expand_node_at_cursor()
     local row = current_row()
-    if row and (row.kind == "tree_directory" or row.kind == "task" or row.kind == "file") then
+    if row and (row.kind == "tree_directory" or row.kind == "task" or row.kind == "file" or row.kind == "planning_document") then
       toggle_node(row, true)
     end
   end
@@ -1110,8 +1132,12 @@ function M.open(opts)
         elseif candidate.kind == "file" or candidate.kind == "planning_document" then
           expanded_files[candidate.path or candidate.file.path] = false
         end
-        rerender_at(parent_key)
-        return
+        for line, parent in pairs(vim.b[buf].neolit_rows or {}) do
+          if parent and parent.key == parent_key then
+            vim.api.nvim_win_set_cursor(0, { line, 0 })
+            return
+          end
+        end
       end
     end
   end
@@ -1247,19 +1273,19 @@ function M.open(opts)
     end,
   })
   map("<CR>", selected, "Open selected diff, TODO, or SPEC requirement")
-  map("za", toggle_node_at_cursor, "Toggle selected folder, task, or diff file")
+  map("za", toggle_node_at_cursor, "Toggle selected folder, document, task, or diff file")
   map("l", expand_node_at_cursor, "Expand selected folder, task, or diff file")
   map("h", collapse_node_at_cursor, "Collapse selected node or move to parent")
   map("zR", function()
     set_all_expanded(true)
     for _, task in ipairs((vim.b[buf].neolit_workspace or {}).tasks or {}) do expanded_tasks[task.key] = true end
     rerender_at()
-  end, "Expand all tasks and diff files")
+  end, "Expand all folders, documents, tasks, and diffs")
   map("zM", function()
     set_all_expanded(false)
     for _, task in ipairs((vim.b[buf].neolit_workspace or {}).tasks or {}) do expanded_tasks[task.key] = false end
     rerender_at()
-  end, "Collapse all tasks and diff files")
+  end, "Collapse all folders, documents, tasks, and diffs")
   map("f", function()
     filter_mode = filter_mode == "all" and "affected" or "all"
     local workspace = vim.b[buf].neolit_workspace
