@@ -62,7 +62,7 @@ collapsed.
   file or hunk opens its native diff directly. `<CR>` on a task or requirement
   opens its Markdown source. `e` focuses the editable working side; `o`
   opens the actual file without a diff.
-- `a` archives the selected TODO task or SPEC requirement into its adjacent
+- `a` archives the selected TODO task, SPEC requirement, or acceptance criterion into its adjacent
   `.archive.md` file; selecting an archived entry and pressing `a` restores it.
   Both moves require confirmation and preserve the complete Markdown block.
 - `D` toggles side-by-side/unified diff presentation. `r` refreshes;
@@ -79,7 +79,7 @@ collapsed.
 | `zr` / `zm` | Expand / collapse one visible level |
 | `zR` / `zM` | Expand / collapse all |
 | `f` | All paths / affected paths and related planning docs |
-| `a` | Archive / restore selected TODO task or SPEC requirement |
+| `a` | Archive / restore selected TODO task, SPEC requirement, or criterion |
 | `x` | Copy selected text, task, requirement, file diff, or hunk |
 | `y` | Copy selected source path and line |
 | `e` | Focus editable working side of selected diff |
