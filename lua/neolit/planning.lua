@@ -310,13 +310,16 @@ function M.open(opts)
     local anchor_base = current_base ~= "" and current_base or "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
     local selected_path = side == "base" and (file.previousPath or file.path) or file.path
     local related_tasks = {}
+    local related_requirements = {}
     local candidate_keys
+    local candidate_requirement_refs
     if selected_hunk then
       for _, association in ipairs(workspace and workspace.git.hunkAssociations or {}) do
         if association.path == file.path
           and association.hunk.oldStart == selected_hunk.oldStart
           and association.hunk.newStart == selected_hunk.newStart then
           candidate_keys = association.candidateTaskKeys
+          candidate_requirement_refs = association.candidateRequirementRefs
           break
         end
       end
@@ -347,6 +350,19 @@ function M.open(opts)
           end
     end
 
+    for _, reference in ipairs(candidate_requirement_refs or {}) do
+      local spec_path, requirement_id = reference:match("^(.-)#([^#]+)$")
+      for _, spec in ipairs(workspace and workspace.specs or {}) do
+        if spec.path == spec_path then
+          for _, requirement in ipairs(spec.requirements or {}) do
+            if requirement.id == requirement_id then
+              related_requirements[#related_requirements + 1] = { specPath = spec_path, requirement = requirement }
+            end
+          end
+        end
+      end
+    end
+
     vim.ui.input({ prompt = "Question about selected lines: " }, function(question)
       if not question or question == "" then return end
       local payload = {
@@ -359,12 +375,13 @@ function M.open(opts)
         selectedDiffText = current_diff,
         selectedLinesText = selected_lines,
         relatedTasks = related_tasks,
+        relatedRequirements = related_requirements,
       }
       local url = vim.uri_from_fname(neolit_dir .. "/dist/planning/context.js")
       local js = "const m = await import(" .. string.format("%q", url) .. "); "
         .. "const p = JSON.parse(process.argv[1]); "
         .. "const anchor = m.createDiffAnchor({ path: p.path, side: p.side, baseCommit: p.baseCommit, diffText: p.diffText, lineRange: p.lineRange }); "
-        .. "const result = m.buildDiffQuestionPacket({ question: p.question, anchor, currentBaseCommit: p.baseCommit, currentDiffText: p.diffText, selectedDiffText: p.selectedDiffText, selectedLinesText: p.selectedLinesText, relatedTasks: p.relatedTasks }); "
+        .. "const result = m.buildDiffQuestionPacket({ question: p.question, anchor, currentBaseCommit: p.baseCommit, currentDiffText: p.diffText, selectedDiffText: p.selectedDiffText, selectedLinesText: p.selectedLinesText, relatedTasks: p.relatedTasks, relatedRequirements: p.relatedRequirements }); "
         .. "process.stdout.write(JSON.stringify(result));"
       local packet_result = vim.system({
         cfg.node, "--input-type=module", "-e", js, vim.json.encode(payload),
@@ -467,6 +484,7 @@ function M.open(opts)
         end
       end
       local related_tasks = {}
+      local related_requirements = {}
       for _, task in ipairs(workspace and workspace.tasks or {}) do
         local candidate_keys = row.kind == "hunk" and row.hunkAssociation and row.hunkAssociation.candidateTaskKeys or (row.association and row.association.taskKeys or {})
         if vim.tbl_contains(candidate_keys, task.key) then
@@ -485,6 +503,20 @@ function M.open(opts)
           }
         end
       end
+      if row.kind == "hunk" and row.hunkAssociation then
+        for _, reference in ipairs(row.hunkAssociation.candidateRequirementRefs or {}) do
+          local spec_path, requirement_id = reference:match("^(.-)#([^#]+)$")
+          for _, spec in ipairs(workspace and workspace.specs or {}) do
+            if spec.path == spec_path then
+              for _, requirement in ipairs(spec.requirements or {}) do
+                if requirement.id == requirement_id then
+                  related_requirements[#related_requirements + 1] = { specPath = spec_path, requirement = requirement }
+                end
+              end
+            end
+          end
+        end
+      end
       vim.ui.input({ prompt = "Question about selected diff: " }, function(question)
         if not question or question == "" then return end
         local payload = {
@@ -496,12 +528,13 @@ function M.open(opts)
           selectedDiffText = selected_diff,
           hunk = row.kind == "hunk" and row.hunk or nil,
           relatedTasks = related_tasks,
+          relatedRequirements = related_requirements,
         }
         local url = vim.uri_from_fname(neolit_dir .. "/dist/planning/context.js")
         local js = "const m = await import(" .. string.format("%q", url) .. "); "
           .. "const p = JSON.parse(process.argv[1]); "
           .. "const anchor = m.createDiffAnchor({ path: p.path, side: p.side, baseCommit: p.baseCommit, diffText: p.diffText, hunk: p.hunk }); "
-          .. "const result = m.buildDiffQuestionPacket({ question: p.question, anchor, currentBaseCommit: p.baseCommit, currentDiffText: p.diffText, selectedDiffText: p.selectedDiffText, relatedTasks: p.relatedTasks }); "
+          .. "const result = m.buildDiffQuestionPacket({ question: p.question, anchor, currentBaseCommit: p.baseCommit, currentDiffText: p.diffText, selectedDiffText: p.selectedDiffText, relatedTasks: p.relatedTasks, relatedRequirements: p.relatedRequirements }); "
           .. "process.stdout.write(JSON.stringify(result));"
         local packet_result = vim.system({
           cfg.node, "--input-type=module", "-e", js, vim.json.encode(payload),
