@@ -1330,6 +1330,18 @@ function M.open(opts)
     local source = safe_repo_path(root, relative)
     if not source then vim.notify("Unsafe SPEC path", vim.log.levels.ERROR); return end
     local source_lines = vim.fn.readfile(source)
+    local loaded_source = vim.fn.bufnr(source)
+    if loaded_source >= 0 then
+      local buffer_lines = vim.api.nvim_buf_get_lines(loaded_source, 0, -1, false)
+      if #buffer_lines ~= #source_lines then
+        vim.notify("The SPEC preview is stale; refresh before archiving", vim.log.levels.WARN); return
+      end
+      for index, line in ipairs(source_lines) do
+        if buffer_lines[index] ~= line then
+          vim.notify("The SPEC preview is stale; refresh before archiving", vim.log.levels.WARN); return
+        end
+      end
+    end
     local first, last = cursor_line, cursor_line
     if first < 1 or first > #source_lines or not (source_lines[first] or ""):match("%S") then
       vim.notify("Place the cursor on a SPEC paragraph", vim.log.levels.INFO); return
@@ -1340,7 +1352,9 @@ function M.open(opts)
     end
     local list_item = (source_lines[first] or ""):match("^(%s*[-*+]%s)") or (source_lines[first] or ""):match("^(%s*%d+[.)]%s)")
     while first > 1 and (source_lines[first - 1] or ""):match("%S") do
-      if starts_block(source_lines[first - 1] or "") then break end
+      local previous = source_lines[first - 1] or ""
+      if starts_block(previous) then break end
+      if list_item and not previous:match("^%s+") then break end
       first = first - 1
     end
     while last < #source_lines and (source_lines[last + 1] or ""):match("%S") do
