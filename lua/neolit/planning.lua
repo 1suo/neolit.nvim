@@ -892,6 +892,11 @@ function M.open(opts)
           vim.notify("Planned file does not exist yet: " .. row.path, vim.log.levels.INFO)
         end
       end
+    elseif row.kind == "task_change" then
+      open_diff(root, row.file, nil, ask_line_context, workspace and workspace.git.base, nil, diff_state, true)
+    elseif row.kind == "task_hunk" then
+      open_diff(root, row.file, row.hunkAssociation and row.hunkAssociation.hunk,
+        ask_line_context, workspace and workspace.git.base, nil, diff_state, true)
     elseif row.kind == "file" then
       open_diff(root, row.file, nil, ask_line_context, workspace and workspace.git.base, nil, diff_state, true)
     elseif row.kind == "hunk" or row.kind == "change_line" then
@@ -916,6 +921,11 @@ function M.open(opts)
       else
         open_in_preview(row.path, nil, false)
       end
+    elseif row.kind == "task_change" then
+      open_diff(root, row.file, nil, ask_line_context, workspace and workspace.git.base, nil, diff_state, false)
+    elseif row.kind == "task_hunk" then
+      open_diff(root, row.file, row.hunkAssociation and row.hunkAssociation.hunk,
+        ask_line_context, workspace and workspace.git.base, nil, diff_state, false)
     elseif row.kind == "file" then
       open_diff(root, row.file, nil, ask_line_context, workspace and workspace.git.base, nil, diff_state, false)
     elseif row.kind == "hunk" or row.kind == "change_line" then
@@ -973,7 +983,8 @@ function M.open(opts)
       end
     end
     if changed then
-      open_diff(root, changed, row.hunk, ask_line_context, workspace and workspace.git.base,
+      local hunk = row.hunk or (row.hunkAssociation and row.hunkAssociation.hunk)
+      open_diff(root, changed, hunk, ask_line_context, workspace and workspace.git.base,
         row.kind == "change_line" and { side = row.side, lineNumber = row.lineNumber } or nil,
         diff_state, true)
       local win = diff_state.working_win or diff_state.preview_win
