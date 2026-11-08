@@ -206,7 +206,7 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
     end
   end
   local function render_file(entry, prefix, branch)
-    local child_prefix = prefix .. (branch == "└── " and "    " or "│   ")
+    local child_prefix = prefix .. (branch == "└─ " and "   " or "│  ")
     local path, changed = entry.path, changed_by_path[entry.path]
     local status, kind = git_status[path], doc_kind[path]
     local git_marker = status and (status.index .. status.worktree) or "  "
@@ -306,12 +306,12 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
     end)
     for index, entry in ipairs(entries) do
       local last = index == #entries
-      local branch = last and "└── " or "├── "
+      local branch = last and "└─ " or "├─ "
       if entry.directory then
         local expanded = expanded_dirs[entry.path] == true
         add(ancestors .. branch .. (expanded and "▾ " or "▸ ") .. entry.name .. "/",
           { kind = "tree_directory", key = "dir:" .. entry.path, parent_key = parent_key, path = entry.path, expanded = expanded, expandable = true })
-        if expanded then render_tree(entry.node, ancestors .. (last and "    " or "│   "), depth + 1, "dir:" .. entry.path) end
+        if expanded then render_tree(entry.node, ancestors .. (last and "   " or "│  "), depth + 1, "dir:" .. entry.path) end
       else
         render_file(entry.entry, ancestors, branch)
       end
@@ -433,6 +433,10 @@ function M.open(opts)
   local tree_win = vim.api.nvim_get_current_win()
   vim.api.nvim_win_set_width(tree_win, 34)
   vim.wo[tree_win].wrap = false
+  vim.bo[buf].tabstop = 2
+  vim.bo[buf].shiftwidth = 2
+  vim.bo[buf].softtabstop = 2
+  vim.bo[buf].expandtab = true
   vim.api.nvim_buf_set_name(buf, "neolit://planning-" .. buf)
   vim.bo[buf].buftype = "nofile"
   vim.bo[buf].bufhidden = "hide"
@@ -1506,13 +1510,21 @@ function M.open(opts)
   map("?", function()
     vim.notify("Tree: <CR> expand/open · za toggle · zo open · zc close · h/l expand/collapse-or-parent · zr/zm one level · zR/zM all · f affected-only · x context · K details · r refresh · q close", vim.log.levels.INFO)
   end, "Show Neolit tree keys")
-  map("q", function()
+  local function close_workspace()
     refresh_revision = refresh_revision + 1
     if refresh_job then pcall(vim.fn.jobstop, refresh_job); refresh_job = nil end
     pcall(vim.api.nvim_del_augroup_by_id, refresh_group)
-    if vim.api.nvim_get_current_buf() == buf then vim.cmd("close") end
-    if vim.api.nvim_buf_is_valid(buf) then pcall(vim.api.nvim_buf_delete, buf, { force = true }) end
-  end, "Close planning workspace")
+    if vim.api.nvim_buf_is_valid(buf) then
+      for _, win in ipairs(vim.api.nvim_list_wins()) do
+        if vim.api.nvim_win_get_buf(win) == buf then
+          pcall(vim.api.nvim_win_close, win, true)
+        end
+      end
+      pcall(vim.api.nvim_buf_delete, buf, { force = true })
+    end
+  end
+  map("q", close_workspace, "Close planning workspace")
+  map("<Esc>", close_workspace, "Close planning workspace")
   refresh()
 end
 
