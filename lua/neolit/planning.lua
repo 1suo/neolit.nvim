@@ -31,7 +31,7 @@ local function diff_command(file, base)
 end
 
 local function safe_repo_path(root, relative)
-  if type(relative) ~= "string" or relative == "" or relative:match("^[/\\]") or relative:match("^%a:[/\\]") then
+  if type(relative) ~= "string" or relative == "" or relative:sub(1, 1) == "/" or relative:sub(1, 1) == "\\" or relative:match("^%a:") then
     return nil
   end
   local root_path = vim.fn.resolve(vim.fn.fnamemodify(root, ":p"))
