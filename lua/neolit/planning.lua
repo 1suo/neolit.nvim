@@ -429,8 +429,8 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
               if vim.tbl_contains(criterion.requirementIds or {}, requirement.id) then
                 local criterion_ref = path .. "#" .. criterion.id
                 criteria[#criteria + 1] = {
-                  ref = criterion_ref, text = criterion.text,
-                  verified = verified_by_ref[criterion_ref] == true,
+                  ref = criterion_ref, text = criterion.text, range = criterion.range,
+                  specPath = path, verified = verified_by_ref[criterion_ref] == true,
                 }
               end
             end
@@ -995,6 +995,12 @@ function M.open(opts)
       if todo_path and safe_repo_path(root, todo_path) then
         open_in_preview(todo_path, row.task.range.startLine, true)
       end
+    elseif row.kind == "task_requirement" then
+      open_in_preview(row.requirement.specPath, row.requirement.range.startLine, true)
+    elseif row.kind == "task_acceptance" then
+      open_in_preview(row.criterion.specPath, row.criterion.range.startLine, true)
+    elseif row.kind == "requirement_criterion" then
+      open_in_preview(row.criterion.specPath, row.criterion.range.startLine, true)
     elseif row.kind == "planned_file" then
       local changed
       for _, file in ipairs(workspace and workspace.git.changedFiles or {}) do
@@ -1060,6 +1066,12 @@ function M.open(opts)
     elseif row.kind == "requirement_task" then
       local path = row.task.key:match("^(.-)::")
       if path then open_in_preview(path, row.task.range.startLine, false) end
+    elseif row.kind == "task_requirement" then
+      open_in_preview(row.requirement.specPath, row.requirement.range.startLine, false)
+    elseif row.kind == "task_acceptance" then
+      open_in_preview(row.criterion.specPath, row.criterion.range.startLine, false)
+    elseif row.kind == "requirement_criterion" then
+      open_in_preview(row.criterion.specPath, row.criterion.range.startLine, false)
     elseif row.kind == "requirement" then
       open_in_preview(row.spec_path, row.requirement.range.startLine, false)
     elseif row.kind == "planned_file" then
@@ -1086,8 +1098,14 @@ function M.open(opts)
       return row.file and row.file.path
     elseif row.kind == "requirement_task" then
       return row.task.key:match("^(.-)::"), row.task.range and row.task.range.startLine
+    elseif row.kind == "task_description" then
+      return row.task.key:match("^(.-)::"), row.task.range and row.task.range.startLine
+    elseif row.kind == "task_requirement" then
+      return row.requirement.specPath, row.requirement.range and row.requirement.range.startLine
+    elseif row.kind == "task_acceptance" then
+      return row.criterion.specPath, row.criterion.range and row.criterion.range.startLine
     elseif row.kind == "requirement_criterion" then
-      return row.criterion.ref and row.criterion.ref:match("^(.-)#"), nil
+      return row.criterion.specPath, row.criterion.range and row.criterion.range.startLine
     end
     return nil
   end
