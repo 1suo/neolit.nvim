@@ -950,7 +950,7 @@ function M.open(opts)
       end
     elseif row.kind == "hunk" or row.kind == "change_line" then
       open_diff(root, row.file, row.hunk, workspace and workspace.git.base,
-        row.kind == "change_line" and { side = row.side, lineNumber = row.lineNumber } or nil, diff_state)
+        row.kind == "change_line" and { side = row.side, lineNumber = row.lineNumber } or nil, diff_state, true)
     end
   end
 
@@ -1097,7 +1097,7 @@ function M.open(opts)
     elseif row.kind == "task_acceptance" then
       copy_value(row.criterion.specPath .. "#" .. row.criterion.id .. " " .. row.criterion.text, "Acceptance criterion")
     elseif row.kind == "task_change" then
-      copy_value(row.task.text, "Task text")
+      copy_value(row.file and row.file.rawDiff or "", "File diff")
     elseif row.kind == "task_hunk" then
       local hunk = row.hunkAssociation and row.hunkAssociation.hunk
       if hunk then
