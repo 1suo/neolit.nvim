@@ -246,9 +246,36 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
   local derived = type(workspace.derived) == "table" and workspace.derived or {}
   local derived_requirements = type(derived.requirements) == "table" and derived.requirements or {}
   local derived_tasks = type(derived.tasks) == "table" and derived.tasks or {}
-  local requirement_states = {}
+  local requirement_states, requirement_projections = {}, {}
   for _, item in ipairs(derived_requirements) do
-    requirement_states[item.specPath .. "#" .. item.requirementId] = item.state
+    local ref = item.specPath .. "#" .. item.requirementId
+    requirement_states[ref] = item.state
+    requirement_projections[ref] = item
+  end
+  local diagnostics_by_task = {}
+  for _, diagnostic in ipairs(workspace.diagnostics or {}) do
+    if diagnostic.taskKey then
+      diagnostics_by_task[diagnostic.taskKey] = diagnostics_by_task[diagnostic.taskKey] or {}
+      table.insert(diagnostics_by_task[diagnostic.taskKey], diagnostic)
+    end
+  end
+  local function find_changed_file(path)
+    for _, file in ipairs(workspace.git.changedFiles or {}) do
+      if file.path == path then return file end
+    end
+  end
+  local function state_reason(state, projection)
+    if state == "unmapped" then return "No valid SPEC requirement reference" end
+    if state == "blocked" then return "Blocked by an explicit blocker" end
+    if state == "planned" then return "No changed file matches this task's file hints" end
+    if state == "in-progress" then
+      return #(projection and projection.hunkReviews or {}) > 0
+        and "Changed hunks are candidates, not proof of implementation"
+        or "File hints match; no precise hunk attribution"
+    end
+    if state == "implemented" then return "Implementation evidence exists; verification is incomplete" end
+    if state == "verified" then return "Current diff has matching passing verification evidence" end
+    return "Derived from Markdown and current Git evidence"
   end
 
   local tree_root = { children = {}, files = {} }
@@ -278,53 +305,71 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
   local function render_task(task, prefix, depth)
     local key = task.key
     local expanded = expanded_tasks[key] == true
-    local task_state = derived_tasks[key]
-    local state = type(task_state) == "table" and task_state.state or task.state or "planned"
+    local projection = derived_tasks[key]
+    local state = type(projection) == "table" and projection.state or task.state or "planned"
     local checkbox = task.checked and "[x]" or "[ ]"
     local indent = string.rep(" ", depth)
-    local expandable = #(task.filePaths or {}) + #(task.specReferences or {}) + #(task.description or {}) + #(task.unresolvedReferences or {}) > 0
-    add(prefix .. indent .. (expandable and (expanded and "- " or "+ ") or "") .. checkbox .. " " .. state:upper() .. " " .. task.text,
-      { kind = "task", key = "task:" .. key, parent_key = "file:" .. (key:match("^(.-)::") or "TODO.md"), task = task, expanded = expanded,
-        expandable = expandable })
+    local reviews = type(projection) == "table" and projection.hunkReviews or {}
+    local changed_paths = type(projection) == "table" and projection.changedPaths or {}
+    local diagnostics = diagnostics_by_task[key] or {}
+    local expandable = #(task.filePaths or {}) + #(task.specReferences or {})
+      + #(task.description or {}) + #(task.resolvedRequirements or {})
+      + #(task.resolvedAcceptanceCriteria or {}) + #reviews + #changed_paths + #diagnostics > 0
+    add(prefix .. indent .. (expandable and (expanded and "- " or "+ ") or "")
+      .. checkbox .. " " .. state:upper() .. " " .. task.text,
+      { kind = "task", key = "task:" .. key, parent_key = "file:" .. (key:match("^(.-)::") or "TODO.md"),
+        task = task, projection = projection, expanded = expanded, expandable = expandable })
     if not expanded then return end
+    add(prefix .. indent .. " " .. state_reason(state, projection),
+      { kind = "task_explanation", parent_key = "task:" .. key, task = task, projection = projection })
     for _, path in ipairs(task.filePaths or {}) do
-      add(prefix .. indent .. " " .. path, { kind = "planned_file", path = path, parent_key = "task:" .. key, task = task })
+      add(prefix .. indent .. " FILE " .. path,
+        { kind = "planned_file", path = path, parent_key = "task:" .. key, task = task })
     end
     for _, description in ipairs(task.description or {}) do
-      add(prefix .. indent .. " " .. description, { kind = "task_description", parent_key = "task:" .. key, task = task })
+      add(prefix .. indent .. " " .. description,
+        { kind = "task_description", parent_key = "task:" .. key, task = task })
     end
     for _, requirement in ipairs(task.resolvedRequirements or {}) do
-      add(prefix .. indent .. " " .. requirement.specPath .. "#" .. requirement.id .. " " .. requirement.text,
+      add(prefix .. indent .. " SPEC " .. requirement.specPath .. "#" .. requirement.id .. " " .. requirement.text,
         { kind = "task_requirement", parent_key = "task:" .. key, requirement = requirement, task = task })
     end
     for _, criterion in ipairs(task.resolvedAcceptanceCriteria or {}) do
-      add(prefix .. indent .. " AC " .. criterion.specPath .. "#" .. criterion.id .. " " .. criterion.text,
-        { kind = "task_acceptance", parent_key = "task:" .. key, criterion = criterion, task = task })
+      local ref = criterion.specPath .. "#" .. criterion.id
+      local verified = false
+      for _, item in ipairs(projection and projection.acceptanceCriteria or {}) do
+        if item.ref == ref then verified = item.verified == true; break end
+      end
+      add(prefix .. indent .. " AC " .. ref .. " " .. (verified and "VERIFIED " or "UNVERIFIED ") .. criterion.text,
+        { kind = "task_acceptance", parent_key = "task:" .. key, criterion = criterion, task = task, verified = verified })
     end
-    for _, reference in ipairs(task.specReferences or {}) do
-      if #(task.resolvedRequirements or {}) == 0 and #(task.resolvedAcceptanceCriteria or {}) == 0 then
-        add(prefix .. indent .. " " .. reference.path .. "#" .. table.concat(reference.ids or {}, ", "),
+    if #task.resolvedRequirements == 0 then
+      for _, reference in ipairs(task.specReferences or {}) do
+        add(prefix .. indent .. " SPEC? " .. reference.path .. "#" .. table.concat(reference.ids or {}, ", "),
           { kind = "task_reference", parent_key = "task:" .. key, reference = reference, task = task })
       end
     end
-    for _, file in ipairs(workspace.git.changedFiles or {}) do
-      for _, association in ipairs(workspace.git.associations or {}) do
-        if association.path == file.path and vim.tbl_contains(association.taskKeys or {}, task.key) then
-          add(prefix .. indent .. " CHANGE " .. file.path .. " " .. tostring(association.state):upper(),
-            { kind = "task_change", parent_key = "task:" .. key, file = file, association = association, task = task })
-        end
-      end
-      for _, association in ipairs(workspace.git.hunkAssociations or {}) do
-        if association.path == file.path and vim.tbl_contains(association.candidateTaskKeys or {}, task.key) then
-          add(prefix .. indent .. " HUNK " .. file.path .. " " .. tostring(association.state):upper()
-            .. " " .. tostring(association.reason),
-            { kind = "task_hunk", parent_key = "task:" .. key, file = file, hunkAssociation = association, task = task })
-        end
+    for _, path in ipairs(changed_paths) do
+      local file = find_changed_file(path)
+      if file then
+        add(prefix .. indent .. " CHANGE " .. path,
+          { kind = "task_change", parent_key = "task:" .. key, file = file, task = task })
       end
     end
-    for _, unresolved in ipairs(task.unresolvedReferences or {}) do
-      add(prefix .. indent .. " ! unresolved " .. unresolved.path .. "#" .. table.concat(unresolved.ids or {}, ", "),
-        { kind = "diagnostic", parent_key = "task:" .. key, diagnostic = unresolved })
+    for _, review in ipairs(reviews) do
+      local file = find_changed_file(review.path)
+      local hunk_association
+      for _, item in ipairs(workspace.git.hunkAssociations or {}) do
+        if item.path == review.path and item.hunkIndex == review.hunkIndex then hunk_association = item; break end
+      end
+      add(prefix .. indent .. " HUNK " .. review.path .. "#" .. tostring(review.hunkIndex + 1)
+        .. " " .. tostring(review.state):upper() .. " · " .. tostring(review.reason),
+        { kind = "task_hunk", parent_key = "task:" .. key, file = file,
+          hunkAssociation = hunk_association, task = task })
+    end
+    for _, diagnostic in ipairs(diagnostics) do
+      add(prefix .. indent .. " ! " .. diagnostic.message,
+        { kind = "diagnostic", parent_key = "task:" .. key, diagnostic = diagnostic })
     end
   end
   local function render_file(entry, prefix, branch)
@@ -358,69 +403,51 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
       for _, task in ipairs(tasks_by_doc[path] or {}) do render_task(task, child_prefix, child_depth) end
     elseif kind == "SPEC" then
       for _, requirement in ipairs(requirements_by_doc[path] or {}) do
-        local state = requirement_states[path .. "#" .. requirement.id] or "unmapped"
-        local requirement_key = "requirement:" .. path .. "#" .. requirement.id
+        local ref = path .. "#" .. requirement.id
+        local projection = requirement_projections[ref]
+        local state = requirement_states[ref] or "unplanned"
+        local requirement_key = "requirement:" .. ref
         local requirement_expanded = expanded_tasks[requirement_key] == true
         local linked_tasks = {}
-        for _, task in ipairs(workspace.tasks or {}) do
-          for _, reference in ipairs(task.specReferences or {}) do
-            if reference.path == path and vim.tbl_contains(reference.ids or {}, requirement.id) then
-              linked_tasks[#linked_tasks + 1] = task
-              break
-            end
-          end
+        for _, task_key in ipairs(projection and projection.taskKeys or {}) do
+          if tasks_by_key[task_key] then linked_tasks[#linked_tasks + 1] = tasks_by_key[task_key] end
         end
-        add(child_prefix .. string.rep(" ", child_depth) .. (requirement_expanded and "- " or "+ ")
+        local reviews = projection and projection.hunkReviews or {}
+        local criteria = projection and projection.acceptanceCriteria or {}
+        local has_details = #linked_tasks + #reviews + #criteria > 0
+        add(child_prefix .. string.rep(" ", child_depth) .. (has_details and (requirement_expanded and "- " or "+ ") or "  ")
           .. requirement.id .. " " .. state:upper() .. " " .. (requirement.text or ""),
           { kind = "requirement", key = requirement_key, parent_key = "file:" .. path,
-            requirement = requirement, spec_path = path, expanded = requirement_expanded, expandable = true })
+            requirement = requirement, spec_path = path, projection = projection,
+            expanded = requirement_expanded, expandable = has_details })
         if requirement_expanded then
+          add(child_prefix .. string.rep(" ", child_depth + 1)
+            .. (#linked_tasks == 0 and "No TODO task references this requirement" or state_reason(state, projection)),
+            { kind = "requirement_explanation", parent_key = requirement_key, requirement = requirement, projection = projection })
           for _, task in ipairs(linked_tasks) do
-            add(child_prefix .. string.rep(" ", child_depth + 1) .. "TASK " .. task.text
-              .. " " .. (task.checked and "[x]" or "[ ]"),
+            local task_state = derived_tasks[task.key]
+            local value = type(task_state) == "table" and task_state.state or task.state
+            add(child_prefix .. string.rep(" ", child_depth + 1) .. "TASK " .. tostring(value):upper() .. " " .. task.text,
               { kind = "requirement_task", parent_key = requirement_key, task = task })
           end
-        end
-        if requirement_expanded then
-        for _, criterion in ipairs((function()
-          for _, spec in ipairs(workspace.specs or {}) do
-            if spec.path == path then
-              local matches = {}
-              for _, item in ipairs(spec.acceptanceCriteria or {}) do
-                if vim.tbl_contains(item.requirementIds or {}, requirement.id) then matches[#matches + 1] = item end
-              end
-              return matches
-            end
+          for _, criterion in ipairs(criteria) do
+            add(child_prefix .. string.rep(" ", child_depth + 1)
+              .. "AC " .. criterion.ref .. " " .. (criterion.verified and "VERIFIED" or "UNVERIFIED"),
+              { kind = "requirement_criterion", parent_key = requirement_key, criterion = criterion })
           end
-          return {}
-        end)()) do
-          add(child_prefix .. string.rep(" ", child_depth + 1) .. criterion.id .. " " .. criterion.text,
-            { kind = "acceptance_criterion", parent_key = requirement_key, criterion = criterion, spec_path = path })
+          for _, review in ipairs(reviews) do
+            local file = find_changed_file(review.path)
+            local hunk_association
+            for _, item in ipairs(workspace.git.hunkAssociations or {}) do
+              if item.path == review.path and item.hunkIndex == review.hunkIndex then hunk_association = item; break end
+            end
+            add(child_prefix .. string.rep(" ", child_depth + 1) .. "HUNK " .. review.path .. "#"
+              .. tostring(review.hunkIndex + 1) .. " " .. tostring(review.state):upper()
+              .. " · " .. tostring(review.reason),
+              { kind = "task_hunk", parent_key = requirement_key, file = file,
+                hunkAssociation = hunk_association, requirement = requirement })
+          end
         end
-        end
-      end
-    elseif changed then
-      for _, task_key in ipairs(file_association and file_association.taskKeys or {}) do
-        local task = tasks_by_key[task_key]
-        if task then
-          add(child_prefix .. " TASK " .. task.text,
-            { kind = "task_change", key = "file-task:" .. path .. ":" .. task_key,
-              parent_key = "file:" .. path, file = changed, association = file_association, task = task })
-        end
-      end
-      for _, association in ipairs(file_hunks) do
-        local task_names = {}
-        for _, task_key in ipairs(association.candidateTaskKeys or {}) do
-          local task = tasks_by_key[task_key]
-          if task then task_names[#task_names + 1] = task.text end
-        end
-        local req_refs = association.candidateRequirementRefs or {}
-        local detail = #task_names > 0 and table.concat(task_names, ", ")
-          or (#req_refs > 0 and table.concat(req_refs, ", ") or "no task or requirement candidate")
-        add(child_prefix .. " HUNK " .. tostring(association.hunkIndex + 1) .. " "
-          .. tostring(association.state):upper() .. " · " .. tostring(association.reason) .. " · " .. detail,
-          { kind = "task_hunk", key = "file-hunk:" .. path .. ":" .. tostring(association.hunkIndex),
-            parent_key = "file:" .. path, file = changed, hunkAssociation = association })
       end
     end
   end
