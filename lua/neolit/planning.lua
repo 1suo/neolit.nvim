@@ -325,6 +325,17 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
     return "Derived from Markdown and current Git evidence"
   end
 
+  local function requirement_state_reason(state, linked_tasks)
+    if state == "unplanned" then return "No TODO task references this requirement" end
+    if state == "unmapped" then return "A linked task has an unresolved SPEC reference" end
+    if state == "blocked" then return "A linked task has an explicit blocker" end
+    if state == "planned" then return "Linked tasks have no matching changed-file evidence" end
+    if state == "in-progress" then return "Linked task paths changed; source-code hunks remain candidates, not proof" end
+    if state == "implemented" then return "Implementation evidence exists; verification is incomplete" end
+    if state == "verified" then return "Linked tasks and applicable criteria have current passing evidence" end
+    return "Derived from linked tasks and current Git evidence"
+  end
+
   local affected_paths = collect_affected_paths(workspace)
 
   local tree_root = { children = {}, files = {} }
@@ -525,7 +536,7 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
               { kind = "requirement_heading", parent_key = requirement_key, requirement = requirement })
           end
           add(child_prefix .. string.rep(" ", child_depth + 1)
-            .. (#linked_tasks == 0 and "No TODO task references this requirement" or state_reason(state, projection)),
+            .. requirement_state_reason(state, linked_tasks),
             { kind = "requirement_explanation", parent_key = requirement_key, requirement = requirement, projection = projection })
           for _, task in ipairs(linked_tasks) do
             local task_state = derived_tasks[task.key]
