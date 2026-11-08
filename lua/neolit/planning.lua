@@ -1255,117 +1255,115 @@ function M.open(opts)
     return vim.b[buf].neolit_rows and vim.b[buf].neolit_rows[vim.api.nvim_win_get_cursor(0)[1]]
   end
 
-  local function archive_selected()
-    local row = current_row()
-    if not row then return end
-    local relative, range, label, marker
-    if (row.kind == "task" or row.kind == "requirement_task") and row.task then
-      relative = row.task.key:match("^(.-)::")
-      range = row.task.range
-      label = "TODO task"
-      marker = row.task.text
-    elseif row.kind == "requirement" and row.requirement then
-      relative = row.spec_path
-      range = row.requirement.range
-      label = "SPEC requirement " .. tostring(row.requirement.id)
-      marker = row.requirement.id
-    elseif (row.kind == "requirement_criterion" or row.kind == "task_acceptance") and row.criterion then
-      relative = row.criterion.sourcePath or row.criterion.specPath
-      range = row.criterion.range
-      label = "SPEC acceptance criterion " .. tostring(row.criterion.id)
-      marker = row.criterion.id
-    else
-      vim.notify("Select a TODO task or SPEC requirement to archive", vim.log.levels.INFO)
-      return
-    end
-    if not relative then
-      vim.notify("Selected planning entry has no source document", vim.log.levels.ERROR)
-      return
-    end
+  local function archive_range(relative, range, label, marker, entry_kind)
+    if not relative then vim.notify("Selected Markdown block has no source document", vim.log.levels.ERROR); return end
     local source = safe_repo_path(root, relative)
-    local archived = relative and relative:lower():match("%.archive%.md$") ~= nil
-    local destination_relative = archived
-      and relative:gsub("%.archive%.md$", ".md")
-      or relative:gsub("%.md$", ".archive.md")
+    local archived = relative:lower():match("%.archive%.md$") ~= nil
+    local destination_relative = archived and relative:gsub("%.archive%.md$", ".md") or relative:gsub("%.md$", ".archive.md")
     local destination = safe_repo_path(root, destination_relative)
     if not source or not destination or source == destination or not range then
-      vim.notify("Cannot resolve a safe archive source/destination", vim.log.levels.ERROR)
-      return
+      vim.notify("Cannot resolve a safe archive source/destination", vim.log.levels.ERROR); return
     end
     for _, path in ipairs({ source, destination }) do
       local loaded = vim.fn.bufnr(path)
       if loaded >= 0 and vim.bo[loaded].modified then
-        vim.notify("Write the modified planning buffer before archiving", vim.log.levels.WARN)
-        return
+        vim.notify("Write the modified planning buffer before archiving", vim.log.levels.WARN); return
       end
     end
     local source_lines = vim.fn.readfile(source)
-    local first = tonumber(range.startLine)
-    local last = tonumber(range.endLine)
+    local first, last = tonumber(range.startLine), tonumber(range.endLine)
     if not first or not last or first < 1 or last < first or last > #source_lines then
-      vim.notify("The selected Markdown range is stale; refresh the workspace", vim.log.levels.WARN)
-      return
+      vim.notify("The selected Markdown range is stale; refresh the workspace", vim.log.levels.WARN); return
     end
-    local first_line = source_lines[first] or ""
-    local marker_count = 0
-    for _, line in ipairs(source_lines) do
-      if row.kind == "task" or row.kind == "requirement_task" then
-        if line:find(marker, 1, true) and line:match("%[[ xX]%]") then marker_count = marker_count + 1 end
-      elseif line:find("**" .. marker .. "**", 1, true) then
-        marker_count = marker_count + 1
+    if marker then
+      local count = 0
+      for _, line in ipairs(source_lines) do
+        if entry_kind == "task" then
+          if line:find(marker, 1, true) and line:match("%[[ xX]%]") then count = count + 1 end
+        elseif line:find("**" .. marker .. "**", 1, true) then count = count + 1 end
       end
-    end
-    if marker_count ~= 1 then
-      vim.notify("The selected Markdown entry is ambiguous or changed; refresh before archiving", vim.log.levels.WARN)
-      return
-    end
-    if row.kind == "task" or row.kind == "requirement_task" then
-      if not first_line:find(marker, 1, true) or not first_line:match("%[[ xX]%]") then
-        vim.notify("The selected TODO task changed; refresh before archiving", vim.log.levels.WARN)
-        return
+      local first_line = source_lines[first] or ""
+      local valid = entry_kind == "task"
+        and first_line:find(marker, 1, true) and first_line:match("%[[ xX]%]")
+        or entry_kind ~= "task" and first_line:find("**" .. marker .. "**", 1, true)
+      if count ~= 1 or not valid then
+        vim.notify("The selected Markdown entry changed or is ambiguous; refresh before archiving", vim.log.levels.WARN); return
       end
-    elseif not first_line:find("**" .. marker .. "**", 1, true) then
-      vim.notify("The selected SPEC paragraph changed; refresh before archiving", vim.log.levels.WARN)
-      return
     end
     local block = {}
     for line = first, last do block[#block + 1] = source_lines[line] end
     if #block == 0 then return end
     local destination_lines = vim.fn.filereadable(destination) == 1 and vim.fn.readfile(destination) or {}
-    for start = 1, #destination_lines - #block + 1 do
+    for offset = 1, #destination_lines - #block + 1 do
       local same = true
-      for offset = 1, #block do
-        if destination_lines[start + offset - 1] ~= block[offset] then same = false; break end
-      end
-      if same then
-        vim.notify("That exact block already exists in " .. destination_relative, vim.log.levels.WARN)
-        return
-      end
+      for index = 1, #block do if destination_lines[offset + index - 1] ~= block[index] then same = false; break end end
+      if same then vim.notify("That exact block already exists in " .. destination_relative, vim.log.levels.WARN); return end
     end
-    -- One `a` press performs the selected archive/restore action.
-      return
-    end
-    if #destination_lines > 0 and destination_lines[#destination_lines] ~= "" then
-      destination_lines[#destination_lines + 1] = ""
-    end
+    if #destination_lines > 0 and destination_lines[#destination_lines] ~= "" then destination_lines[#destination_lines + 1] = "" end
     for _, line in ipairs(block) do destination_lines[#destination_lines + 1] = line end
-    if vim.fn.writefile(destination_lines, destination) ~= 0 then
-      vim.notify("Could not write " .. destination_relative, vim.log.levels.ERROR)
-      return
-    end
+    if vim.fn.writefile(destination_lines, destination) ~= 0 then vim.notify("Could not write " .. destination_relative, vim.log.levels.ERROR); return end
     for _ = first, last do table.remove(source_lines, first) end
     if vim.fn.writefile(source_lines, source) ~= 0 then
-      vim.notify("Archive was written, but source cleanup failed; reconcile " .. relative, vim.log.levels.ERROR)
-      return
+      vim.notify("Archive was written, but source cleanup failed; reconcile " .. relative, vim.log.levels.ERROR); return
     end
     for _, path in ipairs({ source, destination }) do
       local loaded = vim.fn.bufnr(path)
-      if loaded >= 0 then
-        pcall(vim.api.nvim_buf_call, loaded, function() vim.cmd("checktime") end)
-      end
+      if loaded >= 0 then pcall(vim.api.nvim_buf_call, loaded, function() vim.cmd("checktime") end) end
     end
-    vim.notify(action .. "d " .. label .. (archived and " from " or " to ") .. destination_relative)
+    vim.notify((archived and "Restored " or "Archived ") .. label .. " " .. destination_relative)
     refresh()
+  end
+
+  local function archive_paragraph(relative, cursor_line)
+    local is_spec = false
+    for _, spec in ipairs((vim.b[buf].neolit_workspace or {}).specs or {}) do
+      if spec.path == relative or spec.referencePath == relative then is_spec = true; break end
+    end
+    if not is_spec then vim.notify("Open a SPEC paragraph in the preview to archive it", vim.log.levels.INFO); return end
+    local source = safe_repo_path(root, relative)
+    if not source then vim.notify("Unsafe SPEC path", vim.log.levels.ERROR); return end
+    local source_lines = vim.fn.readfile(source)
+    local first, last = cursor_line, cursor_line
+    if first < 1 or first > #source_lines or not (source_lines[first] or ""):match("%S") then
+      vim.notify("Place the cursor on a SPEC paragraph", vim.log.levels.INFO); return
+    end
+    local function starts_block(line)
+      return line:match("^%s*#+%s") or line:match("^%s*[-*+]%s") or line:match("^%s*%d+[.)]%s")
+        or line:match("^%s*>") or line:match("^%s*```") or line:match("^%s*~~~")
+    end
+    local list_item = (source_lines[first] or ""):match("^(%s*[-*+]%s)") or (source_lines[first] or ""):match("^(%s*%d+[.)]%s)")
+    while first > 1 and (source_lines[first - 1] or ""):match("%S") do
+      if starts_block(source_lines[first - 1] or "") then break end
+      first = first - 1
+    end
+    while last < #source_lines and (source_lines[last + 1] or ""):match("%S") do
+      local next_line = source_lines[last + 1] or ""
+      if starts_block(next_line) then
+        local continuation = list_item and next_line:match("^%s+")
+        if not continuation then break end
+      end
+      last = last + 1
+    end
+    if list_item then
+      local indent = #(list_item:match("^%s*") or "")
+      while first > 1 and (source_lines[first - 1] or ""):match("^%s+") and #(source_lines[first - 1]:match("^%s*") or "") > indent do first = first - 1 end
+    end
+    archive_range(relative, { startLine = first, endLine = last }, "SPEC paragraph", nil, "paragraph")
+  end
+
+  local function archive_selected()
+    local row = current_row()
+    if not row then return end
+    local relative, range, label, marker, kind
+    if (row.kind == "task" or row.kind == "requirement_task") and row.task then
+      relative = row.task.key:match("^(.-)::"); range = row.task.range; label = "TODO task"; marker = row.task.text; kind = "task"
+    elseif row.kind == "requirement" and row.requirement then
+      relative = row.spec_path; range = row.requirement.range; label = "SPEC requirement " .. tostring(row.requirement.id); marker = row.requirement.id; kind = "spec"
+    elseif (row.kind == "requirement_criterion" or row.kind == "task_acceptance") and row.criterion then
+      relative = row.criterion.sourcePath or row.criterion.specPath; range = row.criterion.range
+      label = "SPEC acceptance criterion " .. tostring(row.criterion.id); marker = row.criterion.id; kind = "spec"
+    else vim.notify("Select a TODO task or SPEC requirement to archive", vim.log.levels.INFO); return end
+    archive_range(relative, range, label, marker, kind)
   end
   local function toggle_node(row, expanded)
     if not row then return end
