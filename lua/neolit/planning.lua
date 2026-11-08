@@ -186,23 +186,35 @@ local function render(buf, root, workspace, expanded_files)
       add(string.format("    %s @@ -%d,%d +%d,%d @@ %s%s", hunk_marker, hunk.oldStart, hunk.oldLines, hunk.newStart, hunk.newLines, hunk.header, candidate_label), {
         kind = "hunk", key = file_key .. ":hunk:" .. hunk_index, file = file, hunk = hunk, association = association, hunkAssociation = hunk_association,
       })
-      for line_index, changed_text in ipairs(hunk.addedLines or {}) do
-        local line_number = hunk.addedLineNumbers and hunk.addedLineNumbers[line_index]
-          or (hunk.newStart + line_index - 1)
-        add(string.format("      + %d  %s", line_number, changed_text), {
-          kind = "change_line", key = file_key .. ":hunk:" .. hunk_index .. ":add:" .. line_index,
-          file = file, hunk = hunk, hunkAssociation = hunk_association,
-          lineNumber = line_number, lineText = changed_text, side = "working-tree",
-        })
-      end
-      for line_index, changed_text in ipairs(hunk.removedLines or {}) do
-        local line_number = hunk.removedLineNumbers and hunk.removedLineNumbers[line_index]
-          or (hunk.oldStart + line_index - 1)
-        add(string.format("      - %d  %s", line_number, changed_text), {
-          kind = "change_line", key = file_key .. ":hunk:" .. hunk_index .. ":remove:" .. line_index,
-          file = file, hunk = hunk, hunkAssociation = hunk_association,
-          lineNumber = line_number, lineText = changed_text, side = "base",
-        })
+      if hunk.changes and #hunk.changes > 0 then
+        for change_index, change in ipairs(hunk.changes) do
+          local prefix = change.kind == "added" and "+" or "-"
+          local side = change.kind == "added" and "working-tree" or "base"
+          add(string.format("      %s %d  %s", prefix, change.lineNumber, change.text), {
+            kind = "change_line", key = file_key .. ":hunk:" .. hunk_index .. ":change:" .. change_index,
+            file = file, hunk = hunk, hunkAssociation = hunk_association,
+            lineNumber = change.lineNumber, lineText = change.text, side = side,
+          })
+        end
+      else
+        for line_index, changed_text in ipairs(hunk.addedLines or {}) do
+          local line_number = hunk.addedLineNumbers and hunk.addedLineNumbers[line_index]
+            or (hunk.newStart + line_index - 1)
+          add(string.format("      + %d  %s", line_number, changed_text), {
+            kind = "change_line", key = file_key .. ":hunk:" .. hunk_index .. ":add:" .. line_index,
+            file = file, hunk = hunk, hunkAssociation = hunk_association,
+            lineNumber = line_number, lineText = changed_text, side = "working-tree",
+          })
+        end
+        for line_index, changed_text in ipairs(hunk.removedLines or {}) do
+          local line_number = hunk.removedLineNumbers and hunk.removedLineNumbers[line_index]
+            or (hunk.oldStart + line_index - 1)
+          add(string.format("      - %d  %s", line_number, changed_text), {
+            kind = "change_line", key = file_key .. ":hunk:" .. hunk_index .. ":remove:" .. line_index,
+            file = file, hunk = hunk, hunkAssociation = hunk_association,
+            lineNumber = line_number, lineText = changed_text, side = "base",
+          })
+        end
       end
     end
     end
@@ -533,8 +545,14 @@ function M.open(opts)
       put("Candidate requirements:")
       for _, reference in ipairs(row.hunkAssociation and row.hunkAssociation.candidateRequirementRefs or {}) do put("  " .. reference) end
       put("Changed lines:")
-      for _, line in ipairs(row.hunk.addedLines or {}) do put("+ " .. line) end
-      for _, line in ipairs(row.hunk.removedLines or {}) do put("- " .. line) end
+      if row.hunk.changes and #row.hunk.changes > 0 then
+        for _, change in ipairs(row.hunk.changes) do
+          put((change.kind == "added" and "+ " or "- ") .. change.lineNumber .. " " .. change.text)
+        end
+      else
+        for _, line in ipairs(row.hunk.addedLines or {}) do put("+ " .. line) end
+        for _, line in ipairs(row.hunk.removedLines or {}) do put("- " .. line) end
+      end
     elseif row.kind == "change_line" then
       put("CHANGED LINE")
       put(row.file.path .. ":" .. row.lineNumber .. " (" .. row.side .. ")")
