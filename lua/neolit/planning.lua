@@ -153,7 +153,6 @@ local function open_diff(root, file, selected_hunk, comparison_base, selected_li
       vim.wo[diff_win].wrap = vim.go.wrap
       vim.wo[diff_win].scrollbind = true
       vim.wo[diff_win].cursorbind = true
-      vim.wo[diff_win].scrollopt = "ver,jump"
     end
 
     local base_line = selected_hunk and selected_hunk.oldStart or 1
