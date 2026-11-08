@@ -773,7 +773,16 @@ function M.open(opts)
     local task_key = selected_row.kind == "task" and selected_row.task.key or nil
     local requirement_ref = selected_row.kind == "requirement"
       and (selected_row.spec_path .. "#" .. selected_row.requirement.id) or nil
-    local workspace = vim.b[buf].neolit_workspace
+    local linked_task_keys = {}
+    if requirement_ref then
+      for _, task in ipairs(vim.b[buf].neolit_workspace.tasks or {}) do
+        for _, reference in ipairs(task.specReferences or {}) do
+          if reference.path == selected_row.spec_path and vim.tbl_contains(reference.ids or {}, selected_row.requirement.id) then
+            linked_task_keys[task.key] = true
+          end
+        end
+      end
+    end
     for line, candidate in pairs(rows) do
       local related = false
       if task_key then
@@ -800,7 +809,9 @@ function M.open(opts)
             end
           end
         elseif candidate.kind == "file" then
-          related = vim.tbl_contains(candidate.association and candidate.association.requirementIds or {}, selected_row.requirement.id)
+          for _, key in ipairs(candidate.association and candidate.association.taskKeys or {}) do
+            if linked_task_keys[key] then related = true; break end
+          end
         elseif candidate.kind == "hunk" or candidate.kind == "change_line" then
           related = vim.tbl_contains(candidate.hunkAssociation and candidate.hunkAssociation.candidateRequirementRefs or {}, requirement_ref)
         end
