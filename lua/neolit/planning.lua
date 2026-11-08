@@ -53,7 +53,7 @@ local function normalize_diff(diff)
   return (diff or ""):gsub("\r\n", "\n"):gsub("\n+$", "")
 end
 
-local function open_diff(root, file, selected_hunk, on_line_context, comparison_base, selected_line, diff_state, focus)
+local function open_diff(root, file, selected_hunk, comparison_base, selected_line, diff_state, focus)
   local original_win = vim.api.nvim_get_current_win()
   local function restore_focus()
     if focus then return end
@@ -859,146 +859,6 @@ function M.open(opts)
     })
   end
 
-  local function copy_packet(packet)
-    local copied = pcall(vim.fn.setreg, "+", packet)
-    if copied then
-      vim.notify("Question and exact selection context copied. Paste into the existing agent conversation.")
-    else
-      vim.fn.setreg('"', packet)
-      vim.notify("Clipboard unavailable; context copied to the unnamed register.")
-    end
-  end
-
-  local function copy_context(context)
-    vim.ui.input({ prompt = "Question about selected context: " }, function(question)
-      if not question or question == "" then return end
-      local packet = "Question: " .. question .. "\n\n" .. context
-      local max_chars = 16000
-      local marker = "\n...[planning context truncated]"
-      if vim.fn.strchars(packet) > max_chars then
-        packet = vim.fn.strcharpart(packet, 0, max_chars - vim.fn.strchars(marker)) .. marker
-      end
-      copy_packet(packet)
-    end)
-  end
-
-  local function ask_line_context(file, side, range, selected_lines, opened_diff_identity, target_buf, selected_hunk)
-    if side == "working-tree" and vim.bo[target_buf].modified then
-      vim.notify("Save the working-tree buffer before asking about its diff context.", vim.log.levels.WARN)
-      return
-    end
-    local workspace = vim.b[buf].neolit_workspace
-    local base = workspace and workspace.git.base or "HEAD"
-    local result = vim.system(diff_command(file, base), { cwd = root, text = true }):wait()
-    local current_diff = result.stdout or ""
-    if vim.fn.sha256(current_diff) ~= opened_diff_identity then
-      vim.notify("Selected diff changed since it was opened; refresh and select it again.", vim.log.levels.WARN)
-      refresh()
-      return
-    end
-    local head = vim.system({ "git", "rev-parse", "--verify", "--end-of-options", (cfg.comparison_base or "HEAD") .. "^{commit}" }, { cwd = root, text = true }):wait()
-    local current_base = (head.stdout or ""):gsub("%s+$", "")
-    if workspace and workspace.git.base ~= current_base then
-      vim.notify("Diff anchor is stale because the comparison base changed; refresh and select it again.", vim.log.levels.WARN)
-      refresh()
-      return
-    end
-
-    local anchor_base = current_base ~= "" and current_base or "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
-    local selected_path = side == "base" and (file.previousPath or file.path) or file.path
-    local related_tasks = {}
-    local related_requirements = {}
-    local candidate_keys
-    local candidate_requirement_refs
-    if selected_hunk then
-      for _, association in ipairs(workspace and workspace.git.hunkAssociations or {}) do
-        if association.path == file.path
-          and association.hunk.oldStart == selected_hunk.oldStart
-          and association.hunk.oldLines == selected_hunk.oldLines
-          and association.hunk.newStart == selected_hunk.newStart
-          and association.hunk.newLines == selected_hunk.newLines then
-          candidate_keys = association.candidateTaskKeys
-          candidate_requirement_refs = association.candidateRequirementRefs
-          break
-        end
-      end
-    end
-    if not candidate_keys then
-      for _, association in ipairs(workspace and workspace.git.associations or {}) do
-        if association.path == file.path then candidate_keys = association.taskKeys; break end
-      end
-    end
-    for _, task in ipairs(workspace and workspace.tasks or {}) do
-      if vim.tbl_contains(candidate_keys or {}, task.key) then
-            local requirements = {}
-            for _, requirement in ipairs(task.resolvedRequirements or {}) do
-              for _, reference in ipairs(task.specReferences or {}) do
-                if reference.path == requirement.specPath and vim.tbl_contains(reference.ids or {}, requirement.id) then
-                  requirements[#requirements + 1] = {
-                    specPath = reference.path,
-                    requirement = requirement,
-                  }
-                end
-              end
-            end
-            related_tasks[#related_tasks + 1] = {
-              todoPath = task.key:match("^(.-)::") or "",
-              task = task,
-              requirements = requirements,
-            }
-          end
-    end
-
-    for _, reference in ipairs(candidate_requirement_refs or {}) do
-      local spec_path, requirement_id = reference:match("^(.-)#([^#]+)$")
-      for _, spec in ipairs(workspace and workspace.specs or {}) do
-        if spec.path == spec_path then
-          for _, requirement in ipairs(spec.requirements or {}) do
-            if requirement.id == requirement_id then
-              related_requirements[#related_requirements + 1] = { specPath = spec_path, requirement = requirement }
-            end
-          end
-        end
-      end
-    end
-
-    vim.ui.input({ prompt = "Question about selected lines: " }, function(question)
-      if not question or question == "" then return end
-      local payload = {
-        question = question,
-        path = selected_path,
-        side = side,
-        baseCommit = anchor_base,
-        diffText = current_diff,
-        lineRange = range,
-        selectedDiffText = current_diff,
-        selectedLinesText = selected_lines,
-        relatedTasks = related_tasks,
-        relatedRequirements = related_requirements,
-      }
-      local url = vim.uri_from_fname(neolit_dir .. "/dist/planning/context.js")
-      local js = "const m = await import(" .. string.format("%q", url) .. "); "
-        .. "const p = JSON.parse(process.argv[1]); "
-        .. "const anchor = m.createDiffAnchor({ path: p.path, side: p.side, baseCommit: p.baseCommit, diffText: p.diffText, lineRange: p.lineRange }); "
-        .. "const result = m.buildDiffQuestionPacket({ question: p.question, anchor, currentBaseCommit: p.baseCommit, currentDiffText: p.diffText, selectedDiffText: p.selectedDiffText, selectedLinesText: p.selectedLinesText, relatedTasks: p.relatedTasks, relatedRequirements: p.relatedRequirements }); "
-        .. "process.stdout.write(JSON.stringify(result));"
-      local packet_result = vim.system({
-        cfg.node, "--input-type=module", "-e", js, vim.json.encode(payload),
-      }, { cwd = root, text = true }):wait()
-      if packet_result.code ~= 0 then
-        vim.notify("Could not build Neolit context packet: " .. (packet_result.stderr or ""), vim.log.levels.ERROR)
-        return
-      end
-      local decoded_ok, packet_result_json = pcall(vim.json.decode, packet_result.stdout or "")
-      if not decoded_ok or packet_result_json.status ~= "ready" then
-        vim.notify("Diff context became stale; refresh and select the line again.", vim.log.levels.WARN)
-        refresh()
-        return
-      end
-      copy_packet(packet_result_json.packet)
-    end)
-  end
-
   local rerender_at
 
   local function selected()
@@ -1022,7 +882,7 @@ function M.open(opts)
         if file.path == row.path or file.previousPath == row.path then changed = file; break end
       end
       if changed then
-        open_diff(root, changed, nil, ask_line_context, workspace.git.base, nil, diff_state, true)
+        open_diff(root, changed, nil, workspace.git.base, nil, diff_state, true)
       else
         local target = safe_repo_path(root, row.path)
         if target and vim.fn.filereadable(target) == 1 then
@@ -1067,7 +927,7 @@ function M.open(opts)
         if file.path == row.path or file.previousPath == row.path then changed = file; break end
       end
       if changed then
-        open_diff(root, changed, nil, ask_line_context, workspace.git.base, nil, diff_state, true)
+        open_diff(root, changed, nil, workspace.git.base, nil, diff_state, true)
       else
         local target = safe_repo_path(root, row.path)
         if target and vim.fn.filereadable(target) == 1 then
@@ -1077,19 +937,19 @@ function M.open(opts)
         end
       end
     elseif row.kind == "task_change" then
-      open_diff(root, row.file, nil, ask_line_context, workspace and workspace.git.base, nil, diff_state, true)
+      open_diff(root, row.file, nil, workspace and workspace.git.base, nil, diff_state, true)
     elseif row.kind == "task_hunk" then
       open_diff(root, row.file, row.hunkAssociation and row.hunkAssociation.hunk,
-        ask_line_context, workspace and workspace.git.base, nil, diff_state, true)
+        workspace and workspace.git.base, nil, diff_state, true)
     elseif row.kind == "file" then
       if row.expandable and not row.expanded then
         expanded_files[row.path] = true
         rerender_at(row.key)
       else
-        open_diff(root, row.file, nil, ask_line_context, workspace and workspace.git.base, nil, diff_state, true)
+        open_diff(root, row.file, nil, workspace and workspace.git.base, nil, diff_state, true)
       end
     elseif row.kind == "hunk" or row.kind == "change_line" then
-      open_diff(root, row.file, row.hunk, ask_line_context, workspace and workspace.git.base,
+      open_diff(root, row.file, row.hunk, workspace and workspace.git.base,
         row.kind == "change_line" and { side = row.side, lineNumber = row.lineNumber } or nil, diff_state)
     end
   end
@@ -1106,19 +966,19 @@ function M.open(opts)
         if file.path == row.path or file.previousPath == row.path then changed = file; break end
       end
       if changed then
-        open_diff(root, changed, nil, ask_line_context, workspace.git.base, nil, diff_state, false)
+        open_diff(root, changed, nil, workspace.git.base, nil, diff_state, false)
       else
         open_in_preview(row.path, nil, false)
       end
     elseif row.kind == "task_change" then
-      open_diff(root, row.file, nil, ask_line_context, workspace and workspace.git.base, nil, diff_state, false)
+      open_diff(root, row.file, nil, workspace and workspace.git.base, nil, diff_state, false)
     elseif row.kind == "task_hunk" then
       open_diff(root, row.file, row.hunkAssociation and row.hunkAssociation.hunk,
-        ask_line_context, workspace and workspace.git.base, nil, diff_state, false)
+        workspace and workspace.git.base, nil, diff_state, false)
     elseif row.kind == "file" then
-      open_diff(root, row.file, nil, ask_line_context, workspace and workspace.git.base, nil, diff_state, false)
+      open_diff(root, row.file, nil, workspace and workspace.git.base, nil, diff_state, false)
     elseif row.kind == "hunk" or row.kind == "change_line" then
-      open_diff(root, row.file, row.hunk, ask_line_context, workspace and workspace.git.base,
+      open_diff(root, row.file, row.hunk, workspace and workspace.git.base,
         row.kind == "change_line" and { side = row.side, lineNumber = row.lineNumber } or nil, diff_state, false)
     elseif row.kind == "task" then
       local path = row.task.key:match("^(.-)::")
@@ -1139,7 +999,7 @@ function M.open(opts)
       for _, file in ipairs(workspace and workspace.git.changedFiles or {}) do
         if file.path == row.path or file.previousPath == row.path then changed = file; break end
       end
-      if changed then open_diff(root, changed, nil, ask_line_context, workspace.git.base, nil, diff_state, false)
+      if changed then open_diff(root, changed, nil, workspace.git.base, nil, diff_state, false)
       else open_in_preview(row.path, nil, false) end
     end
   end
@@ -1194,7 +1054,7 @@ function M.open(opts)
     end
     if changed then
       local hunk = row.hunk or (row.hunkAssociation and row.hunkAssociation.hunk)
-      open_diff(root, changed, hunk, ask_line_context, workspace and workspace.git.base,
+      open_diff(root, changed, hunk, workspace and workspace.git.base,
         row.kind == "change_line" and { side = row.side, lineNumber = row.lineNumber } or nil,
         diff_state, true)
       local win = diff_state.working_win or diff_state.preview_win
