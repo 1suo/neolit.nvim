@@ -942,12 +942,7 @@ function M.open(opts)
       open_diff(root, row.file, row.hunkAssociation and row.hunkAssociation.hunk,
         workspace and workspace.git.base, nil, diff_state, true)
     elseif row.kind == "file" then
-      if row.expandable and not row.expanded then
-        expanded_files[row.path] = true
-        rerender_at(row.key)
-      else
-        open_diff(root, row.file, nil, workspace and workspace.git.base, nil, diff_state, true)
-      end
+      open_diff(root, row.file, nil, workspace and workspace.git.base, nil, diff_state, true)
     elseif row.kind == "hunk" or row.kind == "change_line" then
       open_diff(root, row.file, row.hunk, workspace and workspace.git.base,
         row.kind == "change_line" and { side = row.side, lineNumber = row.lineNumber } or nil, diff_state, true)
