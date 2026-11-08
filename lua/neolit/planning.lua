@@ -243,6 +243,7 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
     end
   end
   local function render_file(entry, prefix, branch)
+    local child_prefix = prefix .. (branch == "└── " and "    " or "│   ")
     local path, changed = entry.path, changed_by_path[entry.path]
     local status, kind = git_status[path], doc_kind[path]
     local git_marker = status and (status.index .. status.worktree) or "  "
@@ -274,12 +275,12 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
         parent_key = path:match("^(.*)/[^/]+$") and ("dir:" .. path:match("^(.*)/[^/]+$")) or nil })
     if not is_expanded then return end
     if kind == "TODO" then
-      for _, task in ipairs(tasks_by_doc[path] or {}) do render_task(task, prefix .. "   ", 1) end
+      for _, task in ipairs(tasks_by_doc[path] or {}) do render_task(task, child_prefix, 0) end
     elseif kind == "SPEC" then
       for _, requirement in ipairs(requirements_by_doc[path] or {}) do
         local state = requirement_states[path .. "#" .. requirement.id] or "unmapped"
         local requirement_key = "requirement:" .. path .. "#" .. requirement.id
-        add(prefix .. "   §  " .. requirement.id .. "  " .. state:upper() .. "  " .. (requirement.text or ""),
+        add(child_prefix .. "§  " .. requirement.id .. "  " .. state:upper() .. "  " .. (requirement.text or ""),
           { kind = "requirement", key = requirement_key, parent_key = "file:" .. path,
             requirement = requirement, spec_path = path })
         for _, criterion in ipairs((function()
@@ -294,7 +295,7 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
           end
           return {}
         end)()) do
-          add(prefix .. "      ✓ " .. criterion.id .. "  " .. criterion.text,
+          add(child_prefix .. "   ✓ " .. criterion.id .. "  " .. criterion.text,
             { kind = "acceptance_criterion", parent_key = requirement_key, criterion = criterion, spec_path = path })
         end
       end
@@ -304,12 +305,12 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
         local hunk_association = hunk_associations[path .. "#" .. (hunk_index - 1)]
         local hunk_state = hunk_association and hunk_association.state or "unmapped"
         local hunk_key = "file:" .. path .. ":hunk:" .. hunk_index
-        add(prefix .. "   " .. (hunk_state == "attributed" and "✓" or hunk_state == "documentation" and "§" or "?")
+        add(child_prefix .. (hunk_state == "attributed" and "✓" or hunk_state == "documentation" and "§" or "?")
           .. "  @@ -" .. hunk.oldStart .. "," .. hunk.oldLines .. " +" .. hunk.newStart .. "," .. hunk.newLines .. " @@ " .. (hunk.header or ""),
           { kind = "hunk", key = hunk_key, parent_key = "file:" .. path, file = changed, hunk = hunk,
             association = association, hunkAssociation = hunk_association })
         for change_index, change in ipairs(hunk.changes or {}) do
-          add(prefix .. "      " .. (change.kind == "added" and "+" or "−") .. " " .. change.lineNumber .. "  " .. change.text,
+          add(child_prefix .. "   " .. (change.kind == "added" and "+" or "−") .. " " .. change.lineNumber .. "  " .. change.text,
             { kind = "change_line", key = hunk_key .. ":change:" .. change_index, parent_key = hunk_key,
               file = changed, hunk = hunk, hunkAssociation = hunk_association,
               lineNumber = change.lineNumber, lineText = change.text,
