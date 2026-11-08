@@ -62,7 +62,7 @@ separate planning buffer. Use:
 - Repository saves and editor focus refresh the view automatically; `r` forces a refresh and `q` closes it. Set `comparison_base` in Neolit configuration (default `HEAD`) to review against another commit/ref; the resolved base SHA is shown in the planning header and used for native diffs and contextual-question freshness checks.
 
 This view is read-only. It does not stage, apply, commit, or rewrite files. The `:NeolitPlan` command is opt-in and does not intercept ordinary agent prompts or require SPEC/TODO documents; for a small change, use the existing agent directly and review the ordinary Git diff.
-File-level association is based on explicit TODO file hints. Hunk rows independently show unresolved candidate matches, unplanned changes, or documentation changes; a candidate is navigation context, not a claim that the hunk semantically fulfills a requirement. Hunk questions use only that hunk's candidate tasks. Agent handoff is clipboard
+File-level association is based on explicit TODO file hints. Hunk rows independently show unresolved source-code candidates, unplanned changes, ordinary documentation changes, or `=` source-attributed TODO/SPEC documentation edits. Source-range attribution identifies the exact planning record touched; it is not a claim that implementation work fulfills that requirement. A source-code file hint remains a candidate, not proof. Hunk questions use only that hunk's candidate tasks. Agent handoff is clipboard
 based for now; there is no Neolit-owned chat or session layer.
 
 ## Requirements
