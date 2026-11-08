@@ -1,11 +1,11 @@
 # neolit.nvim
 
-Neovim companion for [Neolit](https://github.com/1suo/neolit), a read-only,
-Git-native planning workspace.
+Neovim companion for [Neolit](https://github.com/1suo/neolit), a Git-native
+planning workspace with an explicit tree-only planning-entry delete action.
 
 Neolit parses linked README/SPEC/TODO documents and relates TODO tasks,
 SPEC requirements, acceptance criteria, planned files, and current Git changes.
-It does not own agent conversations or modify the worktree, index, or history.
+It does not own agent conversations or modify the Git index or history. The explicit tree delete action edits only the selected Markdown entry in the worktree.
 
 ## Requirements
 
