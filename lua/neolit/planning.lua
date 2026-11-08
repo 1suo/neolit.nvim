@@ -87,7 +87,7 @@ local function open_diff(root, file, selected_hunk, on_line_context, comparison_
         local start_line, end_line = math.min(first, last), math.max(first, last)
         local selected = vim.api.nvim_buf_get_lines(target_buf, start_line - 1, end_line, false)
         on_line_context(file, side, { startLine = start_line, endLine = end_line },
-          table.concat(selected, "\n"), initial_diff_identity, target_buf)
+          table.concat(selected, "\n"), initial_diff_identity, target_buf, selected_hunk)
       end
       vim.keymap.set("n", "<leader>nx", function()
         local line = vim.api.nvim_win_get_cursor(0)[1]
@@ -266,7 +266,7 @@ function M.open(opts)
     end)
   end
 
-  local function ask_line_context(file, side, range, selected_lines, opened_diff_identity, target_buf)
+  local function ask_line_context(file, side, range, selected_lines, opened_diff_identity, target_buf, selected_hunk)
     if side == "working-tree" and vim.bo[target_buf].modified then
       vim.notify("Save the working-tree buffer before asking about its diff context.", vim.log.levels.WARN)
       return
@@ -291,10 +291,24 @@ function M.open(opts)
     local anchor_base = current_base ~= "" and current_base or "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
     local selected_path = side == "base" and (file.previousPath or file.path) or file.path
     local related_tasks = {}
-    for _, association in ipairs(workspace and workspace.git.associations or {}) do
-      if association.path == file.path then
-        for _, task in ipairs(workspace.tasks or {}) do
-          if vim.tbl_contains(association.taskKeys or {}, task.key) then
+    local candidate_keys
+    if selected_hunk then
+      for _, association in ipairs(workspace and workspace.git.hunkAssociations or {}) do
+        if association.path == file.path
+          and association.hunk.oldStart == selected_hunk.oldStart
+          and association.hunk.newStart == selected_hunk.newStart then
+          candidate_keys = association.candidateTaskKeys
+          break
+        end
+      end
+    end
+    if not candidate_keys then
+      for _, association in ipairs(workspace and workspace.git.associations or {}) do
+        if association.path == file.path then candidate_keys = association.taskKeys; break end
+      end
+    end
+    for _, task in ipairs(workspace and workspace.tasks or {}) do
+      if vim.tbl_contains(candidate_keys or {}, task.key) then
             local requirements = {}
             for _, requirement in ipairs(task.resolvedRequirements or {}) do
               for _, reference in ipairs(task.specReferences or {}) do
@@ -312,9 +326,6 @@ function M.open(opts)
               requirements = requirements,
             }
           end
-        end
-        break
-      end
     end
 
     vim.ui.input({ prompt = "Question about selected lines: " }, function(question)
