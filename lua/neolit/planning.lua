@@ -424,18 +424,15 @@ function M.open(opts)
   local ok, cfg, root, neolit_dir = pcall(find_core, opts)
   if not ok then vim.notify(cfg, vim.log.levels.ERROR); return end
 
-  -- :vnew creates the tree buffer itself; do not leave an extra scratch
-  -- buffer behind by creating one before the split.
+  -- Split the current window to the left: the window that was already
+  -- open becomes Neolit's one-and-only right preview pane. Do not split it
+  -- again or create a second preview window.
+  local preview_win = vim.api.nvim_get_current_win()
   vim.cmd("topleft 34vnew")
   local buf = vim.api.nvim_get_current_buf()
   local tree_win = vim.api.nvim_get_current_win()
   vim.api.nvim_win_set_width(tree_win, 34)
   vim.wo[tree_win].wrap = false
-  -- Keep one permanent right-hand preview in this tab. Every document and
-  -- ordinary file replaces its buffer; diffs temporarily use this same pane.
-  vim.api.nvim_set_current_win(tree_win)
-  vim.cmd("rightbelow vsplit")
-  local preview_win = vim.api.nvim_get_current_win()
   vim.api.nvim_buf_set_name(buf, "neolit://planning-" .. buf)
   vim.bo[buf].buftype = "nofile"
   vim.bo[buf].bufhidden = "hide"
