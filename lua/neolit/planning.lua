@@ -2060,7 +2060,7 @@ function M.open(opts)
     local configured = cfg.keymaps and cfg.keymaps[key]
     local resolved = configured == nil and lhs or configured
     if resolved == false or resolved == "" then return end
-    vim.keymap.set("n", resolved, fn, { buffer = buf, silent = true, nowait = true, desc = "Neolit: " .. key })
+    vim.keymap.set("n", resolved, fn, { buffer = buf, silent = true, desc = "Neolit: " .. key })
   end
   rerender_at = function(key)
     local workspace = vim.b[buf].neolit_workspace
@@ -2475,7 +2475,7 @@ function M.open(opts)
   map("<leader>nx", copy_selected_text, "copy_text", "copy_text")
   map("<leader>nl", copy_selected_path, "copy_path", "copy_path")
   map("?", function()
-    vim.notify("Tree: F toggle · h/l collapse/expand · <CR> open/expand · o open file · za/zo/zc fold · zr/zm one level · zR/zM all · <leader>nv composed view · <leader>nf affected-only · <leader>nD delete · <leader>ne review · <leader>nC agent changes · <leader>nF file link · <leader>nx copy text · <leader>nl path · <leader>nr refresh · <leader>nm chat · <leader>nM add context · q close · ? help", vim.log.levels.INFO)
+    vim.notify("Tree: <CR> open/expand · o open file · F toggle · h/l collapse/expand · za/zo/zc fold · zr/zm one level · zR/zM all · <leader>nv composed view · <leader>ns task scope in composed view · <leader>nf affected-only · <leader>nD delete · <leader>nx copy text · <leader>nl path · <leader>nr refresh · <leader>nm chat · <leader>ne review · <leader>nC agent changes · <leader>nF file link · q close · ? help", vim.log.levels.INFO)
   end, "tree_help", "tree_help")
   local function close_workspace()
     refresh_revision = refresh_revision + 1
