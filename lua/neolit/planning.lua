@@ -1519,7 +1519,7 @@ function M.open(opts)
     add("NEOLIT · " .. (mode == "tasks" and "TASKS" or "REQUIREMENTS")
       .. (scope_path and (" · " .. vim.fn.fnamemodify(scope_path, ":t")) or "")
       .. " · " .. scoped_requirement_count .. " req · " .. scoped_task_count .. " tasks"
-      .. " · ctx " .. #context_chunks .. " · za details · p packet · a add · d remove · Y copy · c clear · v switch · ? keys",
+      .. " · ctx " .. #context_chunks .. " · za details · <leader>np review · <leader>na add · <leader>nd remove · <leader>ny copy · <leader>nc clear · <leader>nm draft",
       { kind = "header" })
 
     if mode == "requirements" then
@@ -2046,7 +2046,7 @@ function M.open(opts)
         packet_rows[#packet_lines] = row
       end
       packet_add("NEOLIT · CONTEXT · " .. #context_chunks
-        .. " chunks · Y copy · d remove · c clear · q back · ? keys", { kind = "header" })
+        .. " chunks · <leader>ny copy · <leader>nd remove · <leader>nc clear · q back", { kind = "header" })
       for index, item in ipairs(context_chunks) do
         local line_count = item.content and (#item.content > 0 and select(2, item.content:gsub("\n", "")) + 1 or 0) or 0
         local first_line = item.content and (item.content:match("([^\n]+)") or "") or ""
@@ -2118,7 +2118,7 @@ function M.open(opts)
       open_composed_view(mode, scope_path, row.key)
     end, { buffer = view_buf, silent = true })
     vim.keymap.set("n", "?", function()
-      vim.notify("Workspace: za expand/collapse · s task scope · p context packet · <CR> source · a add · d remove · Y copy · c clear · x copy · y path · v switch · q tree", vim.log.levels.INFO)
+      vim.notify("Workspace: za expand/collapse · <leader>ns task scope · <leader>np review · <CR> source · <leader>na add · <leader>nd remove · <leader>ny copy · <leader>nc clear · <leader>nx copy · <leader>nl path · <leader>nv switch · <leader>nm draft · q tree", vim.log.levels.INFO)
     end, { buffer = view_buf, silent = true })
     bind_key(view_buf, cfg, "copy_source", "<leader>nx", copy_chunk)
     bind_key(view_buf, cfg, "context_add", "<leader>na", append_context)
@@ -2147,7 +2147,7 @@ function M.open(opts)
       for _, file in ipairs(workspace.git.changedFiles or {}) do
         if not changed_set[file.path] then other_changes[#other_changes + 1] = file end
       end
-      scope_add("NEOLIT · TASK SCOPE · OBSERVED · za expand · <CR> open · x copy · q back · ?",
+      scope_add("NEOLIT · TASK SCOPE · OBSERVED · za expand · <CR> open · <leader>nx copy · q back · ?",
         { kind = "header" })
       scope_add("[" .. state_mark(state) .. "] " .. task.text,
         source_row("task", task_path(task), task.range, task.text, { task = task }))
@@ -2716,7 +2716,7 @@ function M.open(opts)
   map("<leader>nx", copy_selected_text, "copy_text", "copy_text")
   map("<leader>nl", copy_selected_path, "copy_path", "copy_path")
   map("<leader>n?", function()
-    vim.notify("Tree: v composed requirement/task view · <CR> expand/open · za toggle · zo open · zc close · h/l expand/collapse-or-parent · zr/zm one level · zR/zM all · f affected-only · d delete selected task or requirement · D diff view · e / <leader>ne edit working side · o / <leader>no open file · x copy text · y copy path · r refresh · q/<Esc> close", vim.log.levels.INFO)
+    vim.notify("Tree: <leader>nv composed view · <CR> open/expand · za/zo/zc fold · zr/zm one level · zR/zM all · <leader>nf affected-only · <leader>nD delete · <leader>nd diff layout · <leader>ne edit · <leader>no open file · <leader>nx copy text · <leader>nl path · <leader>nr refresh · <leader>nm message draft · <leader>nq close", vim.log.levels.INFO)
   end, "tree_help", "tree_help")
   local function close_workspace()
     refresh_revision = refresh_revision + 1
