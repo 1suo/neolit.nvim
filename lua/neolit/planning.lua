@@ -51,16 +51,6 @@ function M.worktree_root(opts)
   return canonical_worktree(root)
 end
 
-local function diff_command(file, base)
-  if file.untracked or (file.status == "added" and #file.hunks == 0) then
-    return { "git", "-c", "core.quotePath=false", "diff", "--no-index", "--no-ext-diff", "--no-color", "--", "/dev/null", file.path }
-  end
-  local command = { "git", "-c", "core.quotePath=false", "diff", "--no-ext-diff", "--no-color", "--find-renames", base or "HEAD", "--" }
-  if file.previousPath then command[#command + 1] = file.previousPath end
-  command[#command + 1] = file.path
-  return command
-end
-
 local function safe_repo_path(root, relative)
   if type(relative) ~= "string" or relative == "" or relative:sub(1, 1) == "/" or relative:sub(1, 1) == "\\" or relative:match("^%a:") then
     return nil
@@ -75,24 +65,6 @@ local function safe_repo_path(root, relative)
     return nil
   end
   return absolute
-end
-
-local function normalize_diff(diff)
-  return (diff or ""):gsub("\r\n", "\n"):gsub("\n+$", "")
-end
-
-local function extract_diff_hunk(diff, wanted_index)
-  if type(diff) ~= "string" or type(wanted_index) ~= "number" then return nil end
-  local result, index, collecting = {}, -1, false
-  for _, line in ipairs(vim.split(diff, "\n", { plain = true })) do
-    if line:match("^@@ ") then
-      index = index + 1
-      if collecting then break end
-      collecting = index == wanted_index
-    end
-    if collecting then result[#result + 1] = line end
-  end
-  return #result > 0 and table.concat(result, "\n") or nil
 end
 
 local function set_source_language(buf, path)
@@ -116,63 +88,6 @@ local function set_source_language(buf, path)
     pcall(vim.treesitter.start, buf, filetype)
   end
   return filetype
-end
-
--- Unified diffs are still diff buffers, but syntax captures are projected
--- from parsed old/new source onto their corresponding diff lines.
-local function highlight_unified_source(buf, diff_lines, old_lines, new_lines, filetype)
-  if not filetype or filetype == "" or not (vim.treesitter and vim.treesitter.get_string_parser) then return end
-  local old_map, new_map = {}, {}
-  local old_line, new_line = 0, 0
-  for diff_row, line in ipairs(diff_lines) do
-    local old_start, old_count, new_start, new_count =
-      line:match("^@@ %-(%d+),?(%d*) %+(%d+),?(%d*) @@")
-    if old_start then
-      old_line, new_line = tonumber(old_start) - 1, tonumber(new_start) - 1
-    elseif line:sub(1, 1) == " " then
-      old_line, new_line = old_line + 1, new_line + 1
-      old_map[old_line], new_map[new_line] = diff_row - 1, diff_row - 1
-    elseif line:sub(1, 1) == "-" and not line:match("^---") then
-      old_line = old_line + 1
-      old_map[old_line] = diff_row - 1
-    elseif line:sub(1, 1) == "+" and not line:match("^%+%+%+") then
-      new_line = new_line + 1
-      new_map[new_line] = diff_row - 1
-    end
-  end
-
-  local ns = vim.api.nvim_create_namespace("neolit-unified-source-" .. buf)
-  vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1)
-  local function project(lines, line_map, sign)
-    if not lines or #lines == 0 then return end
-    local source = table.concat(lines, "\n")
-    local ok, parser = pcall(vim.treesitter.get_string_parser, source, filetype)
-    if not ok or not parser then return end
-    local parsed, trees = pcall(parser.parse, parser)
-    if not parsed or not trees or not trees[1] then return end
-    local query_ok, query = pcall(vim.treesitter.query.get, filetype, "highlights")
-    if not query_ok or not query then return end
-    local root = trees[1]:root()
-    for id, node in query:iter_captures(root, source, 0, -1) do
-      local capture = query.captures[id]
-      local start_row, start_col, end_row, end_col = node:range()
-      for source_row = start_row, end_row do
-        local diff_row = line_map[source_row + 1]
-        if diff_row then
-          local first_col = source_row == start_row and start_col or 0
-          local last_col = source_row == end_row and end_col or #(lines[source_row + 1] or "")
-          if last_col > first_col then
-            pcall(vim.api.nvim_buf_set_extmark, buf, ns, diff_row, first_col + 1, {
-              end_row = diff_row, end_col = last_col + 1,
-              hl_group = capture, priority = 110, hl_mode = "combine",
-            })
-          end
-        end
-      end
-    end
-  end
-  project(old_lines, old_map, "-")
-  project(new_lines, new_map, "+")
 end
 
 local function render_planning_semantics(buf, workspace, relative_path)
@@ -257,172 +172,6 @@ local function render_planning_semantics(buf, workspace, relative_path)
   end
 end
 
-local function open_diff(root, file, selected_hunk, comparison_base, selected_line, diff_state, focus)
-  local original_win = vim.api.nvim_get_current_win()
-  local function restore_focus()
-    if focus then return end
-    if vim.api.nvim_win_is_valid(original_win) then vim.api.nvim_set_current_win(original_win) end
-  end
-  local path = safe_repo_path(root, file.path)
-  local base_path = file.previousPath or file.path
-  if not path or not safe_repo_path(root, base_path) then
-    vim.notify("Refusing to open a diff path outside the repository: " .. tostring(file.path), vim.log.levels.ERROR)
-    return
-  end
-
-  local win = diff_state and diff_state.preview_win
-  if not win or not vim.api.nvim_win_is_valid(win) then
-    local origin = diff_state and diff_state.tree_win or vim.api.nvim_get_current_win()
-    if not vim.api.nvim_win_is_valid(origin) then return end
-    vim.api.nvim_set_current_win(origin)
-    vim.cmd("rightbelow vsplit")
-    win = vim.api.nvim_get_current_win()
-    if diff_state then diff_state.preview_win = win end
-  end
-
-  local view = diff_state and diff_state.diff_view or "side_by_side"
-  if view == "side_by_side" then
-    local base_win = diff_state and diff_state.base_win
-    if not base_win or not vim.api.nvim_win_is_valid(base_win) then
-      -- Create the comparison pane explicitly from the preview window, then
-      -- restore the working pane as the stable preview target.
-      vim.api.nvim_set_current_win(win)
-      vim.cmd("leftabove vsplit")
-      base_win = vim.api.nvim_get_current_win()
-      if diff_state then
-        diff_state.base_win = base_win
-        diff_state.working_win = win
-      end
-      vim.api.nvim_set_current_win(win)
-    end
-
-    local base_buf = diff_state and diff_state.base_buf
-    if not base_buf or not vim.api.nvim_buf_is_valid(base_buf) then
-      base_buf = vim.api.nvim_create_buf(false, true)
-      vim.bo[base_buf].buftype = "nofile"
-      vim.bo[base_buf].bufhidden = "hide"
-      vim.bo[base_buf].swapfile = false
-      if diff_state then diff_state.base_buf = base_buf end
-    end
-    local base_result = vim.system({
-      "git", "show", (comparison_base or "HEAD") .. ":" .. base_path,
-    }, { cwd = root, text = true }):wait()
-    local base_lines = base_result.code == 0
-      and vim.split(base_result.stdout or "", "\n", { plain = true })
-      or { "" }
-    if base_lines[#base_lines] == "" and #base_lines > 1 then table.remove(base_lines) end
-
-    -- Leave diff mode before replacing either window's buffer. Otherwise
-    -- Neovim retains the old diff participants while the new buffers are
-    -- attached, eventually hitting E96 during ordinary tree hover.
-    pcall(vim.api.nvim_win_call, base_win, function() vim.cmd("diffoff") end)
-    pcall(vim.api.nvim_win_call, win, function() vim.cmd("diffoff") end)
-
-    vim.bo[base_buf].modifiable = true
-    vim.api.nvim_buf_set_lines(base_buf, 0, -1, false, base_lines)
-    vim.bo[base_buf].modifiable = false
-    local source_filetype = set_source_language(base_buf, base_path)
-    vim.api.nvim_win_set_buf(base_win, base_buf)
-
-    local working_buf
-    if vim.fn.filereadable(path) == 1 then
-      local existing_buf = vim.fn.bufnr(path)
-      working_buf = vim.fn.bufadd(path)
-      vim.fn.bufload(working_buf)
-      -- Files first encountered through hover remain real, editable buffers,
-      -- but stay out of the user's ordinary listed-buffer collection.
-      if existing_buf < 0 then vim.bo[working_buf].buflisted = false end
-    else
-      working_buf = diff_state and diff_state.deleted_buf
-      if not working_buf or not vim.api.nvim_buf_is_valid(working_buf) then
-        working_buf = vim.api.nvim_create_buf(false, true)
-        vim.bo[working_buf].buftype = "nofile"
-        vim.bo[working_buf].bufhidden = "hide"
-        vim.bo[working_buf].swapfile = false
-        if diff_state then diff_state.deleted_buf = working_buf end
-      end
-      vim.bo[working_buf].modifiable = true
-      vim.api.nvim_buf_set_lines(working_buf, 0, -1, false, { "" })
-      vim.bo[working_buf].modifiable = false
-      set_source_language(working_buf, file.path)
-    end
-    vim.api.nvim_win_set_buf(win, working_buf)
-    pcall(vim.api.nvim_win_call, base_win, function() vim.cmd("diffthis") end)
-    pcall(vim.api.nvim_win_call, win, function() vim.cmd("diffthis") end)
-
-    -- Keep diff panes vertically aligned while leaving each cursor independent.
-    for _, diff_win in ipairs({ base_win, win }) do
-      vim.wo[diff_win].wrap = vim.go.wrap
-      vim.wo[diff_win].scrollbind = true
-      vim.wo[diff_win].cursorbind = false
-    end
-
-    local base_line = selected_hunk and selected_hunk.oldStart or 1
-    local working_line = selected_hunk and selected_hunk.newStart or (selected_line and selected_line.lineNumber or 1)
-    pcall(vim.api.nvim_win_set_cursor, base_win, { math.max(1, base_line), 0 })
-    pcall(vim.api.nvim_win_set_cursor, win, { math.max(1, working_line), 0 })
-    pcall(vim.api.nvim_win_call, win, function() vim.cmd("syncbind") end)
-    if focus then vim.api.nvim_set_current_win(win) else restore_focus() end
-    return
-  end
-
-  local base_win = diff_state and diff_state.base_win
-  if base_win and vim.api.nvim_win_is_valid(base_win) then
-    pcall(vim.api.nvim_win_call, base_win, function() vim.cmd("diffoff") end)
-    pcall(vim.api.nvim_win_close, base_win, true)
-    if diff_state then diff_state.base_win = nil end
-  end
-
-  vim.wo[win].cursorbind = false
-  vim.wo[win].scrollbind = false
-  local result = vim.system(diff_command(file, comparison_base), { cwd = root, text = true }):wait()
-  local diff_lines = vim.split(result.stdout or "", "\n", { plain = true })
-  if diff_lines[#diff_lines] == "" then table.remove(diff_lines) end
-  if #diff_lines == 0 then diff_lines = { "(no diff available)" } end
-
-  local preview_buf = diff_state and diff_state.preview_buf
-  if not preview_buf or not vim.api.nvim_buf_is_valid(preview_buf) then
-    preview_buf = vim.api.nvim_create_buf(false, true)
-    vim.bo[preview_buf].buftype = "nofile"
-    vim.bo[preview_buf].bufhidden = "hide"
-    vim.bo[preview_buf].swapfile = false
-    vim.bo[preview_buf].filetype = "diff"
-    if diff_state then diff_state.preview_buf = preview_buf end
-  end
-  vim.bo[preview_buf].modifiable = true
-  vim.api.nvim_buf_set_lines(preview_buf, 0, -1, false, diff_lines)
-  vim.bo[preview_buf].modifiable = false
-  local source_filetype = vim.filetype.match({ filename = file.path }) or ""
-  local base_source = vim.system({ "git", "show", (comparison_base or "HEAD") .. ":" .. base_path }, { cwd = root, text = true }):wait()
-  local old_lines = base_source.code == 0 and vim.split(base_source.stdout or "", "\n", { plain = true }) or {}
-  if old_lines[#old_lines] == "" then table.remove(old_lines) end
-  local new_lines = vim.fn.filereadable(path) == 1 and vim.fn.readfile(path) or {}
-  highlight_unified_source(preview_buf, diff_lines, old_lines, new_lines, source_filetype)
-  vim.api.nvim_win_set_buf(win, preview_buf)
-  vim.wo[win].wrap = vim.go.wrap
-  if focus then vim.api.nvim_set_current_win(win) else restore_focus() end
-
-  local target_line = 1
-  if selected_hunk then
-    for index, line in ipairs(diff_lines) do
-      if line:match("^@@ ") then
-        local old, old_count, new, new_count = line:match("^@@ %-(%d+),?(%d*) %+(%d+),?(%d*) @@")
-        if tonumber(old) == selected_hunk.oldStart
-          and (old_count == "" and 1 or tonumber(old_count)) == selected_hunk.oldLines
-          and tonumber(new) == selected_hunk.newStart
-          and (new_count == "" and 1 or tonumber(new_count)) == selected_hunk.newLines then
-          target_line = index
-          break
-        end
-      end
-    end
-  elseif selected_line then
-    for index, line in ipairs(diff_lines) do
-      if line:match("^@@ ") then target_line = index; break end
-    end
-  end
-  pcall(vim.api.nvim_win_set_cursor, win, { target_line, 0 })
-end
 local function collect_affected_paths(workspace)
   local affected = {}
   local tasks_by_key = {}
@@ -900,7 +649,7 @@ function M.open(opts)
   local expanded_files = {}
   local expanded_dirs = {}
   local expanded_tasks = {}
-  local diff_state = { tree_win = tree_win, preview_win = preview_win, diff_view = cfg.diff_view or "side_by_side" }
+  local diff_state = { tree_win = tree_win, preview_win = preview_win }
   local context_chunks, context_keys = {}, {}
   local composed_expanded, scope_expanded = {}, {}
   local composed_view_buf, context_view_buf
@@ -921,13 +670,6 @@ function M.open(opts)
       vim.cmd("rightbelow vsplit")
       win = vim.api.nvim_get_current_win()
       diff_state.preview_win = win
-    end
-    local base_win = diff_state.base_win
-    if base_win and vim.api.nvim_win_is_valid(base_win) then
-      pcall(vim.api.nvim_win_call, base_win, function() vim.cmd("diffoff") end)
-      pcall(vim.api.nvim_win_close, base_win, true)
-      diff_state.base_win = nil
-      diff_state.working_win = nil
     end
     pcall(vim.api.nvim_win_call, win, function() vim.cmd("diffoff") end)
     vim.wo[win].cursorbind = false
@@ -951,6 +693,22 @@ function M.open(opts)
       vim.api.nvim_win_set_cursor(win, { math.max(1, line), 0 })
     end
   end
+  local function open_change_source(file, selected_hunk, selected_line, focus)
+    if type(file) ~= "table" or type(file.path) ~= "string" then return end
+    local line
+    if selected_line and selected_line.side == "+" then
+      line = selected_line.lineNumber
+    elseif selected_hunk then
+      line = selected_hunk.newStart
+    end
+    local target = safe_repo_path(root, file.path)
+    if not target or vim.fn.filereadable(target) ~= 1 then
+      vim.notify("This change has no working-tree source file; use <leader>ne for CodeCompanion review", vim.log.levels.INFO)
+      return
+    end
+    open_in_preview(file.path, line, focus)
+  end
+
   local function refresh()
     refresh_revision = refresh_revision + 1
     local revision = refresh_revision
@@ -1056,7 +814,7 @@ function M.open(opts)
         if file.path == row.path or file.previousPath == row.path then changed = file; break end
       end
       if changed then
-        open_diff(root, changed, nil, workspace.git.base, nil, diff_state, true)
+        open_change_source(changed, nil, nil, true)
       else
         local target = safe_repo_path(root, row.path)
         if target and vim.fn.filereadable(target) == 1 then
@@ -1107,22 +865,21 @@ function M.open(opts)
       end
     elseif row.kind == "task_change" then
       if row.file then
-        open_diff(root, row.file, nil, workspace and workspace.git.base, nil, diff_state, true)
+        open_change_source(row.file, nil, nil, true)
       else
         vim.notify("The linked changed file is no longer in the workspace; refresh", vim.log.levels.WARN)
       end
     elseif row.kind == "task_hunk" then
       if row.file and row.hunk then
-        open_diff(root, row.file, row.hunk,
-          workspace and workspace.git.base, nil, diff_state, true)
+        open_change_source(row.file, row.hunk, nil, true)
       else
         vim.notify("The linked hunk is no longer in the workspace; refresh", vim.log.levels.WARN)
       end
     elseif row.kind == "file" then
       open_diff(root, row.file, nil, workspace and workspace.git.base, nil, diff_state, true)
     elseif row.kind == "hunk" or row.kind == "change_line" then
-      open_diff(root, row.file, row.hunk, workspace and workspace.git.base,
-        row.kind == "change_line" and { side = row.side, lineNumber = row.lineNumber } or nil, diff_state, true)
+      open_change_source(row.file, row.hunk,
+        row.kind == "change_line" and { side = row.side, lineNumber = row.lineNumber } or nil, true)
     end
   end
 
@@ -1138,21 +895,21 @@ function M.open(opts)
         if file.path == row.path or file.previousPath == row.path then changed = file; break end
       end
       if changed then
-        open_diff(root, changed, nil, workspace.git.base, nil, diff_state, false)
+        open_change_source(changed, nil, nil, false)
       else
         open_in_preview(row.path, nil, false)
       end
     elseif row.kind == "task_change" then
-      if row.file then open_diff(root, row.file, nil, workspace and workspace.git.base, nil, diff_state, false) end
+      if row.file then open_change_source(row.file, nil, nil, false) end
     elseif row.kind == "task_hunk" then
       if row.file and row.hunk then
-        open_diff(root, row.file, row.hunk, workspace and workspace.git.base, nil, diff_state, false)
+        open_change_source(row.file, row.hunk, nil, false)
       end
     elseif row.kind == "file" then
       open_diff(root, row.file, nil, workspace and workspace.git.base, nil, diff_state, false)
     elseif row.kind == "hunk" or row.kind == "change_line" then
-      open_diff(root, row.file, row.hunk, workspace and workspace.git.base,
-        row.kind == "change_line" and { side = row.side, lineNumber = row.lineNumber } or nil, diff_state, false)
+      open_change_source(row.file, row.hunk,
+        row.kind == "change_line" and { side = row.side, lineNumber = row.lineNumber } or nil, false)
     elseif row.kind == "task" then
       local path = row.task.key:match("^(.-)::")
       if path then open_in_preview(path, row.task.range.startLine, false) end
@@ -1227,11 +984,8 @@ function M.open(opts)
     end
     if changed then
       local hunk = row.hunk or (row.hunkAssociation and row.hunkAssociation.hunk)
-      open_diff(root, changed, hunk, workspace and workspace.git.base,
-        row.kind == "change_line" and { side = row.side, lineNumber = row.lineNumber } or nil,
-        diff_state, true)
-      local win = diff_state.working_win or diff_state.preview_win
-      if win and vim.api.nvim_win_is_valid(win) then vim.api.nvim_set_current_win(win) end
+      open_change_source(changed, hunk,
+        row.kind == "change_line" and { side = row.side, lineNumber = row.lineNumber } or nil, true)
     else
       open_in_preview(path, nil, true)
     end
@@ -1681,7 +1435,7 @@ function M.open(opts)
       if not row then return end
       if row.kind == "task_hunk" then
         local changed = row.file
-        if changed then open_diff(root, changed, row.hunk, workspace.git.base, nil, diff_state, true) end
+        if changed then open_change_source(changed, row.hunk, nil, true) end
       elseif row.kind == "changed_file" then
         local target = safe_repo_path(root, row.path)
         local loaded = target and vim.fn.bufnr(target) or -1
@@ -2594,7 +2348,14 @@ function M.open(opts)
     open_composed_view(mode, row and row.doc_kind and row.path or nil)
   end, "tree_composed", "tree_composed")
   map("<leader>n<CR>", selected, "tree_open_selected", "tree_open_selected")
-  map("<leader>ne", focus_working_diff, "tree_edit_diff", "tree_edit_diff")
+  map("<leader>ne", function()
+    if vim.fn.exists(":CodeCompanionCodeReview") ~= 2 then
+      vim.notify("CodeCompanion.nvim Code Review is required", vim.log.levels.ERROR)
+      return
+    end
+    vim.api.nvim_set_current_win(diff_state.tree_win)
+    vim.cmd("CodeCompanionCodeReview")
+  end, "review_changes", "review_changes")
   map("<leader>no", open_selected_file, "tree_open_file", "tree_open_file")
   map("za", toggle_node_at_cursor, "Toggle selected folder, document, task, or diff file")
   map("zc", function() toggle_node(current_row(), false) end, "Close selected tree node")
@@ -2626,17 +2387,11 @@ function M.open(opts)
     rerender_at(row and row.key)
   end, "affected_filter", "affected_filter")
   map("<leader>nr", refresh, "refresh", "refresh")
-  map("<leader>nd", function()
-    diff_state.diff_view = diff_state.diff_view == "side_by_side" and "unified" or "side_by_side"
-    local row = current_row()
-    if row then preview_row(row) end
-    vim.notify("Neolit diff view: " .. diff_state.diff_view)
-  end, "diff_layout", "diff_layout")
   map("<leader>nD", delete_selected, "delete_entry", "delete_entry")
   map("<leader>nx", copy_selected_text, "copy_text", "copy_text")
   map("<leader>nl", copy_selected_path, "copy_path", "copy_path")
   map("<leader>n?", function()
-    vim.notify("Tree: <leader>nv composed view · <CR> open/expand · za/zo/zc fold · zr/zm one level · zR/zM all · <leader>nf affected-only · <leader>nD delete · <leader>nd diff layout · <leader>ne edit · <leader>no open file · <leader>nx copy text · <leader>nl path · <leader>nr refresh · <leader>nm CodeCompanion chat · <leader>nM add context · <leader>nq close", vim.log.levels.INFO)
+    vim.notify("Tree: <leader>nv composed view · <CR> open/expand · za/zo/zc fold · zr/zm one level · zR/zM all · <leader>nf affected-only · <leader>nD delete · <leader>ne CodeCompanion review · <leader>no open file · <leader>nx copy text · <leader>nl path · <leader>nr refresh · <leader>nm CodeCompanion chat · <leader>nM add context · <leader>nq close", vim.log.levels.INFO)
   end, "tree_help", "tree_help")
   local function close_workspace()
     refresh_revision = refresh_revision + 1
