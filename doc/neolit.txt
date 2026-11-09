@@ -8,14 +8,9 @@ INSTALLATION                                                     *neolit-install
 Requirements:
 - Neovim 0.10+
 - Node.js 22.12+
-- A built checkout of https://github.com/1suo/neolit
+- The Neolit core package, installed once with:
 
-Build the core checkout:
-
-  git clone https://github.com/1suo/neolit.git
-  cd neolit
-  npm install
-  npm run build
+  npm install -g neolit
 
 Install 1suo/neolit.nvim with your plugin manager. Example lazy.nvim spec:
 
@@ -23,7 +18,6 @@ Install 1suo/neolit.nvim with your plugin manager. Example lazy.nvim spec:
     "1suo/neolit.nvim",
     dependencies = { "olimorris/codecompanion.nvim" },
     opts = {
-      neolit_dir = vim.fn.expand("~/Projects/neolit"),
       comparison_base = "HEAD",
       node = "node",
       codecompanion = { adapter = "opencode" },
@@ -40,7 +34,6 @@ CONFIGURATION                                                     *neolit-config
 Call require("neolit").setup(opts), or provide opts through your plugin manager.
 
   {
-    neolit_dir = nil,          -- built core path; see discovery below
     node = "node",             -- Node.js executable
     directory = nil,           -- repository; defaults to cwd
     comparison_base = "HEAD",  -- Git comparison base
@@ -53,13 +46,7 @@ Call require("neolit").setup(opts), or provide opts through your plugin manager.
     },
   }
 
-Core discovery order:
-1. opts.neolit_dir
-2. $NEOLIT_DIR
-3. ../neolit beside the plugin checkout
-4. <global npm root>/neolit
-
-The core must already be built. Neolit does not run npm install/build.
+Core discovery is automatic: Neolit uses the globally installed npm package. For development, it also recognizes a sibling ../neolit checkout or the NEOLIT_DIR environment variable. No core path belongs in your Neovim config.
 
 Keymap overrides are per action. Set an action to false or "" to disable it.
 Unspecified actions keep their defaults. The full action list is in
