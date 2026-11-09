@@ -70,8 +70,11 @@ opens that exact native diff.
   criteria, and changed-file evidence. From a TODO file it shows its tasks and
   linked requirements. Press `v` in that view to switch projections; `<CR>
   navigates to the source chunk, `x` copies its Markdown range or selected
-  detail, and `y` copies its source location. The view is a projection; source Markdown remains
-  editable and authoritative.
+  detail, and `y` copies its source location. Use `a` to add the selected source
+  chunk or diff to a temporary context packet, `Y` to copy the assembled packet
+  for the existing agent, and `c` to clear it. No chat/session is created; the
+  packet contains only the selected source chunks and diffs. The view is a
+  projection; source Markdown remains editable and authoritative.
 
 ## Keys
 
