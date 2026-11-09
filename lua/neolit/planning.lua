@@ -9,58 +9,6 @@ local function bind_key(buf, cfg, action, default, callback, opts)
   vim.keymap.set("n", lhs, callback, options)
 end
 
-local function agent_bindings_path()
-  return vim.fn.stdpath("state") .. "/neolit/agent-sessions.json"
-end
-
-local function canonical_worktree(root)
-  return vim.fn.resolve(vim.fn.fnamemodify(root or vim.fn.getcwd(), ":p"))
-end
-
-local function read_agent_bindings()
-  local path = agent_bindings_path()
-  if vim.fn.filereadable(path) ~= 1 then return {} end
-  local lines = vim.fn.readfile(path)
-  local ok, value = pcall(vim.json.decode, table.concat(lines, "\n"))
-  return ok and type(value) == "table" and value or {}
-end
-
-local function write_agent_bindings(bindings)
-  local path = agent_bindings_path()
-  vim.fn.mkdir(vim.fn.fnamemodify(path, ":h"), "p")
-  local temporary = path .. ".tmp"
-  local ok, encoded = pcall(vim.json.encode, bindings)
-  if not ok then return nil, encoded end
-  if vim.fn.writefile({ encoded }, temporary) ~= 0 then return nil, "cannot write " .. temporary end
-  if vim.fn.rename(temporary, path) ~= 0 then
-    vim.fn.delete(temporary)
-    return nil, "cannot replace " .. path
-  end
-  return true
-end
-
-function M.agent_session(root)
-  return read_agent_bindings()[canonical_worktree(root)]
-end
-
-function M.bind_agent_session(root, session_id, label)
-  if type(session_id) ~= "string" or session_id:match("^%s*$") then
-    return nil, "agent session ID is required"
-  end
-  local bindings = read_agent_bindings()
-  bindings[canonical_worktree(root)] = {
-    id = session_id,
-    label = type(label) == "string" and label ~= "" and label or session_id,
-  }
-  return write_agent_bindings(bindings)
-end
-
-function M.unbind_agent_session(root)
-  local bindings = read_agent_bindings()
-  bindings[canonical_worktree(root)] = nil
-  return write_agent_bindings(bindings)
-end
-
 local function state_reason(state, projection)
   if state == "unmapped" then return "No valid SPEC requirement reference" end
   if state == "blocked" then return "Blocked by an explicit blocker" end
@@ -1519,7 +1467,7 @@ function M.open(opts)
     add("NEOLIT · " .. (mode == "tasks" and "TASKS" or "REQUIREMENTS")
       .. (scope_path and (" · " .. vim.fn.fnamemodify(scope_path, ":t")) or "")
       .. " · " .. scoped_requirement_count .. " req · " .. scoped_task_count .. " tasks"
-      .. " · ctx " .. #context_chunks .. " · za details · <leader>np review · <leader>na add · <leader>nd remove · <leader>ny copy · <leader>nc clear · <leader>nm draft",
+      .. " · ctx " .. #context_chunks .. " · za details · <leader>np review · <leader>na add · <leader>nd remove · <leader>ny copy · <leader>nc clear · <leader>nm chat",
       { kind = "header" })
 
     if mode == "requirements" then
@@ -1967,120 +1915,39 @@ function M.open(opts)
       local output = compose_context()
       if output then copy_value(output, "Composed context") end
     end
-    local function open_message_draft()
+    local function open_codecompanion_chat()
       local context = compose_context()
       if not context then return end
-      local draft_buf = vim.api.nvim_create_buf(false, true)
-      vim.bo[draft_buf].buftype = "nofile"
-      vim.bo[draft_buf].bufhidden = "hide"
-      vim.bo[draft_buf].swapfile = false
-      vim.bo[draft_buf].filetype = "markdown"
-      local draft_lines = { "## You", "", "## Context" }
-      vim.list_extend(draft_lines, vim.split(context, "\n", { plain = true }))
-      vim.api.nvim_buf_set_lines(draft_buf, 0, -1, false, draft_lines)
-      vim.bo[draft_buf].modifiable = true
-      local width = math.max(40, math.min(vim.o.columns - 8, 100))
-      local height = math.max(10, math.min(vim.o.lines - 8, 32))
-      local win_id = vim.api.nvim_open_win(draft_buf, true, {
-        relative = "editor", style = "minimal", border = "rounded",
-        width = width, height = height,
-        row = math.max(1, math.floor((vim.o.lines - height) / 2) - 1),
-        col = math.max(1, math.floor((vim.o.columns - width) / 2)),
-      })
-      vim.wo[win_id].wrap = true
-      vim.wo[win_id].linebreak = true
-      vim.wo[win_id].number = false
-      vim.api.nvim_win_set_cursor(win_id, { 1, 0 })
-      local session = M.agent_session(root)
-      local busy = false
-      local function send_draft()
-        local adapter = cfg.agent and cfg.agent.send
-        if type(adapter) ~= "function" then
-          local opencode = require("neolit.opencode")
-          adapter = function(request)
-            return opencode.send(cfg.opencode or {}, request)
-          end
-        end
-        if not session or type(session.id) ~= "string" then
-          vim.notify("No agent session bound to this worktree", vim.log.levels.WARN)
-          return
-        end
-        if busy then return end
-        context = compose_context()
-        if not context then return end
-        local lines = vim.api.nvim_buf_get_lines(draft_buf, 0, -1, false)
-        local you_line
-        for index, line in ipairs(lines) do
-          if line == "## You" then you_line = index end
-        end
-        if not you_line then return end
-        local prompt_lines = {}
-        for index = you_line + 1, #lines do
-          if lines[index]:match("^## ") then break end
-          prompt_lines[#prompt_lines + 1] = lines[index]
-        end
-        local prompt = table.concat(prompt_lines, "\n"):gsub("^%s+", ""):gsub("%s+$", "")
-        if prompt == "" then
-          vim.notify("Message is empty", vim.log.levels.INFO)
-          return
-        end
-        local context_start
-        for index, line in ipairs(lines) do
-          if line == "## Context" then context_start = index; break end
-        end
-        if not context_start then return end
-        local context_lines = {}
-        for index = context_start + 1, #lines do
-          if lines[index]:match("^## ") then break end
-          context_lines[#context_lines + 1] = lines[index]
-        end
-        local message_context = table.concat(context_lines, "\n"):gsub("^%s+", ""):gsub("%s+$", "")
-        local message = prompt .. "\n\n## Context\n" .. message_context
-        busy = true
-        vim.bo[draft_buf].modifiable = true
-        vim.api.nvim_buf_set_lines(draft_buf, -1, -1, false, { "", "## Agent", "" })
-        local function append_response(chunk)
-          if type(chunk) ~= "string" or chunk == "" then return end
-          vim.schedule(function()
-            if not vim.api.nvim_buf_is_valid(draft_buf) then return end
-            local last = vim.api.nvim_buf_line_count(draft_buf)
-            local existing = vim.api.nvim_buf_get_lines(draft_buf, last - 1, last, false)[1] or ""
-            local parts = vim.split(chunk, "\n", { plain = true })
-            parts[1] = existing .. (parts[1] or "")
-            vim.api.nvim_buf_set_lines(draft_buf, last - 1, last, false, parts)
-          end)
-        end
-        local ok, err = pcall(adapter, {
-          session_id = session.id,
-          worktree = root,
-          message = message,
-          on_chunk = append_response,
-          on_done = function()
-            vim.schedule(function()
-              if not vim.api.nvim_buf_is_valid(draft_buf) then return end
-              busy = false
-              vim.bo[draft_buf].modifiable = true
-              vim.api.nvim_buf_set_lines(draft_buf, -1, -1, false, { "", "## You", "" })
-            end)
-          end,
-          on_error = function(error)
-            vim.schedule(function()
-              busy = false
-              vim.notify("Agent chat failed: " .. tostring(error), vim.log.levels.ERROR)
-            end)
-          end,
-        })
-        if not ok then
-          busy = false
-          vim.notify("Agent chat failed: " .. tostring(err), vim.log.levels.ERROR)
-        end
+      if vim.fn.exists(":CodeCompanionChat") ~= 2 then
+        vim.notify("CodeCompanion.nvim is required for Neolit chat", vim.log.levels.ERROR)
+        return
       end
-      bind_key(draft_buf, cfg, "chat_send", "<C-s>", send_draft)
-      bind_key(draft_buf, cfg, "chat_close", "<leader>nq", function()
-        if vim.api.nvim_win_is_valid(win_id) then vim.api.nvim_win_close(win_id, true) end
+      local adapter = (cfg.codecompanion and cfg.codecompanion.adapter) or "opencode"
+      if type(adapter) ~= "string" or not adapter:match("^[%w_%-]+$") then
+        vim.notify("Invalid CodeCompanion adapter name", vim.log.levels.ERROR)
+        return
+      end
+      local ok, err = pcall(vim.cmd, "CodeCompanionChat adapter=" .. adapter)
+      if not ok then
+        vim.notify("Could not open CodeCompanion chat: " .. tostring(err), vim.log.levels.ERROR)
+        return
+      end
+
+      local context_buf = vim.api.nvim_create_buf(false, true)
+      vim.bo[context_buf].buftype = "nofile"
+      vim.bo[context_buf].bufhidden = "wipe"
+      vim.bo[context_buf].swapfile = false
+      vim.api.nvim_buf_set_lines(context_buf, 0, -1, false, vim.split(context, "\n", { plain = true }))
+      local added, add_err = pcall(vim.api.nvim_buf_call, context_buf, function()
+        vim.cmd("normal! ggVG")
+        vim.cmd("CodeCompanionChat Add")
       end)
-      pcall(vim.api.nvim_buf_set_name, draft_buf, "neolit://chat-draft-" .. draft_buf)
-      vim.notify("OpenCode chat: type under You; <C-s> sends to the bound session; replies appear below Agent")
+      if not added then
+        if vim.api.nvim_buf_is_valid(context_buf) then pcall(vim.api.nvim_buf_delete, context_buf, { force = true }) end
+        vim.notify("Could not add Neolit context to CodeCompanion: " .. tostring(add_err), vim.log.levels.ERROR)
+        return
+      end
+      if vim.api.nvim_buf_is_valid(context_buf) then pcall(vim.api.nvim_buf_delete, context_buf, { force = true }) end
     end
     local function clear_context()
       context_chunks, context_keys = {}, {}
@@ -2166,7 +2033,7 @@ function M.open(opts)
       open_composed_view(mode, scope_path, row.key)
     end, { buffer = view_buf, silent = true })
     bind_key(view_buf, cfg, "view_help", "<leader>n?", function()
-      vim.notify("Workspace: za expand/collapse · <leader>ns task scope · <leader>np review · <leader>no source · <leader>na add · <leader>nd remove · <leader>ny copy · <leader>nc clear · <leader>nx copy · <leader>nl path · <leader>nv switch · <leader>nm draft · <leader>nq back", vim.log.levels.INFO)
+      vim.notify("Workspace: za expand/collapse · <leader>ns task scope · <leader>np review · <leader>no source · <leader>na add · <leader>nd remove · <leader>ny copy · <leader>nc clear · <leader>nx copy · <leader>nl path · <leader>nv switch · <leader>nm chat · <leader>nq back", vim.log.levels.INFO)
     end)
     bind_key(view_buf, cfg, "copy_source", "<leader>nx", copy_chunk)
     bind_key(view_buf, cfg, "context_add", "<leader>na", append_context)
@@ -2366,7 +2233,7 @@ function M.open(opts)
     bind_key(view_buf, cfg, "context_copy", "<leader>ny", copy_context)
     bind_key(view_buf, cfg, "context_clear", "<leader>nc", clear_context)
     bind_key(view_buf, cfg, "context_review", "<leader>np", open_context_view)
-    bind_key(view_buf, cfg, "chat_open", "<leader>nm", open_message_draft)
+    bind_key(view_buf, cfg, "chat_open", "<leader>nm", open_message_chat)
     bind_key(view_buf, cfg, "copy_path", "<leader>nl", function()
       local row = selected_view_row()
       if row and row.path then copy_value(row.path .. (row.line and (":" .. row.line) or ""), "Source path") end
@@ -2766,7 +2633,7 @@ function M.open(opts)
   map("<leader>nx", copy_selected_text, "copy_text", "copy_text")
   map("<leader>nl", copy_selected_path, "copy_path", "copy_path")
   map("<leader>n?", function()
-    vim.notify("Tree: <leader>nv composed view · <CR> open/expand · za/zo/zc fold · zr/zm one level · zR/zM all · <leader>nf affected-only · <leader>nD delete · <leader>nd diff layout · <leader>ne edit · <leader>no open file · <leader>nx copy text · <leader>nl path · <leader>nr refresh · <leader>nm message draft · <leader>nq close", vim.log.levels.INFO)
+    vim.notify("Tree: <leader>nv composed view · <CR> open/expand · za/zo/zc fold · zr/zm one level · zR/zM all · <leader>nf affected-only · <leader>nD delete · <leader>nd diff layout · <leader>ne edit · <leader>no open file · <leader>nx copy text · <leader>nl path · <leader>nr refresh · <leader>nm CodeCompanion chat · <leader>nq close", vim.log.levels.INFO)
   end, "tree_help", "tree_help")
   local function close_workspace()
     refresh_revision = refresh_revision + 1
