@@ -36,7 +36,7 @@ local function request(opts, method, path, body, callback)
     local output = result.stdout or ""
     local payload, status = output:match("^(.*)\n(%d%d%d)%s*$")
     if not status then
-      callback(nil, result.stderr ~= "" and result.stderr or "Invalid OpenCode server response")
+      callback(nil, type(result.stderr) == "string" and result.stderr ~= "" and result.stderr or "Invalid OpenCode server response (start `opencode serve` or set opts.opencode.url)")
       return
     end
     status = tonumber(status)
