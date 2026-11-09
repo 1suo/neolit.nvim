@@ -29,6 +29,7 @@ M.defaults = {
     switch_projection = "<leader>nv",
     copy_source_path = "<leader>nl",
     chat_open = "<leader>nm",
+    chat_context = "<leader>nM",
     tree_toggle = "<leader>nt",
     tree_help = "<leader>n?",
     tree_open_selected = "<leader>n<CR>",
