@@ -13,7 +13,7 @@ local function read_agent_bindings()
   local path = agent_bindings_path()
   if vim.fn.filereadable(path) ~= 1 then return {} end
   local lines = vim.fn.readfile(path)
-  local ok, value = pcall(vim.json.decode, table.concat(lines, "\\n"))
+  local ok, value = pcall(vim.json.decode, table.concat(lines, "\n"))
   return ok and type(value) == "table" and value or {}
 end
 
