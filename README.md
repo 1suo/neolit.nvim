@@ -77,9 +77,10 @@ opens that exact native diff.
   selected source chunk, file diff, or exact hunk from scope review to a
   temporary context packet, `d` to remove it, `Y` to copy the assembled packet
   for the existing agent, and `c` to
-  clear it. Press `s` on a task to open an observed-scope review: intent,
-  linked requirements/criteria, declared file hints, actual changes, hunk
-  attribution, and other changed paths. File hints are not enforced boundaries.
+  clear it. Press `s` on a task to open an observed-scope view. Its sections start
+  collapsed; `za` expands the selected section. It summarizes intent, linked
+  requirements/criteria, declared file hints, actual changes, hunk attribution,
+  diagnostics, and other changed paths. File hints are not enforced boundaries.
   A `●` marks rows already in the packet; `p` opens a compact packet
   review where chunks can be removed individually before copying. `v` switches
   between requirement/task projections; `?` shows the compact view's keys. Source
@@ -95,7 +96,8 @@ opens that exact native diff.
 | `j` / `k` | Move |
 | `za` | Toggle selected directory/file or composed task/requirement |
 | `v` | Open composed view / switch requirement-task projection |
-| `s` | Review observed scope of selected task |
+| `s` | Open compact observed-scope view for selected task |
+| `za` | Expand/collapse selected task-scope section |
 | `p` | Review composed context packet |
 | `a` / `d` | Add / remove selected context chunk in composed views |
 | `Y` / `c` | Copy assembled packet / clear context |
