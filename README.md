@@ -84,7 +84,7 @@ Open Neolit from the repository you want to inspect:
 - :NeolitPlan
 - Default shortcut: <leader>nn
 
-The workspace opens a 36-column tree on the left and reuses the current window as the source preview on the right. Reopening Neolit focuses the existing workspace. :NeolitClose or <leader>nq closes it.
+The workspace opens a 36-column tree on the left and reuses the current window as the source preview on the right. Reopening Neolit focuses the existing workspace. :NeolitClose or `q` closes it.
 
 ### Commands
 
@@ -97,7 +97,7 @@ Composed views also expose `:NeolitContextAdd`, `:NeolitContextRemove`, `:Neolit
 - Expand/collapse folders, planning files, and changed files with za, zo, and zc.
 - zr / zm open or close one visible level; zR / zM expand or collapse all.
 - <CR> opens the selected source or expands the selected tree node.
-- <leader>no opens the selected file in the right pane.
+- `o` opens the selected file in the right pane; `F` toggles the selected tree node; `h` / `l` collapse/expand or move to the parent.
 - <leader>nv opens the composed task/requirement view. From a TODO file it starts with tasks; from a SPEC file it starts with requirements.
 - <leader>ns opens the selected task's focused scope.
 - In composed views, za expands/collapses the selected task or requirement, and <leader>nv switches task/requirement projection.
@@ -157,7 +157,10 @@ Default keymaps:
 | open_workspace | <leader>nn |
 | tree_composed | <leader>nv |
 | tree_open_selected | <leader>n<CR> |
-| tree_open_file | <leader>no |
+| tree_toggle | F |
+| tree_expand_node | l |
+| tree_collapse_node | h |
+| tree_open_file | o |
 | task_scope | <leader>ns |
 | context_add | <leader>na |
 | context_remove | <leader>n- |
@@ -181,8 +184,8 @@ Default keymaps:
 | tree_expand_all | zR |
 | tree_collapse_all | zM |
 | refresh | <leader>nr |
-| close_workspace | <leader>nq |
-| view_help | <leader>n? |
+| close_workspace | q |
+| view_help | ? |
 
 Override by action name. For example, this restores short tree-local actions while keeping native Neovim keys unchanged elsewhere:
 
