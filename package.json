@@ -5,5 +5,11 @@
   "description": "Neovim host for the Git-native Neolit planning workspace",
   "type": "module",
   "author": "1suo",
-  "license": "MIT"
+  "license": "MIT",
+  "scripts": {
+    "install": "npm install --no-audit --no-fund"
+  },
+  "dependencies": {
+    "neolit": "github:1suo/neolit#main"
+  }
 }
