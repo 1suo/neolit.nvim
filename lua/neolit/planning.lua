@@ -1465,7 +1465,7 @@ function M.open(opts)
     add("NEOLIT · " .. (mode == "tasks" and "TASKS" or "REQUIREMENTS")
       .. (scope_path and (" · " .. vim.fn.fnamemodify(scope_path, ":t")) or "")
       .. " · " .. scoped_requirement_count .. " req · " .. scoped_task_count .. " tasks"
-      .. " · ctx " .. #context_chunks .. " · za details · <leader>np review · <leader>na add · <leader>nd remove · <leader>ny copy · <leader>nc clear · <leader>nm chat",
+      .. " · ctx " .. #context_chunks .. " · za details · <leader>np review · <leader>na add · <leader>n- remove · <leader>ny copy · <leader>nc clear · <leader>nm chat",
       { kind = "header" })
 
     if mode == "requirements" then
@@ -1925,6 +1925,7 @@ function M.open(opts)
         vim.notify("Invalid CodeCompanion adapter name", vim.log.levels.ERROR)
         return
       end
+      vim.cmd("lcd " .. vim.fn.fnameescape(root))
       local ok, err = pcall(vim.cmd, "CodeCompanionChat adapter=" .. adapter)
       if not ok then
         vim.notify("Could not open CodeCompanion chat: " .. tostring(err), vim.log.levels.ERROR)
@@ -1959,7 +1960,7 @@ function M.open(opts)
         packet_rows[#packet_lines] = row
       end
       packet_add("NEOLIT · CONTEXT · " .. #context_chunks
-        .. " chunks · <leader>ny copy · <leader>nd remove · <leader>nc clear · q back", { kind = "header" })
+        .. " chunks · <leader>ny copy · <leader>n- remove · <leader>nc clear · q back", { kind = "header" })
       for index, item in ipairs(context_chunks) do
         local line_count = item.content and (#item.content > 0 and select(2, item.content:gsub("\n", "")) + 1 or 0) or 0
         local first_line = item.content and (item.content:match("([^\n]+)") or "") or ""
@@ -2018,7 +2019,7 @@ function M.open(opts)
         if return_to then return_to() else open_composed_view(mode, scope_path) end
       end)
       bind_key(packet_buf, cfg, "view_help", "<leader>n?", function()
-        vim.notify("Context: <leader>ny copy · <leader>nd remove · <leader>nc clear · <leader>nq back", vim.log.levels.INFO)
+        vim.notify("Context: <leader>ny copy · <leader>n- remove · <leader>nc clear · <leader>nq back", vim.log.levels.INFO)
       end)
       vim.api.nvim_set_current_win(win)
       vim.api.nvim_win_set_cursor(win, { 1, 0 })
@@ -2031,7 +2032,7 @@ function M.open(opts)
       open_composed_view(mode, scope_path, row.key)
     end, { buffer = view_buf, silent = true })
     bind_key(view_buf, cfg, "view_help", "<leader>n?", function()
-      vim.notify("Workspace: za expand/collapse · <leader>ns task scope · <leader>np review · <leader>no source · <leader>na add · <leader>nd remove · <leader>ny copy · <leader>nc clear · <leader>nx copy · <leader>nl path · <leader>nv switch · <leader>nm chat · <leader>nq back", vim.log.levels.INFO)
+      vim.notify("Workspace: za expand/collapse · <leader>ns task scope · <leader>np review · <leader>no source · <leader>na add · <leader>n- remove · <leader>ny copy · <leader>nc clear · <leader>nx copy · <leader>nl path · <leader>nv switch · <leader>nm chat · <leader>nq back", vim.log.levels.INFO)
     end)
     bind_key(view_buf, cfg, "copy_source", "<leader>nx", copy_chunk)
     bind_key(view_buf, cfg, "context_add", "<leader>na", append_context)
@@ -2060,7 +2061,7 @@ function M.open(opts)
       for _, file in ipairs(workspace.git.changedFiles or {}) do
         if not changed_set[file.path] then other_changes[#other_changes + 1] = file end
       end
-      scope_add("NEOLIT · TASK SCOPE · OBSERVED · za expand · <leader>no open · <leader>nx copy · <leader>na add context · <leader>nd remove context · <leader>nq back · ?",
+      scope_add("NEOLIT · TASK SCOPE · OBSERVED · za expand · <leader>no open · <leader>nx copy · <leader>na add context · <leader>n- remove context · <leader>nq back · ?",
         { kind = "header" })
       scope_add("[" .. state_mark(state) .. "] " .. task.text,
         source_row("task", task_path(task), task.range, task.text, { task = task }))
