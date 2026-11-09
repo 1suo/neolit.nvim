@@ -81,6 +81,21 @@ COMMANDS                                                           *neolit-comma
 :NeolitClose
     Close the current Neolit workspace.
 
+:NeolitJournal
+    Open the current monthly journal Markdown file.
+
+:NeolitCaptureJournal
+    Capture a timestamped entry under today’s journal heading.
+
+:NeolitCaptureTask
+    Capture a Markdown checkbox task in todo_file.
+
+:NeolitCaptureRequirement
+    Capture the next R-NN requirement in spec_file.
+
+:NeolitCaptureCriterion
+    Capture the next AC-NN acceptance criterion in spec_file.
+
 ==============================================================================
 WORKSPACE                                                          *neolit-usage*
 
@@ -112,6 +127,25 @@ Planning documents remain ordinary editable Markdown. Derived annotations and
 states are based on parsed planning data and Git metadata. File hints are not
 proof of implementation; verification requires matching evidence for the
 current base and diff.
+
+==============================================================================
+CAPTURE AND JOURNAL                                               *neolit-capture*
+
+The journal is stored as monthly Markdown files in journal_dir. Each file uses
+daily level-two headings and timestamped entries. todo_file and spec_file are
+repository-relative paths; their configured files are loaded even when they
+are not linked from README. Other linked TODO/SPEC documents remain discoverable.
+
+Default mappings:
+- <leader>nj captures a journal entry.
+- <leader>nJ opens the current monthly journal file.
+- <leader>nt captures a TODO checkbox.
+- <leader>nR captures the next R-NN requirement.
+- <leader>nA captures the next AC-NN acceptance criterion.
+
+Capture buffers save with Ctrl-S or :write and cancel with Ctrl-C. Captured
+TODO tasks still need explicit SPEC references; acceptance criteria should
+name their applicable R-NN requirement IDs.
 
 ==============================================================================
 CONTEXT COMPOSITION                                                *neolit-context*
