@@ -1,6 +1,58 @@
 --- Read-only Git-native planning workspace backed by the shared TypeScript core.
 local M = {}
 
+local function agent_bindings_path()
+  return vim.fn.stdpath("state") .. "/neolit/agent-sessions.json"
+end
+
+local function canonical_worktree(root)
+  return vim.fn.resolve(vim.fn.fnamemodify(root or vim.fn.getcwd(), ":p"))
+end
+
+local function read_agent_bindings()
+  local path = agent_bindings_path()
+  if vim.fn.filereadable(path) ~= 1 then return {} end
+  local lines = vim.fn.readfile(path)
+  local ok, value = pcall(vim.json.decode, table.concat(lines, "\\n"))
+  return ok and type(value) == "table" and value or {}
+end
+
+local function write_agent_bindings(bindings)
+  local path = agent_bindings_path()
+  vim.fn.mkdir(vim.fn.fnamemodify(path, ":h"), "p")
+  local temporary = path .. ".tmp"
+  local ok, encoded = pcall(vim.json.encode, bindings)
+  if not ok then return nil, encoded end
+  if vim.fn.writefile({ encoded }, temporary) ~= 0 then return nil, "cannot write " .. temporary end
+  if vim.fn.rename(temporary, path) ~= 0 then
+    vim.fn.delete(temporary)
+    return nil, "cannot replace " .. path
+  end
+  return true
+end
+
+function M.agent_session(root)
+  return read_agent_bindings()[canonical_worktree(root)]
+end
+
+function M.bind_agent_session(root, session_id, label)
+  if type(session_id) ~= "string" or session_id:match("^%s*$") then
+    return nil, "agent session ID is required"
+  end
+  local bindings = read_agent_bindings()
+  bindings[canonical_worktree(root)] = {
+    id = session_id,
+    label = type(label) == "string" and label ~= "" and label or session_id,
+  }
+  return write_agent_bindings(bindings)
+end
+
+function M.unbind_agent_session(root)
+  local bindings = read_agent_bindings()
+  bindings[canonical_worktree(root)] = nil
+  return write_agent_bindings(bindings)
+end
+
 local function state_reason(state, projection)
   if state == "unmapped" then return "No valid SPEC requirement reference" end
   if state == "blocked" then return "Blocked by an explicit blocker" end
@@ -710,8 +762,10 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
     local association = associations[file.path]
     if not association or association.state == "unplanned" then unplanned_count = unplanned_count + 1 end
   end
+  local agent_session = M.agent_session(root)
   add("NEOLIT · " .. vim.fn.fnamemodify(root, ":t") .. " · " .. workspace.git.branch
     .. "@" .. (workspace.git.base or workspace.git.head):sub(1, 8)
+    .. " · AGENT " .. (agent_session and agent_session.label or "UNBOUND")
     .. " · " .. #((workspace.tasks) or {}) .. "T/" .. requirement_count .. "R/"
     .. #((workspace.git.changedFiles) or {}) .. "Δ/" .. unplanned_count .. "?"
     .. " · " .. (filter_mode == "affected" and "AFFECTED" or "ALL")
