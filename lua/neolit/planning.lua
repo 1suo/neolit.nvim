@@ -1996,8 +1996,10 @@ function M.open(opts)
       local function send_draft()
         local adapter = cfg.agent and cfg.agent.send
         if type(adapter) ~= "function" then
-          vim.notify("No agent chat adapter configured (cfg.agent.send)", vim.log.levels.WARN)
-          return
+          local opencode = require("neolit.opencode")
+          adapter = function(request)
+            return opencode.send(cfg.opencode or {}, request)
+          end
         end
         if not session or type(session.id) ~= "string" then
           vim.notify("No agent session bound to this worktree", vim.log.levels.WARN)
@@ -2078,7 +2080,7 @@ function M.open(opts)
         if vim.api.nvim_win_is_valid(win_id) then vim.api.nvim_win_close(win_id, true) end
       end)
       pcall(vim.api.nvim_buf_set_name, draft_buf, "neolit://chat-draft-" .. draft_buf)
-      vim.notify("Chat draft: type under You; <C-s> sends to the bound session; replies stream below Agent")
+      vim.notify("OpenCode chat: type under You; <C-s> sends to the bound session; replies appear below Agent")
     end
     local function clear_context()
       context_chunks, context_keys = {}, {}
