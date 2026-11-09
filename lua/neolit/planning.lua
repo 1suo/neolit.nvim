@@ -133,6 +133,84 @@ local function highlight_unified_source(buf, diff_lines, old_lines, new_lines, f
   project(new_lines, new_map, "+")
 end
 
+local function render_planning_semantics(buf, workspace, relative_path)
+  if not vim.api.nvim_buf_is_valid(buf) or type(workspace) ~= "table" then return end
+  local ns = vim.api.nvim_create_namespace("neolit-planning-source-" .. buf)
+  vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1)
+  local task_states, requirement_states = {}, {}
+  for _, item in ipairs((workspace.derived and workspace.derived.tasks) or {}) do
+    if item.taskKey then task_states[item.taskKey] = item end
+  end
+  for _, item in ipairs((workspace.derived and workspace.derived.requirements) or {}) do
+    if item.specPath and item.requirementId then
+      requirement_states[item.specPath .. "#" .. item.requirementId] = item
+    end
+  end
+  local function decorate(line, label, group)
+    local row = tonumber(line) and tonumber(line) - 1 or -1
+    if row < 0 or row >= vim.api.nvim_buf_line_count(buf) then return end
+    pcall(vim.api.nvim_buf_set_extmark, buf, ns, row, 0, {
+      virt_text = { { "  · " .. label, group or "DiagnosticInfo" } },
+      virt_text_pos = "eol",
+      priority = 120,
+    })
+  end
+  for _, task in ipairs(workspace.tasks or {}) do
+    local path = task.key and task.key:match("^(.-)::")
+    if path == relative_path and task.range and task.range.startLine then
+      local projection = task_states[task.key]
+      local state = projection and projection.state or task.state or "planned"
+      local linked = #(task.resolvedRequirements or {})
+      local changed = #(projection and projection.changedPaths or {})
+      local group = state == "verified" and "DiagnosticOk"
+        or state == "blocked" and "DiagnosticError"
+        or (state == "in-progress" or state == "unmapped") and "DiagnosticWarn"
+        or "DiagnosticInfo"
+      local detail = state:upper() .. " · " .. linked .. " SPEC"
+      if changed > 0 then detail = detail .. " · " .. changed .. " changed files" end
+      decorate(task.range.startLine, detail, group)
+    end
+  end
+  for _, spec in ipairs(workspace.specs or {}) do
+    if spec.path == relative_path then
+      for _, requirement in ipairs(spec.requirements or {}) do
+        local ref = spec.path .. "#" .. requirement.id
+        local projection = requirement_states[ref]
+        local state = projection and projection.state or "unplanned"
+        local linked = 0
+        for _, task in ipairs(workspace.tasks or {}) do
+          for _, item in ipairs(task.resolvedRequirements or {}) do
+            if item.specPath == spec.path and item.id == requirement.id then linked = linked + 1; break end
+          end
+        end
+        local group = state == "verified" and "DiagnosticOk"
+          or state == "blocked" and "DiagnosticError"
+          or (state == "in-progress" or state == "unmapped") and "DiagnosticWarn"
+          or "DiagnosticInfo"
+        decorate(requirement.range and requirement.range.startLine,
+          state:upper() .. " · " .. linked .. " linked tasks", group)
+        for _, criterion in ipairs(requirement.acceptanceCriteria or {}) do
+          local covered, verified = 0, 0
+          for _, task in ipairs(workspace.tasks or {}) do
+            for _, item in ipairs(task.resolvedAcceptanceCriteria or {}) do
+              if item.specPath == spec.path and item.id == criterion.id then
+                covered = covered + 1
+                local task_projection = task_states[task.key]
+                for _, evidence in ipairs((task_projection and task_projection.acceptanceCriteria) or {}) do
+                  if evidence.ref == ref .. "/" .. criterion.id and evidence.verified then verified = verified + 1 end
+                end
+              end
+            end
+          end
+          decorate(criterion.range and criterion.range.startLine,
+            (verified > 0 and "VERIFIED" or covered > 0 and "LINKED" or "UNCOVERED"),
+            verified > 0 and "DiagnosticOk" or covered > 0 and "DiagnosticInfo" or "DiagnosticWarn")
+        end
+      end
+    end
+  end
+end
+
 local function open_diff(root, file, selected_hunk, comparison_base, selected_line, diff_state, focus)
   local original_win = vim.api.nvim_get_current_win()
   local function restore_focus()
@@ -802,6 +880,7 @@ function M.open(opts)
     local target_buf = vim.fn.bufadd(target)
     vim.fn.bufload(target_buf)
     set_source_language(target_buf, relative_path)
+    render_planning_semantics(target_buf, vim.b[buf].neolit_workspace, relative_path)
     -- Hover previews should not flood the user's buffer list. Preserve the
     -- listed state of buffers that were already open before Neolit previewed them.
     if existing_buf < 0 then vim.bo[target_buf].buflisted = false end
