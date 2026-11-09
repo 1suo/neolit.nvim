@@ -687,8 +687,18 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
     end
   end
 
+  local requirement_count, unplanned_count = 0, 0
+  for _, spec in ipairs(workspace.specs or {}) do
+    requirement_count = requirement_count + #(spec.requirements or {})
+  end
+  for _, file in ipairs(workspace.git.changedFiles or {}) do
+    local association = associations[file.path]
+    if not association or association.state == "unplanned" then unplanned_count = unplanned_count + 1 end
+  end
   add("NEOLIT · " .. vim.fn.fnamemodify(root, ":t") .. " · " .. workspace.git.branch
     .. "@" .. (workspace.git.base or workspace.git.head):sub(1, 8)
+    .. " · " .. #((workspace.tasks) or {}) .. "T/" .. requirement_count .. "R/"
+    .. #((workspace.git.changedFiles) or {}) .. "Δ/" .. unplanned_count .. "?"
     .. " · " .. (filter_mode == "affected" and "AFFECTED" or "ALL")
     .. " · f filter · v view · ? keys", { kind = "header" })
 
