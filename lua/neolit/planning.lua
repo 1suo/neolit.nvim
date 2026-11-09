@@ -556,11 +556,11 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
     for _, item in ipairs(workspace.git.hunkAssociations or {}) do
       if item.path == path then file_hunks[#file_hunks + 1] = item end
     end
-    local has_children = (kind == "TODO" and #(tasks_by_doc[path] or {}) > 0)
-      or (kind == "SPEC" and #(requirements_by_doc[path] or {}) > 0)
-      or (changed ~= nil and ((file_association and #(file_association.taskKeys or {}) > 0) or #file_hunks > 0))
+    -- TODO/SPEC contents are presented in their source buffers, not duplicated
+    -- as a second navigation tree. Only changed code files expand to evidence.
+    local has_children = changed ~= nil
+      and ((file_association and #(file_association.taskKeys or {}) > 0) or #file_hunks > 0)
     add(prefix .. branch .. (has_children and (is_expanded and "-" or "+") or " ")
-      .. (kind and kind ~= "README" and ("[" .. kind .. "] ") or "")
       .. entry.name
       .. (marker ~= "" and (" " .. marker) or "")
       .. (status and (" [" .. git_marker .. "]") or ""),
@@ -569,105 +569,6 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
         association = association, git_status = status, expanded = is_expanded, expandable = has_children,
         parent_key = path:match("^(.*)/[^/]+$") and ("dir:" .. path:match("^(.*)/[^/]+$")) or nil })
     if not is_expanded then return end
-    if kind == "TODO" then
-      for _, task in ipairs(tasks_by_doc[path] or {}) do render_task(task, child_prefix, child_depth) end
-    elseif kind == "SPEC" then
-      for _, requirement in ipairs(requirements_by_doc[path] or {}) do
-        local ref = path .. "#" .. requirement.id
-        local projection = requirement_projections[ref]
-        local state = requirement_states[ref] or "unplanned"
-        local reference_path = path
-        for _, document in ipairs(workspace.specs or {}) do
-          if document.path == path then reference_path = path; break end
-        end
-        local requirement_key = "requirement:" .. ref
-        local requirement_expanded = expanded_tasks[requirement_key] == true
-        local linked_tasks = {}
-        for _, task_key in ipairs(projection and projection.taskKeys or {}) do
-          if tasks_by_key[task_key] then linked_tasks[#linked_tasks + 1] = tasks_by_key[task_key] end
-        end
-        local reviews = projection and projection.hunkReviews or {}
-        local criteria = {}
-        local verified_by_ref = {}
-        for _, item in ipairs(projection and projection.acceptanceCriteria or {}) do
-          verified_by_ref[item.ref] = item.verified == true
-        end
-        local spec_document
-        for _, spec in ipairs(workspace.specs or {}) do
-          if spec.path == path then spec_document = spec; break end
-        end
-        if spec_document then
-          for _, criterion in ipairs(spec_document.acceptanceCriteria or {}) do
-            if vim.tbl_contains(criterion.requirementIds or {}, requirement.id) then
-              local criterion_ref = path .. "#" .. criterion.id
-              criteria[#criteria + 1] = {
-                ref = criterion_ref, text = criterion.text, range = criterion.range,
-                specPath = path, verified = verified_by_ref[criterion_ref] == true,
-              }
-            end
-          end
-          -- The core also links an AC without explicit R-IDs when its task has
-          -- exactly one requirement in this SPEC. Preserve that resolved link.
-          for _, coverage in ipairs(projection and projection.acceptanceCriteria or {}) do
-            local exists = false
-            for _, criterion in ipairs(criteria) do
-              if criterion.ref == coverage.ref then exists = true; break end
-            end
-            if not exists then
-              local id = coverage.ref:match("#([^#]+)$")
-              for _, criterion in ipairs(spec_document.acceptanceCriteria or {}) do
-                if criterion.id == id then
-                  criteria[#criteria + 1] = {
-                    ref = coverage.ref, text = criterion.text, range = criterion.range,
-                    specPath = path, verified = coverage.verified == true,
-                  }
-                  break
-                end
-              end
-            end
-          end
-        end
-        local has_details = #linked_tasks + #reviews + #criteria > 0
-        add(child_prefix .. string.rep(" ", child_depth) .. (has_details and (requirement_expanded and "- " or "+ ") or "  ")
-          .. requirement.id .. " " .. state:upper() .. " " .. (requirement.text or ""),
-          { kind = "requirement", key = requirement_key, parent_key = "file:" .. path,
-            requirement = requirement, spec_path = path, reference_path = reference_path, projection = projection,
-            expanded = requirement_expanded, expandable = has_details })
-        if requirement_expanded then
-          if #(requirement.headingPath or {}) > 0 then
-            add(child_prefix .. string.rep(" ", child_depth + 1)
-              .. "SECTION " .. table.concat(requirement.headingPath, " / "),
-              { kind = "requirement_heading", parent_key = requirement_key, requirement = requirement })
-          end
-          add(child_prefix .. string.rep(" ", child_depth + 1)
-            .. requirement_state_reason(state, linked_tasks),
-            { kind = "requirement_explanation", parent_key = requirement_key, requirement = requirement, projection = projection })
-          for _, task in ipairs(linked_tasks) do
-            local task_state = derived_tasks[task.key]
-            local value = type(task_state) == "table" and task_state.state or task.state
-            add(child_prefix .. string.rep(" ", child_depth + 1) .. "TASK " .. tostring(value):upper() .. " " .. task.text,
-              { kind = "requirement_task", parent_key = requirement_key, task = task })
-          end
-          for _, criterion in ipairs(criteria) do
-            add(child_prefix .. string.rep(" ", child_depth + 1)
-              .. "AC " .. criterion.ref .. " " .. (criterion.verified and "VERIFIED" or "UNVERIFIED"),
-              { kind = "requirement_criterion", parent_key = requirement_key, criterion = criterion })
-          end
-          for _, review in ipairs(reviews) do
-            local file = find_changed_file(review.path)
-            local hunk_association
-            for _, item in ipairs(workspace.git.hunkAssociations or {}) do
-              if item.path == review.path and item.hunkIndex == review.hunkIndex then hunk_association = item; break end
-            end
-            add(child_prefix .. string.rep(" ", child_depth + 1) .. "HUNK " .. review.path .. "#"
-              .. tostring(review.hunkIndex + 1) .. " " .. hunk_review_summary(review),
-              { kind = "task_hunk", parent_key = requirement_key, file = file,
-                hunk = find_changed_hunk(file, review.hunkIndex), hunkIndex = review.hunkIndex,
-                hunkAssociation = hunk_association, requirement = requirement })
-          end
-        end
-      end
-    end
     if changed then
       for _, task_key in ipairs(file_association and file_association.taskKeys or {}) do
         local task = tasks_by_key[task_key]
@@ -763,9 +664,6 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
       elseif row.kind == "tree_directory" then
         vim.api.nvim_buf_add_highlight(buf, rich_ns, "Directory", line - 1, 0, -1)
       elseif row.kind == "planning_document" then
-        mark(line, "[" .. tostring(row.doc_kind) .. "]", "Special")
-        if row.doc_kind == "TODO" then mark(line, "tasks", "Comment")
-        elseif row.doc_kind == "SPEC" then mark(line, "requirements", "Comment") end
       elseif row.kind == "task" then
         mark(line, row.task.checked and "[x]" or "[ ]", row.task.checked and "DiagnosticOk" or "Comment")
         local task_state = derived_tasks[row.task.key]
@@ -801,7 +699,6 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
           mark(line, code, git_group)
         end
       elseif row.kind == "file" then
-        if row.doc_kind then mark(line, "[" .. row.doc_kind .. "]", "Special") end
         local association = row.association or {}
         if not row.doc_kind then
           local group = association.state == "unplanned" and "DiagnosticWarn" or "DiagnosticInfo"
