@@ -346,6 +346,8 @@ local function open_diff(root, file, selected_hunk, comparison_base, selected_li
     if diff_state then diff_state.base_win = nil end
   end
 
+  vim.wo[win].cursorbind = false
+  vim.wo[win].scrollbind = false
   local result = vim.system(diff_command(file, comparison_base), { cwd = root, text = true }):wait()
   local diff_lines = vim.split(result.stdout or "", "\n", { plain = true })
   if diff_lines[#diff_lines] == "" then table.remove(diff_lines) end
