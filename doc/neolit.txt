@@ -214,7 +214,12 @@ Agent notes:
 DEFAULT KEYMAPS                                                    *neolit-keymaps*
 
   Action                 Mapping          Context
-  open_workspace         <leader>nn       workspace\n  open_journal           <leader>nJ       global\n  capture_journal        <leader>nj       global\n  capture_task           <leader>nt       global\n  capture_requirement    <leader>nR       global\n  capture_criterion      <leader>nA       global
+  open_workspace         <leader>nn       workspace
+  open_journal           <leader>nJ       global
+  capture_journal        <leader>nj       global
+  capture_task           <leader>nt       global
+  capture_requirement    <leader>nR       global
+  capture_criterion      <leader>nA       global
   tree_composed          <leader>nv       tree
   tree_open_selected     <CR>             tree
   tree_open_file         o                tree
