@@ -661,19 +661,11 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
         end
       end
       for _, item in ipairs(file_hunks) do
-        local names = {}
-        for _, task_key in ipairs(item.candidateTaskKeys or {}) do
-          local task = tasks_by_key[task_key]
-          if task then names[#names + 1] = task.text end
-        end
-        local requirements = item.candidateRequirementRefs or {}
-        local related_parts = {}
-        if #names > 0 then related_parts[#related_parts + 1] = "tasks: " .. table.concat(names, ", ") end
-        if #requirements > 0 then related_parts[#related_parts + 1] = "SPEC: " .. table.concat(requirements, ", ") end
-        local related = #related_parts > 0 and table.concat(related_parts, " · ")
-          or "no task or requirement candidate"
+        local task_count = #(item.candidateTaskKeys or {})
+        local requirement_count = #(item.candidateRequirementRefs or {})
+        local related = task_count .. " task · " .. requirement_count .. " req"
         add(child_prefix .. " HUNK " .. tostring(item.hunkIndex + 1) .. " "
-          .. tostring(item.state):upper() .. " · " .. tostring(item.reason) .. " · " .. related,
+          .. tostring(item.state):upper() .. " · " .. related,
           { kind = "task_hunk", key = "file-hunk:" .. path .. ":" .. tostring(item.hunkIndex),
             parent_key = "file:" .. path, file = changed, hunkIndex = item.hunkIndex,
             hunk = find_changed_hunk(changed, item.hunkIndex), hunkAssociation = item })
@@ -1358,19 +1350,48 @@ function M.open(opts)
       return row
     end
     local scoped_task_count, scoped_requirement_count = 0, 0
-    for _, task in ipairs(workspace.tasks or {}) do
-      local include = not scope_path or task_path(task) == scope_path
-      if scope_path and mode == "tasks" and not include then
-        for _, requirement in ipairs(task.resolvedRequirements or {}) do
-          if requirement.specPath == scope_path then include = true; break end
+    if mode == "requirements" then
+      local included_tasks, included_specs = {}, {}
+      if not scope_path then
+        for _, spec in ipairs(workspace.specs or {}) do included_specs[spec.path] = true end
+      else
+        for _, spec in ipairs(workspace.specs or {}) do
+          if spec.path == scope_path then included_specs[spec.path] = true end
+        end
+        if not included_specs[scope_path] then
+          for _, task in ipairs(workspace.tasks or {}) do
+            if task_path(task) == scope_path then
+              for _, requirement in ipairs(task.resolvedRequirements or {}) do included_specs[requirement.specPath] = true end
+            end
+          end
         end
       end
-      if include then scoped_task_count = scoped_task_count + 1 end
-    end
-    for _, spec in ipairs(workspace.specs or {}) do
-      if not scope_path or spec.path == scope_path or mode == "tasks" then
-        for _, requirement in ipairs(spec.requirements or {}) do scoped_requirement_count = scoped_requirement_count + 1 end
+      for _, spec in ipairs(workspace.specs or {}) do
+        if included_specs[spec.path] then
+          scoped_requirement_count = scoped_requirement_count + #(spec.requirements or {})
+          for _, requirement in ipairs(spec.requirements or {}) do
+            for _, task in ipairs(requirement_tasks(spec.path, requirement.id)) do included_tasks[task.key] = true end
+          end
+        end
       end
+      for _ in pairs(included_tasks) do scoped_task_count = scoped_task_count + 1 end
+    else
+      local included_requirements = {}
+      for _, task in ipairs(workspace.tasks or {}) do
+        local include = not scope_path or task_path(task) == scope_path
+        if scope_path and not include then
+          for _, requirement in ipairs(task.resolvedRequirements or {}) do
+            if requirement.specPath == scope_path then include = true; break end
+          end
+        end
+        if include then
+          scoped_task_count = scoped_task_count + 1
+          for _, requirement in ipairs(task.resolvedRequirements or {}) do
+            included_requirements[requirement.specPath .. "#" .. requirement.id] = true
+          end
+        end
+      end
+      for _ in pairs(included_requirements) do scoped_requirement_count = scoped_requirement_count + 1 end
     end
     add("NEOLIT · " .. (mode == "tasks" and "TASKS" or "REQUIREMENTS")
       .. (scope_path and (" · " .. vim.fn.fnamemodify(scope_path, ":t")) or "")
