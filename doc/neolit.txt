@@ -8,14 +8,13 @@ INSTALLATION                                                     *neolit-install
 Requirements:
 - Neovim 0.10+
 - Node.js 22.12+
-- The Neolit core package, installed once with:
-
-  npm install -g neolit
+- Node.js 22.12+ and npm. The lazy.nvim build step installs and builds the core automatically.
 
 Install 1suo/neolit.nvim with your plugin manager. Example lazy.nvim spec:
 
   {
     "1suo/neolit.nvim",
+    build = "npm install",
     dependencies = { "olimorris/codecompanion.nvim" },
     opts = {
       comparison_base = "HEAD",
@@ -46,7 +45,7 @@ Call require("neolit").setup(opts), or provide opts through your plugin manager.
     },
   }
 
-Core discovery is automatic: Neolit uses the globally installed npm package. For development, it also recognizes a sibling ../neolit checkout or the NEOLIT_DIR environment variable. No core path belongs in your Neovim config.
+The plugin build step installs and builds the core dependency inside the plugin. No global install, second checkout, or core path configuration is required.
 
 Keymap overrides are per action. Set an action to false or "" to disable it.
 Unspecified actions keep their defaults. The full action list is in
