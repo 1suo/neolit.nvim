@@ -65,6 +65,8 @@ derived annotations beside source entries. Changed files expand to show
 candidate task links and hunk attribution. File-path hints never prove
 implementation. Selecting a changed file or hunk navigates to its working-tree
 source; `<leader>ne` opens CodeCompanion Code Review for the actual diff review.
+`<leader>nC` opens CodeCompanion's agent-edited-files quickfix list (ACP/tool edits
+observed during the current Neovim session).
 
 The composed view connects SPEC requirements, TODO tasks, acceptance criteria,
 file hints, and observed Git changes. `za` expands semantic entries and scope
@@ -97,6 +99,7 @@ ordinary source-file buffers.
 | `<leader>nM` | Add composed context to active CodeCompanion chat |
 | `<leader>no` | Open selected source from composed views |
 | `<leader>ne` | Open CodeCompanion Code Review |
+| `<leader>nC` | Open CodeCompanion agent changes list |
 | `<leader>nD` | Delete selected planning entry |
 | `<leader>nx` / `<leader>nl` | Copy selected text / source path |
 | `<leader>nf` | Toggle affected-only paths |
