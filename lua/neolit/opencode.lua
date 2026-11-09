@@ -63,8 +63,8 @@ local function request(opts, method, path, body, callback)
   if not ok then callback(nil, process); return end
 end
 
-local function session_path(session_id, directory)
-  return "/session/" .. encode_path(session_id) .. "?directory=" .. encode_path(directory)
+local function session_path(session_id, directory, suffix)
+  return "/session/" .. encode_path(session_id) .. (suffix or "") .. "?directory=" .. encode_path(directory)
 end
 
 function M.send(opts, input)
@@ -91,7 +91,7 @@ function M.send(opts, input)
       end
     end
 
-    request(opts, "POST", session_path(session_id, directory) .. "/message", {
+    request(opts, "POST", session_path(session_id, directory, "/message"), {
       parts = { { type = "text", text = input.message } },
     }, function(response, send_err)
       if send_err then input.on_error(send_err); return end
