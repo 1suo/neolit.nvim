@@ -166,7 +166,10 @@ In the tree or a composed view, select a TODO task, SPEC requirement, or accepta
 | --- | --- | --- |
 | node | "node" | Node.js executable |
 | directory | current working directory | Repository to inspect |
-| comparison_base | "HEAD" | Git base for change discovery |\n| journal_dir | "~/Documents/memo/journal" | Directory for monthly journal Markdown files |\n| todo_file | "TODO.md" | Repository-relative TODO capture and discovery path |\n| spec_file | "SPEC.md" | Repository-relative SPEC capture and discovery path |
+| comparison_base | "HEAD" | Git base for change discovery |
+| journal_dir | "~/Documents/memo/journal" | Directory for monthly journal Markdown files |
+| todo_file | "TODO.md" | Repository-relative TODO capture and discovery path |
+| spec_file | "SPEC.md" | Repository-relative SPEC capture and discovery path |
 | codecompanion.adapter | "opencode" | CodeCompanion adapter for <leader>nm |
 | keymaps | see below | Per-action normal-mode mapping overrides |
 
