@@ -2193,7 +2193,7 @@ function M.open(opts)
       for _, file in ipairs(workspace.git.changedFiles or {}) do
         if not changed_set[file.path] then other_changes[#other_changes + 1] = file end
       end
-      scope_add("NEOLIT · TASK SCOPE · OBSERVED · za expand · <CR> open · <leader>nx copy · q back · ?",
+      scope_add("NEOLIT · TASK SCOPE · OBSERVED · za expand · <leader>no open · <leader>nx copy · <leader>na add context · <leader>nd remove context · <leader>nq back · ?",
         { kind = "header" })
       scope_add("[" .. state_mark(state) .. "] " .. task.text,
         source_row("task", task_path(task), task.range, task.text, { task = task }))
@@ -2332,6 +2332,8 @@ function M.open(opts)
       end
       bind_key(view_buf, cfg, "open_source", "<CR>", navigate)
       bind_key(view_buf, cfg, "copy_source", "<leader>nx", copy_chunk)
+      bind_key(view_buf, cfg, "context_add", "<leader>na", append_context)
+      bind_key(view_buf, cfg, "context_remove", "<leader>nd", remove_context)
       vim.keymap.set("n", "za", function()
         local row = selected_view_row()
         if not row or row.kind ~= "section" or not row.section_key then return end
