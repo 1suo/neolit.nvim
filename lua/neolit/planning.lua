@@ -1913,9 +1913,30 @@ function M.open(opts)
       local output = compose_context()
       if output then copy_value(output, "Composed context") end
     end
-    local function open_codecompanion_chat()
+    local function add_context_to_codecompanion()
       local context = compose_context()
       if not context then return end
+      if vim.fn.exists(":CodeCompanionChat") ~= 2 then
+        vim.notify("CodeCompanion.nvim is required for Neolit chat", vim.log.levels.ERROR)
+        return
+      end
+      local context_buf = vim.api.nvim_create_buf(false, true)
+      vim.bo[context_buf].buftype = "nofile"
+      vim.bo[context_buf].bufhidden = "wipe"
+      vim.bo[context_buf].swapfile = false
+      vim.api.nvim_buf_set_lines(context_buf, 0, -1, false, vim.split(context, "\\n", { plain = true }))
+      local added, add_err = pcall(vim.api.nvim_buf_call, context_buf, function()
+        vim.cmd("normal! ggVG")
+        vim.cmd("CodeCompanionChat Add")
+      end)
+      if not added then
+        if vim.api.nvim_buf_is_valid(context_buf) then pcall(vim.api.nvim_buf_delete, context_buf, { force = true }) end
+        vim.notify("Could not add Neolit context to the active CodeCompanion chat: " .. tostring(add_err), vim.log.levels.ERROR)
+        return
+      end
+      if vim.api.nvim_buf_is_valid(context_buf) then pcall(vim.api.nvim_buf_delete, context_buf, { force = true }) end
+    end
+    local function open_codecompanion_chat()
       if vim.fn.exists(":CodeCompanionChat") ~= 2 then
         vim.notify("CodeCompanion.nvim is required for Neolit chat", vim.log.levels.ERROR)
         return
@@ -1927,26 +1948,7 @@ function M.open(opts)
       end
       vim.cmd("lcd " .. vim.fn.fnameescape(root))
       local ok, err = pcall(vim.cmd, "CodeCompanionChat adapter=" .. adapter)
-      if not ok then
-        vim.notify("Could not open CodeCompanion chat: " .. tostring(err), vim.log.levels.ERROR)
-        return
-      end
-
-      local context_buf = vim.api.nvim_create_buf(false, true)
-      vim.bo[context_buf].buftype = "nofile"
-      vim.bo[context_buf].bufhidden = "wipe"
-      vim.bo[context_buf].swapfile = false
-      vim.api.nvim_buf_set_lines(context_buf, 0, -1, false, vim.split(context, "\n", { plain = true }))
-      local added, add_err = pcall(vim.api.nvim_buf_call, context_buf, function()
-        vim.cmd("normal! ggVG")
-        vim.cmd("CodeCompanionChat Add")
-      end)
-      if not added then
-        if vim.api.nvim_buf_is_valid(context_buf) then pcall(vim.api.nvim_buf_delete, context_buf, { force = true }) end
-        vim.notify("Could not add Neolit context to CodeCompanion: " .. tostring(add_err), vim.log.levels.ERROR)
-        return
-      end
-      if vim.api.nvim_buf_is_valid(context_buf) then pcall(vim.api.nvim_buf_delete, context_buf, { force = true }) end
+      if not ok then vim.notify("Could not open CodeCompanion chat: " .. tostring(err), vim.log.levels.ERROR) end
     end
     local function clear_context()
       context_chunks, context_keys = {}, {}
@@ -2032,7 +2034,7 @@ function M.open(opts)
       open_composed_view(mode, scope_path, row.key)
     end, { buffer = view_buf, silent = true })
     bind_key(view_buf, cfg, "view_help", "<leader>n?", function()
-      vim.notify("Workspace: za expand/collapse · <leader>ns task scope · <leader>np review · <leader>no source · <leader>na add · <leader>n- remove · <leader>ny copy · <leader>nc clear · <leader>nx copy · <leader>nl path · <leader>nv switch · <leader>nm chat · <leader>nq back", vim.log.levels.INFO)
+      vim.notify("Workspace: za expand/collapse · <leader>ns task scope · <leader>np review · <leader>no source · <leader>na add · <leader>n- remove · <leader>ny copy · <leader>nc clear · <leader>nx copy · <leader>nl path · <leader>nv switch · <leader>nm chat · <leader>nM send context to chat · <leader>nq back", vim.log.levels.INFO)
     end)
     bind_key(view_buf, cfg, "copy_source", "<leader>nx", copy_chunk)
     bind_key(view_buf, cfg, "context_add", "<leader>na", append_context)
@@ -2201,6 +2203,7 @@ function M.open(opts)
       bind_key(view_buf, cfg, "open_source", "<CR>", navigate)
       bind_key(view_buf, cfg, "copy_source", "<leader>nx", copy_chunk)
       bind_key(view_buf, cfg, "context_add", "<leader>na", append_context)
+      bind_key(view_buf, cfg, "chat_context", "<leader>nM", add_context_to_codecompanion)
       bind_key(view_buf, cfg, "context_remove", "<leader>nd", remove_context)
       vim.keymap.set("n", "za", function()
         local row = selected_view_row()
@@ -2233,6 +2236,7 @@ function M.open(opts)
     bind_key(view_buf, cfg, "context_clear", "<leader>nc", clear_context)
     bind_key(view_buf, cfg, "context_review", "<leader>np", open_context_view)
     bind_key(view_buf, cfg, "chat_open", "<leader>nm", open_codecompanion_chat)
+    bind_key(view_buf, cfg, "chat_context", "<leader>nM", add_context_to_codecompanion)
     bind_key(view_buf, cfg, "copy_path", "<leader>nl", function()
       local row = selected_view_row()
       if row and row.path then copy_value(row.path .. (row.line and (":" .. row.line) or ""), "Source path") end
@@ -2632,7 +2636,7 @@ function M.open(opts)
   map("<leader>nx", copy_selected_text, "copy_text", "copy_text")
   map("<leader>nl", copy_selected_path, "copy_path", "copy_path")
   map("<leader>n?", function()
-    vim.notify("Tree: <leader>nv composed view · <CR> open/expand · za/zo/zc fold · zr/zm one level · zR/zM all · <leader>nf affected-only · <leader>nD delete · <leader>nd diff layout · <leader>ne edit · <leader>no open file · <leader>nx copy text · <leader>nl path · <leader>nr refresh · <leader>nm CodeCompanion chat · <leader>nq close", vim.log.levels.INFO)
+    vim.notify("Tree: <leader>nv composed view · <CR> open/expand · za/zo/zc fold · zr/zm one level · zR/zM all · <leader>nf affected-only · <leader>nD delete · <leader>nd diff layout · <leader>ne edit · <leader>no open file · <leader>nx copy text · <leader>nl path · <leader>nr refresh · <leader>nm CodeCompanion chat · <leader>nM add context · <leader>nq close", vim.log.levels.INFO)
   end, "tree_help", "tree_help")
   local function close_workspace()
     refresh_revision = refresh_revision + 1
