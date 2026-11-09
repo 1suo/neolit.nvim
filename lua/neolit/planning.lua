@@ -1303,6 +1303,240 @@ function M.open(opts)
     end
   end
 
+
+  local function open_composed_view(mode, scope_path)
+    local workspace = vim.b[buf].neolit_workspace
+    if type(workspace) ~= "table" then return end
+    local lines, rows = {}, {}
+    local function add(value, row)
+      lines[#lines + 1] = value
+      rows[#lines] = row
+    end
+    local task_states, requirement_states = {}, {}
+    for key, projection in pairs((workspace.derived and workspace.derived.tasks) or {}) do
+      task_states[key] = projection
+    end
+    for _, projection in ipairs((workspace.derived and workspace.derived.requirements) or {}) do
+      requirement_states[projection.specPath .. "#" .. projection.requirementId] = projection
+    end
+    local function task_path(task)
+      return task.key and task.key:match("^(.-)::") or nil
+    end
+    local function task_state(task)
+      local projection = task_states[task.key]
+      return projection and projection.state or task.state or "planned", projection
+    end
+    local function requirement_tasks(spec_path, requirement_id)
+      local result = {}
+      for _, task in ipairs(workspace.tasks or {}) do
+        for _, requirement in ipairs(task.resolvedRequirements or {}) do
+          if requirement.specPath == spec_path and requirement.id == requirement_id then
+            result[#result + 1] = task
+            break
+          end
+        end
+      end
+      return result
+    end
+    local function state_mark(state)
+      return tostring(state or "unmapped"):upper()
+    end
+    local function source_row(kind, path, range, text, extra)
+      local row = {
+        kind = kind, path = path,
+        line = range and range.startLine or 1,
+        first = range and range.startLine or 1,
+        last = range and range.endLine or (range and range.startLine or 1),
+        text = text,
+      }
+      for key, value in pairs(extra or {}) do row[key] = value end
+      return row
+    end
+    add("NEOLIT · " .. (mode == "tasks" and "TASK WORKSPACE" or "REQUIREMENT WORKSPACE")
+      .. (scope_path and (" · " .. scope_path) or "") .. " · v switch view · <CR> source · x copy chunk · y path", { kind = "header" })
+
+    if mode == "requirements" then
+      for _, spec in ipairs(workspace.specs or {}) do
+        if not scope_path or scope_path == spec.path then
+          add(spec.path, { kind = "document", path = spec.path, line = 1 })
+          for _, requirement in ipairs(spec.requirements or {}) do
+            local ref = spec.path .. "#" .. requirement.id
+            local projection = requirement_states[ref]
+            local linked = requirement_tasks(spec.path, requirement.id)
+            local state = projection and projection.state or "unplanned"
+            add("  " .. requirement.id .. " · " .. state_mark(state) .. " · " .. requirement.text,
+              source_row("requirement", spec.path, requirement.range, requirement.text,
+                { requirement = requirement, state = state, ref = ref }))
+            if #linked == 0 then
+              add("    (no linked TODO task)", { kind = "empty" })
+            else
+              for _, task in ipairs(linked) do
+                local task_state_value, task_projection = task_state(task)
+                local todo = task_path(task)
+                add("    " .. (task.checked and "[x] " or "[ ] ") .. state_mark(task_state_value) .. " · " .. task.text,
+                  source_row("task", todo, task.range, task.text,
+                    { task = task, state = task_state_value, projection = task_projection }))
+                for _, detail in ipairs(task.description or {}) do
+                  add("      " .. detail, source_row("task_detail", todo, task.range, detail, { task = task }))
+                end
+                for _, note in ipairs(task.agentNotes or {}) do
+                  add("      AGENT · " .. note, source_row("task_detail", todo, task.range, note, { task = task }))
+                end
+                for _, changed_path in ipairs((task_projection and task_projection.changedPaths) or {}) do
+                  add("      CHANGE · " .. changed_path, { kind = "changed_file", path = changed_path, line = 1 })
+                end
+              end
+            end
+            for _, criterion in ipairs(spec.acceptanceCriteria or {}) do
+              if vim.tbl_contains(criterion.requirementIds or {}, requirement.id) then
+                local covered, verified = false, false
+                for _, task in ipairs(linked) do
+                  for _, item in ipairs(task.resolvedAcceptanceCriteria or {}) do
+                    if item.specPath == spec.path and item.id == criterion.id then covered = true end
+                  end
+                  local projection = task_states[task.key]
+                  for _, evidence in ipairs((projection and projection.acceptanceCriteria) or {}) do
+                    if evidence.ref == (spec.path .. "#" .. criterion.id) and evidence.verified then verified = true end
+                  end
+                end
+                local label = verified and "VERIFIED" or covered and "LINKED" or "UNCOVERED"
+                add("    " .. criterion.id .. " · " .. label .. " · " .. criterion.text,
+                  source_row("criterion", spec.path, criterion.range, criterion.text,
+                    { criterion = criterion, verified = verified }))
+              end
+            end
+          end
+        end
+      end
+    else
+      local previous_path
+      for _, task in ipairs(workspace.tasks or {}) do
+        local todo = task_path(task)
+        local included = not scope_path or todo == scope_path
+        if scope_path and not included then
+          for _, requirement in ipairs(task.resolvedRequirements or {}) do
+            if requirement.specPath == scope_path then included = true; break end
+          end
+        end
+        if included then
+          if todo ~= previous_path then
+            previous_path = todo
+            add(todo or "TODO", { kind = "document", path = todo, line = 1 })
+          end
+          local state, projection = task_state(task)
+          add("  " .. (task.checked and "[x] " or "[ ] ") .. state_mark(state) .. " · " .. task.text,
+            source_row("task", todo, task.range, task.text,
+              { task = task, state = state, projection = projection }))
+          for _, requirement in ipairs(task.resolvedRequirements or {}) do
+            add("    SPEC · " .. requirement.specPath .. "#" .. requirement.id .. " · " .. requirement.text,
+              source_row("requirement", requirement.sourcePath or requirement.specPath,
+                requirement.range, requirement.text, { requirement = requirement }))
+          end
+          for _, detail in ipairs(task.description or {}) do
+            add("    " .. detail, source_row("task_detail", todo, task.range, detail, { task = task }))
+          end
+          for _, note in ipairs(task.agentNotes or {}) do
+            add("    AGENT · " .. note, source_row("task_detail", todo, task.range, note, { task = task }))
+          end
+          for _, changed_path in ipairs((projection and projection.changedPaths) or {}) do
+            add("    CHANGE · " .. changed_path, { kind = "changed_file", path = changed_path, line = 1 })
+          end
+        end
+      end
+    end
+    if #lines == 1 then add("  (no matching planning entries)", { kind = "empty" }) end
+
+    local win = diff_state.preview_win
+    if not win or not vim.api.nvim_win_is_valid(win) then
+      win = diff_state.tree_win
+      if not win or not vim.api.nvim_win_is_valid(win) then return end
+      vim.api.nvim_set_current_win(win)
+      vim.cmd("rightbelow vsplit")
+      win = vim.api.nvim_get_current_win()
+      diff_state.preview_win = win
+    end
+    if diff_state.base_win and vim.api.nvim_win_is_valid(diff_state.base_win) then
+      pcall(vim.api.nvim_win_call, diff_state.base_win, function() vim.cmd("diffoff") end)
+      pcall(vim.api.nvim_win_close, diff_state.base_win, true)
+      diff_state.base_win = nil
+      diff_state.working_win = nil
+    end
+    local view_buf = vim.api.nvim_create_buf(false, true)
+    vim.bo[view_buf].buftype = "nofile"
+    vim.bo[view_buf].bufhidden = "hide"
+    vim.bo[view_buf].swapfile = false
+    vim.bo[view_buf].buflisted = false
+    vim.bo[view_buf].filetype = "neolit-view"
+    vim.api.nvim_buf_set_lines(view_buf, 0, -1, false, lines)
+    vim.bo[view_buf].modifiable = false
+    vim.api.nvim_win_set_buf(win, view_buf)
+    vim.wo[win].wrap = vim.go.wrap
+    vim.wo[win].cursorline = true
+    local ns = vim.api.nvim_create_namespace("neolit-composed-view-" .. view_buf)
+    for line, row in pairs(rows) do
+      if row.kind == "header" or row.kind == "document" then
+        vim.api.nvim_buf_add_highlight(view_buf, ns, "Title", line - 1, 0, -1)
+      elseif row.kind == "requirement" then
+        vim.api.nvim_buf_add_highlight(view_buf, ns,
+          row.state == "verified" and "DiagnosticOk" or row.state == "blocked" and "DiagnosticError" or "Identifier",
+          line - 1, 0, -1)
+      elseif row.kind == "task" then
+        local group = row.state == "verified" or row.state == "implemented" and "DiagnosticOk"
+          or row.state == "blocked" and "DiagnosticError"
+          or row.state == "in-progress" or row.state == "unmapped" and "DiagnosticWarn"
+          or "Normal"
+        if type(group) ~= "string" then group = "Normal" end
+        vim.api.nvim_buf_add_highlight(view_buf, ns, group, line - 1, 0, -1)
+      elseif row.kind == "criterion" then
+        vim.api.nvim_buf_add_highlight(view_buf, ns, row.verified and "DiagnosticOk" or "DiagnosticWarn", line - 1, 0, -1)
+      elseif row.kind == "changed_file" then
+        vim.api.nvim_buf_add_highlight(view_buf, ns, "Directory", line - 1, 0, -1)
+      end
+    end
+    local function selected_view_row()
+      return rows[vim.api.nvim_win_get_cursor(win)[1]]
+    end
+    local function navigate()
+      local row = selected_view_row()
+      if not row then return end
+      if row.kind == "changed_file" then
+        local target = safe_repo_path(root, row.path)
+        if target and vim.fn.filereadable(target) == 1 then open_in_preview(row.path, row.line, true) end
+      elseif row.path and row.kind ~= "empty" and row.kind ~= "header" then
+        open_in_preview(row.path, row.line, true)
+      end
+    end
+    local function copy_chunk()
+      local row = selected_view_row()
+      if not row or not row.path or not row.first then return end
+      local target = safe_repo_path(root, row.path)
+      if not target or vim.fn.filereadable(target) ~= 1 then
+        vim.notify("Source chunk is no longer available; refresh the workspace", vim.log.levels.WARN)
+        return
+      end
+      local source_lines = vim.fn.readfile(target)
+      local chunk = {}
+      for index = row.first, math.min(row.last or row.first, #source_lines) do
+        chunk[#chunk + 1] = source_lines[index]
+      end
+      copy_value(table.concat(chunk, "\n"), row.kind == "task" and "TODO task" or "Planning chunk")
+    end
+    vim.keymap.set("n", "<CR>", navigate, { buffer = view_buf, silent = true })
+    vim.keymap.set("n", "x", copy_chunk, { buffer = view_buf, silent = true })
+    vim.keymap.set("n", "y", function()
+      local row = selected_view_row()
+      if row and row.path then copy_value(row.path .. (row.line and (":" .. row.line) or ""), "Source path") end
+    end, { buffer = view_buf, silent = true })
+    vim.keymap.set("n", "v", function()
+      open_composed_view(mode == "requirements" and "tasks" or "requirements", scope_path)
+    end, { buffer = view_buf, silent = true })
+    vim.keymap.set("n", "q", function()
+      if vim.api.nvim_win_is_valid(diff_state.tree_win) then vim.api.nvim_set_current_win(diff_state.tree_win) end
+    end, { buffer = view_buf, silent = true })
+    vim.api.nvim_set_current_win(win)
+    vim.api.nvim_win_set_cursor(win, { 1, 0 })
+  end
+
   local function map(lhs, fn, desc)
     vim.keymap.set("n", lhs, fn, { buffer = buf, silent = true, nowait = true, desc = desc })
   end
