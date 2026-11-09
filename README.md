@@ -191,7 +191,11 @@ Override by action name. For example, this restores short tree-local actions whi
 
 ~~~lua
 keymaps = {
-  affected_filter = "F", -- deliberately overrides native backward-find in Neolit tree only
+  tree_toggle = "F",
+  tree_expand_node = "l",
+  tree_collapse_node = "h",
+  tree_open_file = "o",
+  close_workspace = "q",
   delete_entry = "d",
   refresh = "r",
   chat_file = "<leader>nF",
