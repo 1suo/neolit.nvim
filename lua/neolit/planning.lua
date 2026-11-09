@@ -2067,7 +2067,7 @@ function M.open(opts)
         end
       end
       bind_key(draft_buf, cfg, "chat_send", "<C-s>", send_draft)
-      bind_key(draft_buf, cfg, "chat_close", "q", function()
+      bind_key(draft_buf, cfg, "chat_close", "<leader>nq", function()
         if vim.api.nvim_win_is_valid(win_id) then vim.api.nvim_win_close(win_id, true) end
       end)
       pcall(vim.api.nvim_buf_set_name, draft_buf, "neolit://chat-draft-" .. draft_buf)
@@ -2143,13 +2143,13 @@ function M.open(opts)
       bind_key(packet_buf, cfg, "view_back", "<leader>nq", function()
         if return_to then return_to() else open_composed_view(mode, scope_path) end
       end)
-      vim.keymap.set("n", "?", function()
-        vim.notify("Context: Y copy validated packet · d remove selected chunk · c clear · q back", vim.log.levels.INFO)
-      end, { buffer = packet_buf, silent = true })
+      bind_key(packet_buf, cfg, "view_help", "<leader>n?", function()
+        vim.notify("Context: <leader>ny copy · <leader>nd remove · <leader>nc clear · <leader>nq back", vim.log.levels.INFO)
+      end)
       vim.api.nvim_set_current_win(win)
       vim.api.nvim_win_set_cursor(win, { 1, 0 })
     end
-    bind_key(view_buf, cfg, "open_source", "<CR>", navigate)
+    bind_key(view_buf, cfg, "open_source", "<leader>no", navigate)
     vim.keymap.set("n", "za", function()
       local row = selected_view_row()
       if not row or (row.kind ~= "task" and row.kind ~= "requirement") or not row.key then return end
@@ -2335,9 +2335,9 @@ function M.open(opts)
       bind_key(view_buf, cfg, "view_back", "<leader>nq", function()
         open_composed_view(mode, scope_path, "task:" .. task.key)
       end)
-      vim.keymap.set("n", "?", function()
-        vim.notify("Task scope: za expand/collapse section · <CR> source/diff · x literal copy · q back", vim.log.levels.INFO)
-      end, { buffer = view_buf, silent = true })
+      bind_key(view_buf, cfg, "view_help", "<leader>n?", function()
+        vim.notify("Task scope: za expand/collapse section · <leader>no source/diff · <leader>nx copy · <leader>nq back", vim.log.levels.INFO)
+      end)
       vim.api.nvim_set_current_win(win)
       local selected_line = 1
       if selected_key then
