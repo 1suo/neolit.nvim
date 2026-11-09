@@ -53,6 +53,20 @@ local function normalize_diff(diff)
   return (diff or ""):gsub("\r\n", "\n"):gsub("\n+$", "")
 end
 
+local function extract_diff_hunk(diff, wanted_index)
+  if type(diff) ~= "string" or type(wanted_index) ~= "number" then return nil end
+  local result, index, collecting = {}, -1, false
+  for _, line in ipairs(vim.split(diff, "\n", { plain = true })) do
+    if line:match("^@@ ") then
+      index = index + 1
+      if collecting then break end
+      collecting = index == wanted_index
+    end
+    if collecting then result[#result + 1] = line end
+  end
+  return #result > 0 and table.concat(result, "\n") or nil
+end
+
 local function set_source_language(buf, path)
   local filetype = vim.filetype.match({ filename = path }) or ""
   if filetype ~= "" and vim.bo[buf].filetype ~= filetype then
@@ -1353,6 +1367,9 @@ function M.open(opts)
     local function context_key(row)
       if not row then return nil end
       if row.kind == "changed_file" then return "diff:" .. row.path end
+      if row.kind == "task_hunk" then
+        return "hunk:" .. row.path .. ":" .. tostring(row.hunkIndex)
+      end
       if row.path and row.first then
         return row.path .. ":" .. row.kind .. ":" .. tostring(row.first) .. ":"
           .. tostring(row.last) .. (row.kind == "task_detail" and (":" .. tostring(row.text)) or "")
@@ -1619,7 +1636,10 @@ function M.open(opts)
     local function navigate()
       local row = selected_view_row()
       if not row then return end
-      if row.kind == "changed_file" then
+      if row.kind == "task_hunk" then
+        local changed = row.file
+        if changed then open_diff(root, changed, row.hunk, workspace.git.base, nil, diff_state, true) end
+      elseif row.kind == "changed_file" then
         local target = safe_repo_path(root, row.path)
         local loaded = target and vim.fn.bufnr(target) or -1
         if loaded >= 0 and vim.bo[loaded].modified then
@@ -1641,7 +1661,14 @@ function M.open(opts)
     end
     local function copy_chunk()
       local row = selected_view_row()
-      if not row or not row.path or not row.first then return end
+      if not row then return end
+      if row.kind == "task_hunk" then
+        local hunk = extract_diff_hunk(row.file and row.file.rawDiff or "", row.hunkIndex)
+        if hunk then copy_value(hunk, "Diff hunk")
+        else vim.notify("Exact hunk patch is unavailable; refresh the workspace", vim.log.levels.WARN) end
+        return
+      end
+      if not row.path or not row.first then return end
       local target = safe_repo_path(root, row.path)
       if not target or vim.fn.filereadable(target) ~= 1 then
         vim.notify("Source chunk is no longer available; refresh the workspace", vim.log.levels.WARN)
@@ -1693,6 +1720,25 @@ function M.open(opts)
         label, content = row.path, changed.rawDiff
         expected_diff = changed.rawDiff
         key = "diff:" .. row.path
+      elseif row.kind == "task_hunk" then
+        local changed = row.file
+        if not changed then
+          for _, file in ipairs(workspace.git.changedFiles or {}) do
+            if file.path == row.path or file.previousPath == row.path then changed = file; break end
+          end
+        end
+        if not changed or not changed.rawDiff then
+          vim.notify("No current diff is available for this hunk", vim.log.levels.WARN)
+          return
+        end
+        local hunk = extract_diff_hunk(changed.rawDiff, row.hunkIndex)
+        if not hunk then
+          vim.notify("Exact hunk patch is unavailable; refresh the workspace", vim.log.levels.WARN)
+          return
+        end
+        label = row.path .. " · hunk " .. tostring(row.hunkIndex + 1)
+        content, expected_diff = hunk, changed.rawDiff
+        key = context_key(row)
       elseif row.path and row.first then
         local target = safe_repo_path(root, row.path)
         if not target or vim.fn.filereadable(target) ~= 1 then
