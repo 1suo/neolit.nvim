@@ -8,15 +8,12 @@ Neolit is not an agent runtime or a diff-review UI. Markdown remains the plannin
 
 - Neovim 0.10+
 - Node.js 22.12+
-- A built Neolit core checkout containing dist/index.js and dist/planning/workspace.js
+- The Neolit core package (install once with `npm install -g neolit`)
 
-Build the core:
+Install the core package once:
 
 ~~~sh
-git clone https://github.com/1suo/neolit.git
-cd neolit
-npm install
-npm run build
+npm install -g neolit
 ~~~
 
 ## Install and configure
@@ -30,9 +27,6 @@ Example for lazy.nvim:
     "olimorris/codecompanion.nvim", -- optional; required for agent chat/review
   },
   opts = {
-    -- Path to the built core checkout.
-    neolit_dir = vim.fn.expand("~/Projects/neolit"),
-
     -- Repository to inspect; defaults to the current working directory.
     -- directory = vim.fn.getcwd(),
 
@@ -59,14 +53,7 @@ Call require("neolit").setup(opts) if your plugin manager does not pass opts aut
 
 ### Core discovery
 
-Neolit looks for the built core in this order:
-
-1. opts.neolit_dir
-2. $NEOLIT_DIR
-3. A sibling ../neolit checkout next to the plugin
-4. The global npm root's neolit directory
-
-Set neolit_dir or NEOLIT_DIR if your checkout is elsewhere. Neolit does not build the core automatically.
+Neolit automatically finds the globally installed `neolit` package. For development, it also recognizes a sibling `../neolit` checkout or the `NEOLIT_DIR` environment variable. You do not need to set a core path in your Neovim config.
 
 ### CodeCompanion
 
