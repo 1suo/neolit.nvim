@@ -2328,6 +2328,21 @@ function M.open(opts)
     open_composed_view(mode, row and row.doc_kind and row.path or nil)
   end, "tree_composed", "tree_composed")
   map("<leader>n<CR>", selected, "tree_open_selected", "tree_open_selected")
+  map("<leader>nm", function()
+    if vim.fn.exists(":CodeCompanionChat") ~= 2 then
+      vim.notify("CodeCompanion.nvim is required for Neolit chat", vim.log.levels.ERROR)
+      return
+    end
+    local adapter = (cfg.codecompanion and cfg.codecompanion.adapter) or "opencode"
+    if type(adapter) ~= "string" or not adapter:match("^[%w_%-]+$") then
+      vim.notify("Invalid CodeCompanion adapter name", vim.log.levels.ERROR)
+      return
+    end
+    vim.api.nvim_set_current_win(view_state.tree_win)
+    vim.cmd("lcd " .. vim.fn.fnameescape(root))
+    local ok, err = pcall(vim.cmd, "CodeCompanionChat adapter=" .. adapter)
+    if not ok then vim.notify("Could not open CodeCompanion chat: " .. tostring(err), vim.log.levels.ERROR) end
+  end, "chat_open", "chat_open")
   map("<leader>nC", function()
     if vim.fn.exists(":CodeCompanionChat") ~= 2 then
       vim.notify("CodeCompanion.nvim is required", vim.log.levels.ERROR)
