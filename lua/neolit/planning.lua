@@ -70,7 +70,7 @@ end
 local function extract_diff_hunk(diff, wanted_index)
   if type(diff) ~= "string" or type(wanted_index) ~= "number" then return nil end
   local result, index, collecting = {}, -1, false
-  for _, line in ipairs(vim.split(diff, "\\n", { plain = true })) do
+  for _, line in ipairs(vim.split(diff, "\n", { plain = true })) do
     if line:match("^@@ ") then
       index = index + 1
       if collecting then break end
@@ -78,7 +78,7 @@ local function extract_diff_hunk(diff, wanted_index)
     end
     if collecting then result[#result + 1] = line end
   end
-  return #result > 0 and table.concat(result, "\\n") or nil
+  return #result > 0 and table.concat(result, "\n") or nil
 end
 
 local function set_source_language(buf, path)
