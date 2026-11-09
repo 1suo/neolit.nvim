@@ -2350,7 +2350,6 @@ function M.open(opts)
   create_action_command("NeolitCopyText", copy_selected_text, "Copy selected text")
   create_action_command("NeolitCopyPath", copy_selected_path, "Copy selected path")
   create_action_command("NeolitToggle", toggle_node_at_cursor, "Toggle selected tree node")
-  create_action_command("NeolitClose", close_workspace, "Close Neolit workspace")
   map("<leader>nv", function()
     local row = current_row()
     local mode = row and row.doc_kind == "TODO" and "tasks" or "requirements"
@@ -2466,6 +2465,7 @@ function M.open(opts)
       pcall(vim.api.nvim_buf_delete, buf, { force = true })
     end
   end
+  create_action_command("NeolitClose", close_workspace, "Close Neolit workspace")
   map("<leader>nq", close_workspace, "close_workspace", "close_workspace")
   
   refresh()
