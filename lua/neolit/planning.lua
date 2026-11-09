@@ -30,7 +30,7 @@ local function find_core(opts)
   local plugin_root = config.plugin_root()
   local env = vim.fn.environ()
   local npm_root
-  if not cfg.neolit_dir and not env.NEOLIT_DIR and not (plugin_root and vim.fn.isdirectory(plugin_root .. "/../neolit") == 1) then
+  if not env.NEOLIT_DIR and not (plugin_root and vim.fn.isdirectory(plugin_root .. "/../neolit") == 1) then
     npm_root = vim.fn.system({ "npm", "root", "-g" }):gsub("%s+$", "")
   end
   local neolit_dir = config.find_neolit_dir(cfg, {
@@ -40,7 +40,7 @@ local function find_core(opts)
     readable = function(file) return vim.fn.filereadable(file) == 1 end,
   })
   if not neolit_dir then
-    error("neolit planning core not found; build neolit (npm run build) and set neolit_dir")
+    error("Neolit core not found; install it with `npm install -g neolit` or set NEOLIT_DIR to a built checkout")
   end
   return cfg, root, neolit_dir
 end
