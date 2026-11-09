@@ -68,7 +68,7 @@ The composed view connects SPEC requirements, TODO tasks, acceptance criteria,
 file hints, and observed Git changes. `za` expands semantic entries and scope
 sections; `<CR>` opens the selected source or diff. Literal source chunks,
 file diffs, and exact hunks can be added to context, reviewed, removed, and
-revalidated before copying or opening the message draft. Source Markdown
+revalidated before copying or opening the CodeCompanion chat. Source Markdown
 remains authoritative.
 
 Neolit actions use semantic mappings under `<leader>n` by default. Override
