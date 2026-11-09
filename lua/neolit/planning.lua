@@ -848,6 +848,7 @@ function M.open(opts)
   local diff_state = { tree_win = tree_win, preview_win = preview_win, diff_view = cfg.diff_view or "side_by_side" }
   local context_chunks, context_keys = {}, {}
   local composed_expanded = {}
+  local composed_view_buf, context_view_buf
   local filter_mode = "all"
 
   local function open_in_preview(relative_path, line, focus)
@@ -1564,18 +1565,24 @@ function M.open(opts)
       diff_state.base_win = nil
       diff_state.working_win = nil
     end
-    local view_buf = vim.api.nvim_create_buf(false, true)
-    vim.bo[view_buf].buftype = "nofile"
-    vim.bo[view_buf].bufhidden = "hide"
-    vim.bo[view_buf].swapfile = false
-    vim.bo[view_buf].buflisted = false
-    vim.bo[view_buf].filetype = "neolit-view"
+    local view_buf = composed_view_buf
+    if not view_buf or not vim.api.nvim_buf_is_valid(view_buf) then
+      view_buf = vim.api.nvim_create_buf(false, true)
+      composed_view_buf = view_buf
+      vim.bo[view_buf].buftype = "nofile"
+      vim.bo[view_buf].bufhidden = "hide"
+      vim.bo[view_buf].swapfile = false
+      vim.bo[view_buf].buflisted = false
+      vim.bo[view_buf].filetype = "neolit-view"
+    end
+    vim.bo[view_buf].modifiable = true
     vim.api.nvim_buf_set_lines(view_buf, 0, -1, false, lines)
     vim.bo[view_buf].modifiable = false
     vim.api.nvim_win_set_buf(win, view_buf)
     vim.wo[win].wrap = vim.go.wrap
     vim.wo[win].cursorline = true
     local ns = vim.api.nvim_create_namespace("neolit-composed-view-" .. view_buf)
+    vim.api.nvim_buf_clear_namespace(view_buf, ns, 0, -1)
     for line, row in pairs(rows) do
       if row.kind == "header" or row.kind == "document" then
         vim.api.nvim_buf_add_highlight(view_buf, ns, "Title", line - 1, 0, -1)
@@ -1808,17 +1815,23 @@ function M.open(opts)
         end
       end
       if #context_chunks == 0 then packet_add("  (context is empty)", { kind = "empty" }) end
-      local packet_buf = vim.api.nvim_create_buf(false, true)
-      vim.bo[packet_buf].buftype = "nofile"
-      vim.bo[packet_buf].bufhidden = "hide"
-      vim.bo[packet_buf].swapfile = false
-      vim.bo[packet_buf].buflisted = false
-      vim.bo[packet_buf].filetype = "neolit-context"
+      local packet_buf = context_view_buf
+      if not packet_buf or not vim.api.nvim_buf_is_valid(packet_buf) then
+        packet_buf = vim.api.nvim_create_buf(false, true)
+        context_view_buf = packet_buf
+        vim.bo[packet_buf].buftype = "nofile"
+        vim.bo[packet_buf].bufhidden = "hide"
+        vim.bo[packet_buf].swapfile = false
+        vim.bo[packet_buf].buflisted = false
+        vim.bo[packet_buf].filetype = "neolit-context"
+      end
+      vim.bo[packet_buf].modifiable = true
       vim.api.nvim_buf_set_lines(packet_buf, 0, -1, false, packet_lines)
       vim.bo[packet_buf].modifiable = false
       vim.api.nvim_win_set_buf(win, packet_buf)
       vim.wo[win].wrap = vim.go.wrap
       local packet_ns = vim.api.nvim_create_namespace("neolit-context-view-" .. packet_buf)
+      vim.api.nvim_buf_clear_namespace(packet_buf, packet_ns, 0, -1)
       for line, row in pairs(packet_rows) do
         if row.kind == "header" then
           vim.api.nvim_buf_add_highlight(packet_buf, packet_ns, "Title", line - 1, 0, -1)
