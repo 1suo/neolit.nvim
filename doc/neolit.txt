@@ -189,6 +189,14 @@ DEFAULT KEYMAPS                                                    *neolit-keyma
   context_clear          <leader>nc       composed/context view
   chat_open              <leader>nm       composed view
   chat_context           <leader>nM       composed/scope view
+  chat_file              <leader>nF       tree
+  tree_fold_toggle       za              tree/composed/scope
+  tree_fold_close        zc              tree
+  tree_fold_open         zo              tree
+  tree_expand_level      zr              tree
+  tree_collapse_level    zm              tree
+  tree_expand_all        zR              tree
+  tree_collapse_all      zM              tree
   review_changes         <leader>ne       tree
   agent_changes          <leader>nC       tree
   affected_filter        <leader>nf       tree
@@ -199,9 +207,20 @@ DEFAULT KEYMAPS                                                    *neolit-keyma
   close_workspace        <leader>nq       tree
   view_help              <leader>n?       views
 
-Set any keymaps.<action> to false or "" to disable it. Neolit-specific action
-mappings are buffer-local to Neolit views; ordinary source buffers keep their
-normal mappings. Native navigation and folds remain native (j/k, h/l, za,
-zo, zc, zr, zm, zR, zM).
+Set any keymaps.<action> to false or "" to disable it. All Neolit action and
+tree-fold mappings are configured in lua/neolit/config.lua and are buffer-local
+to Neolit views; ordinary source buffers keep their normal mappings.
+
+Commands are also available in their applicable Neolit buffers:
+:NeolitCompose, :NeolitOpen, :NeolitOpenFile, :NeolitFilter, :NeolitRefresh,
+:NeolitDelete, :NeolitCopyText, :NeolitCopyPath, :NeolitToggle, :NeolitChat,
+:NeolitChatFile, :NeolitAgentChanges, and :NeolitReview in the tree;
+:NeolitContextAdd, :NeolitContextRemove, :NeolitContextCopy,
+:NeolitContextClear, :NeolitContextReview, and :NeolitChatContext in composed
+views.
+
+Native movement remains native (j/k, h/l). Fold keys can be remapped through
+keymaps.tree_fold_toggle, tree_fold_close, tree_fold_open, tree_expand_level,
+tree_collapse_level, tree_expand_all, and tree_collapse_all.
 
  vim:tw=78:ts=8:ft=help:norl:
