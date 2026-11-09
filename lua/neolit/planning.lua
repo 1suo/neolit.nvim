@@ -2383,7 +2383,7 @@ function M.open(opts)
   map("<leader>nx", copy_selected_text, "copy_text", "copy_text")
   map("<leader>nl", copy_selected_path, "copy_path", "copy_path")
   map("<leader>n?", function()
-    vim.notify("Tree: <leader>nv composed view · <CR> open/expand · za/zo/zc fold · zr/zm one level · zR/zM all · <leader>nf affected-only · <leader>nD delete · <leader>ne CodeCompanion review · <leader>no open file · <leader>nx copy text · <leader>nl path · <leader>nr refresh · <leader>nm CodeCompanion chat · <leader>nM add context · <leader>nq close", vim.log.levels.INFO)
+    vim.notify("Tree: <leader>nv composed view · <CR> open/expand · za/zo/zc fold · zr/zm one level · zR/zM all · <leader>nf affected-only · <leader>nD delete · <leader>ne CodeCompanion review · <leader>nC agent changes · <leader>no open file · <leader>nx copy text · <leader>nl path · <leader>nr refresh · <leader>nm CodeCompanion chat · <leader>nM add context · <leader>nq close", vim.log.levels.INFO)
   end, "tree_help", "tree_help")
   local function close_workspace()
     refresh_revision = refresh_revision + 1
