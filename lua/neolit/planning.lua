@@ -37,7 +37,7 @@ local function find_core(opts)
     readable = function(file) return vim.fn.filereadable(file) == 1 end,
   })
   if not neolit_dir then
-    error("Neolit core not found; install it with `npm install -g neolit` or set NEOLIT_DIR to a built checkout")
+    error("Neolit core dependency is missing; run `npm install` in the neolit.nvim plugin directory")
   end
   return cfg, root, neolit_dir
 end
