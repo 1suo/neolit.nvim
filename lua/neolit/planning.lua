@@ -1987,7 +1987,8 @@ function M.open(opts)
       scope_add("[" .. state_mark(state) .. "] " .. task.text,
         source_row("task", task_path(task), task.range, task.text, { task = task }))
       scope_add(#requirements .. " SPEC · " .. #criteria .. " AC · " .. #hints
-        .. " file hints · " .. #changed_paths .. " changed · " .. #hunk_reviews .. " hunks",
+        .. " hints · " .. #changed_paths .. " changed · " .. #hunk_reviews
+        .. " hunks · " .. #other_changes .. " other · " .. #diagnostics .. " issues",
         { kind = "summary" })
       scope_add("STATE · " .. state_reason(state, projection), { kind = "summary" })
 
