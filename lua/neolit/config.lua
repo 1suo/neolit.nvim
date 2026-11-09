@@ -8,6 +8,10 @@ M.defaults = {
   codecompanion = { adapter = "opencode" },
   keymaps = {
     open_workspace = "<leader>nn",
+    chat_open = "<leader>nm",
+    agent_changes = "<leader>nC",
+    review_changes = "<leader>ne",
+    chat_file = "<leader>nF",
     tree_composed = "<leader>nv",
     tree_open_file = "o",
     review_changes = "<leader>ne",
