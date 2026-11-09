@@ -58,6 +58,18 @@ local function set_source_language(buf, path)
   if filetype ~= "" and vim.bo[buf].filetype ~= filetype then
     vim.bo[buf].filetype = filetype
   end
+  -- bufload() does not reliably replay the FileType event for buffers
+  -- materialized through bufadd(). Give normal FileType-based LSP configs
+  -- their usual attachment opportunity when this real file buffer is previewed.
+  if filetype ~= "" and vim.api.nvim_buf_is_loaded(buf) then
+    local clients = vim.lsp and vim.lsp.get_clients and vim.lsp.get_clients({ bufnr = buf }) or {}
+    if #clients == 0 and not vim.b[buf].neolit_filetype_event then
+      vim.b[buf].neolit_filetype_event = true
+      pcall(vim.api.nvim_exec_autocmds, "FileType", {
+        buffer = buf, modeline = false,
+      })
+    end
+  end
   if filetype ~= "" and vim.treesitter and vim.treesitter.start then
     pcall(vim.treesitter.start, buf, filetype)
   end
