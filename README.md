@@ -65,6 +65,13 @@ opens that exact native diff.
   writes, focus return, and idle refreshes also pick up external agent edits.
 - `x` copies the selected literal text/diff/hunk; `y` copies its source path
   and line.
+- `v` opens a composed planning view in the right pane. From a SPEC file it
+  shows each requirement with linked TODO tasks, descriptions, acceptance
+  criteria, and changed-file evidence. From a TODO file it shows its tasks and
+  linked requirements. Press `v` in that view to switch projections; `<CR>
+  navigates to the source chunk, `x` copies its exact Markdown range, and `y`
+  copies its source location. The view is a projection; source Markdown remains
+  editable and authoritative.
 
 ## Keys
 
