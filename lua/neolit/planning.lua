@@ -1557,6 +1557,14 @@ function M.open(opts)
       end
       copy_value(table.concat(chunk, "\n"), row.kind == "task" and "TODO task" or "Planning chunk")
     end
+    local function update_context_header()
+      if not vim.api.nvim_buf_is_valid(view_buf) then return end
+      local header = vim.api.nvim_buf_get_lines(view_buf, 0, 1, false)[1] or ""
+      header = header:gsub("context %d+", "context " .. #context_chunks)
+      vim.bo[view_buf].modifiable = true
+      vim.api.nvim_buf_set_lines(view_buf, 0, 1, false, { header })
+      vim.bo[view_buf].modifiable = false
+    end
     local function context_key(row)
       if not row then return nil end
       if row.kind == "changed_file" then return "diff:" .. row.path end
@@ -1615,6 +1623,7 @@ function M.open(opts)
         first = row.first, last = row.last, kind = row.kind,
         expected_source = expected_source, expected_diff = expected_diff,
       }
+      update_context_header()
       vim.notify("Added context chunk (" .. #context_chunks .. ")")
     end
     local function remove_context()
@@ -1627,6 +1636,7 @@ function M.open(opts)
         if item.key == key then table.remove(context_chunks, index); break end
       end
       context_keys[key] = nil
+      update_context_header()
       vim.notify("Removed context chunk (" .. #context_chunks .. " remaining)")
     end
     local function copy_context()
@@ -1673,6 +1683,7 @@ function M.open(opts)
     end
     local function clear_context()
       context_chunks, context_keys = {}, {}
+      update_context_header()
       vim.notify("Context cleared")
     end
     vim.keymap.set("n", "<CR>", navigate, { buffer = view_buf, silent = true })
