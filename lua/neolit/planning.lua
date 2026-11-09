@@ -74,6 +74,26 @@ function M.worktree_root(opts)
   return canonical_worktree(root)
 end
 
+function M.chat_file(opts)
+  local ok, _, root = pcall(find_core, opts or {})
+  if not ok then
+    vim.notify(tostring(_), vim.log.levels.ERROR)
+    return
+  end
+  root = canonical_worktree(root)
+  local name = vim.api.nvim_buf_get_name(0)
+  if name == "" then
+    vim.notify("Current buffer has no file path", vim.log.levels.INFO)
+    return
+  end
+  local absolute = vim.fn.resolve(vim.fn.fnamemodify(name, ":p"))
+  if absolute:sub(1, #root + 1) ~= root .. "/" then
+    vim.notify("Current file is outside the Neolit worktree", vim.log.levels.WARN)
+    return
+  end
+  add_codecompanion_file_reference(root, absolute:sub(#root + 2))
+end
+
 local function safe_repo_path(root, relative)
   if type(relative) ~= "string" or relative == "" or relative:sub(1, 1) == "/" or relative:sub(1, 1) == "\\" or relative:match("^%a:") then
     return nil
@@ -2414,21 +2434,6 @@ function M.open(opts)
     open_composed_view(mode, row and row.doc_kind and row.path or nil)
   end, "tree_composed", "tree_composed")
   map("<leader>n<CR>", selected, "tree_open_selected", "tree_open_selected")
-  map("<leader>nm", function()
-    if vim.fn.exists(":CodeCompanionChat") ~= 2 then
-      vim.notify("CodeCompanion.nvim is required for Neolit chat", vim.log.levels.ERROR)
-      return
-    end
-    local adapter = (cfg.codecompanion and cfg.codecompanion.adapter) or "opencode"
-    if type(adapter) ~= "string" or not adapter:match("^[%w_%-]+$") then
-      vim.notify("Invalid CodeCompanion adapter name", vim.log.levels.ERROR)
-      return
-    end
-    vim.api.nvim_set_current_win(view_state.tree_win)
-    vim.cmd("lcd " .. vim.fn.fnameescape(root))
-    local ok, err = pcall(vim.cmd, "CodeCompanionChat adapter=" .. adapter)
-    if not ok then vim.notify("Could not open CodeCompanion chat: " .. tostring(err), vim.log.levels.ERROR) end
-  end, "chat_open", "chat_open")
   local function add_file_link_to_chat()
     local row = current_row()
     local relative = selected_file_target(row)
@@ -2446,23 +2451,6 @@ function M.open(opts)
     vim.cmd("lcd " .. vim.fn.fnameescape(root))
     vim.cmd("CodeCompanionChat adapter=" .. ((cfg.codecompanion and cfg.codecompanion.adapter) or "opencode"))
   end, { desc = "Open CodeCompanion chat for this repository" })
-  map("<leader>nF", add_file_link_to_chat, "chat_file", "chat_file")
-  map("<leader>nC", function()
-    if vim.fn.exists(":CodeCompanionChat") ~= 2 then
-      vim.notify("CodeCompanion.nvim is required", vim.log.levels.ERROR)
-      return
-    end
-    vim.api.nvim_set_current_win(view_state.tree_win)
-    vim.cmd("CodeCompanionChat Changes")
-  end, "agent_changes", "agent_changes")
-  map("<leader>ne", function()
-    if vim.fn.exists(":CodeCompanionCodeReview") ~= 2 then
-      vim.notify("CodeCompanion.nvim Code Review is required", vim.log.levels.ERROR)
-      return
-    end
-    vim.api.nvim_set_current_win(view_state.tree_win)
-    vim.cmd("CodeCompanionCodeReview")
-  end, "review_changes", "review_changes")
   map("o", open_selected_file, "tree_open_file", "tree_open_file")
   map("F", toggle_node_at_cursor, "tree_toggle", "tree_toggle")
   map("l", expand_node_at_cursor, "tree_expand_node", "tree_expand_node")
