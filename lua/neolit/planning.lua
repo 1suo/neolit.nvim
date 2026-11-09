@@ -1823,6 +1823,13 @@ function M.open(opts)
         label, content = row.path, changed.rawDiff
         expected_diff = changed.rawDiff
         key = "diff:" .. row.path
+      elseif row.kind == "file_hint" then
+        if not safe_repo_path(root, row.path) then
+          vim.notify("Unsafe repository path; cannot add it to context", vim.log.levels.WARN)
+          return
+        end
+        label, content = row.path, row.path
+        key = "path:" .. row.path
       elseif row.kind == "task_hunk" then
         local target = safe_repo_path(root, row.path)
         local loaded = target and vim.fn.bufnr(target) or -1
