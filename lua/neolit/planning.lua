@@ -1481,11 +1481,10 @@ function M.open(opts)
           row.state == "verified" and "DiagnosticOk" or row.state == "blocked" and "DiagnosticError" or "Identifier",
           line - 1, 0, -1)
       elseif row.kind == "task" then
-        local group = row.state == "verified" or row.state == "implemented" and "DiagnosticOk"
-          or row.state == "blocked" and "DiagnosticError"
-          or row.state == "in-progress" or row.state == "unmapped" and "DiagnosticWarn"
-          or "Normal"
-        if type(group) ~= "string" then group = "Normal" end
+        local group = "Normal"
+        if row.state == "verified" or row.state == "implemented" then group = "DiagnosticOk"
+        elseif row.state == "blocked" then group = "DiagnosticError"
+        elseif row.state == "in-progress" or row.state == "unmapped" then group = "DiagnosticWarn" end
         vim.api.nvim_buf_add_highlight(view_buf, ns, group, line - 1, 0, -1)
       elseif row.kind == "criterion" then
         vim.api.nvim_buf_add_highlight(view_buf, ns, row.verified and "DiagnosticOk" or "DiagnosticWarn", line - 1, 0, -1)
@@ -1864,6 +1863,11 @@ function M.open(opts)
       pcall(vim.api.nvim_del_augroup_by_id, refresh_group)
     end,
   })
+  map("v", function()
+    local row = current_row()
+    local mode = row and row.doc_kind == "TODO" and "tasks" or "requirements"
+    open_composed_view(mode, row and row.kind == "planning_document" and row.path or nil)
+  end, "Open composed requirement/task workspace")
   map("<CR>", selected, "Show selected diff or expand/open planning entry")
   map("e", focus_working_diff, "Edit the selected file in the working side of its diff")
   map("o", open_selected_file, "Open the selected actual file without the diff")
@@ -1911,7 +1915,7 @@ function M.open(opts)
   map("x", copy_selected_text, "Copy selected task, requirement, description, or row text")
   map("y", copy_selected_path, "Copy selected repository path and source line")
   map("?", function()
-    vim.notify("Tree: <CR> expand/open · za toggle · zo open · zc close · h/l expand/collapse-or-parent · zr/zm one level · zR/zM all · f affected-only · d delete selected task or requirement · D diff view · e / <leader>ne edit working side · o / <leader>no open file · x copy text · y copy path · r refresh · q/<Esc> close", vim.log.levels.INFO)
+    vim.notify("Tree: v composed requirement/task view · <CR> expand/open · za toggle · zo open · zc close · h/l expand/collapse-or-parent · zr/zm one level · zR/zM all · f affected-only · d delete selected task or requirement · D diff view · e / <leader>ne edit working side · o / <leader>no open file · x copy text · y copy path · r refresh · q/<Esc> close", vim.log.levels.INFO)
   end, "Show Neolit tree keys")
   local function close_workspace()
     refresh_revision = refresh_revision + 1
