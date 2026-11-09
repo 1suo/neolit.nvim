@@ -173,7 +173,6 @@ Default keymaps:
 | delete_entry | <leader>nD |
 | copy_text | <leader>nx |
 | copy_path | <leader>nl |
-| chat_file | <leader>nF |
 | tree_fold_toggle | za |
 | tree_fold_close | zc |
 | tree_fold_open | zo |
