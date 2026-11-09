@@ -1356,8 +1356,23 @@ function M.open(opts)
       .. (scope_path and (" · " .. scope_path) or "") .. " · v switch view · <CR> source · x copy chunk · y path", { kind = "header" })
 
     if mode == "requirements" then
+      local scoped_specs = {}
+      if scope_path then
+        for _, spec in ipairs(workspace.specs or {}) do
+          if spec.path == scope_path then scoped_specs[spec.path] = true end
+        end
+        if not scoped_specs[scope_path] then
+          for _, task in ipairs(workspace.tasks or {}) do
+            if task_path(task) == scope_path then
+              for _, requirement in ipairs(task.resolvedRequirements or {}) do
+                scoped_specs[requirement.specPath] = true
+              end
+            end
+          end
+        end
+      end
       for _, spec in ipairs(workspace.specs or {}) do
-        if not scope_path or scope_path == spec.path then
+        if not scope_path or scoped_specs[spec.path] then
           add(spec.path, { kind = "document", path = spec.path, line = 1 })
           for _, requirement in ipairs(spec.requirements or {}) do
             local ref = spec.path .. "#" .. requirement.id
