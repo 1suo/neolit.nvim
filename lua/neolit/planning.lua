@@ -189,22 +189,26 @@ local function render_planning_semantics(buf, workspace, relative_path)
           or "DiagnosticInfo"
         decorate(requirement.range and requirement.range.startLine,
           state:upper() .. " · " .. linked .. " linked tasks", group)
-        for _, criterion in ipairs(requirement.acceptanceCriteria or {}) do
-          local covered, verified = 0, 0
-          for _, task in ipairs(workspace.tasks or {}) do
-            for _, item in ipairs(task.resolvedAcceptanceCriteria or {}) do
-              if item.specPath == spec.path and item.id == criterion.id then
-                covered = covered + 1
-                local task_projection = task_states[task.key]
-                for _, evidence in ipairs((task_projection and task_projection.acceptanceCriteria) or {}) do
-                  if evidence.ref == ref .. "/" .. criterion.id and evidence.verified then verified = verified + 1 end
+        for _, criterion in ipairs(spec.acceptanceCriteria or {}) do
+          local applies = vim.tbl_contains(criterion.requirementIds or {}, requirement.id)
+          if applies then
+            local covered, verified = 0, 0
+            local criterion_ref = spec.path .. "#" .. criterion.id
+            for _, task in ipairs(workspace.tasks or {}) do
+              for _, item in ipairs(task.resolvedAcceptanceCriteria or {}) do
+                if item.specPath == spec.path and item.id == criterion.id then
+                  covered = covered + 1
+                  local task_projection = task_states[task.key]
+                  for _, evidence in ipairs((task_projection and task_projection.acceptanceCriteria) or {}) do
+                    if evidence.ref == criterion_ref and evidence.verified then verified = verified + 1 end
+                  end
                 end
               end
             end
+            decorate(criterion.range and criterion.range.startLine,
+              (verified > 0 and "VERIFIED" or covered > 0 and "LINKED" or "UNCOVERED"),
+              verified > 0 and "DiagnosticOk" or covered > 0 and "DiagnosticInfo" or "DiagnosticWarn")
           end
-          decorate(criterion.range and criterion.range.startLine,
-            (verified > 0 and "VERIFIED" or covered > 0 and "LINKED" or "UNCOVERED"),
-            verified > 0 and "DiagnosticOk" or covered > 0 and "DiagnosticInfo" or "DiagnosticWarn")
         end
       end
     end
