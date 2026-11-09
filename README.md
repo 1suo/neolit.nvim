@@ -32,47 +32,23 @@ Install:
     -- comparison_base = "HEAD",
     -- diff_view = "side_by_side", -- or "unified"
     -- keymaps = { open_workspace = "<leader>nn" },
-    -- opencode = { url = "http://127.0.0.1:4096" },
-    -- agent = { send = function(request) ... end }, -- optional override
+    -- codecompanion = { adapter = "opencode" },
   },
   cmd = { "Neolit", "NeolitPlan", "NeolitClose" },
 }
 ```
 
-## Agent session binding
+## Agent chat
 
-Agent sessions are associated with the canonical worktree path and stored in
-Neovim's state directory, independently for each worktree. The binding stores
-only the host session ID and display label; it does not store transcripts or
-messages.
+Neolit opens [CodeCompanion.nvim](https://github.com/olimorris/codecompanion.nvim)
+with its OpenCode ACP adapter and adds the selected, revalidated context to that
+chat. CodeCompanion owns the chat UI, streaming, permissions, and agent session
+lifecycle. Use CodeCompanion's `/resume` command to load an existing OpenCode
+session; Neolit does not maintain a parallel session registry or transport.
 
-- `:NeolitAgentBind <session-id> [label]` binds an existing host session to
-  the configured worktree (or the current working directory).
-- `:NeolitAgentSession` displays the current binding.
-- `:NeolitAgentUnbind` removes it.
-
-The composed view opens an editable floating message draft (`<leader>nm`)
-containing the selected, revalidated context. Neolit uses the OpenCode HTTP
-server by default and sends to the exact bound session ID; the conversation
-remains in OpenCode's session store. Responses are displayed when the request
-finishes (the HTTP adapter does not yet stream tokens).
-
-Expose the OpenCode server on a stable local port when starting the TUI:
-
-```sh
-opencode --hostname 127.0.0.1 --port 4096
-```
-
-Alternatively, run `opencode serve --hostname 127.0.0.1 --port 4096`.
-Set `opts.opencode.url` if it listens elsewhere. The adapter verifies the
-session ID and, when the server reports it, checks that its directory matches
-the selected worktree before sending. It uses the existing session's agent and
-model; it does not create a session or start a second agent runtime. `curl`
-must be available.
-
-An optional `opts.agent.send(request)` function overrides the built-in
-transport. The request contains `session_id`, `worktree`, `message`,
-`on_chunk`, `on_done`, and `on_error`.
+Install CodeCompanion.nvim and configure its ACP adapter for OpenCode. Neolit
+uses `CodeCompanionChat adapter=opencode` by default; change
+`opts.codecompanion.adapter` to use another CodeCompanion adapter.
 
 ## Workspace
 
@@ -112,7 +88,7 @@ ordinary source-file buffers.
 | `<leader>np` | Review context |
 | `<leader>ny` | Copy validated context |
 | `<leader>nc` | Clear context |
-| `<leader>nm` | Open floating message draft |\n| `<leader>no` | Open selected source from composed views |
+| `<leader>nm` | Open CodeCompanion chat with selected context |\n| `<leader>no` | Open selected source from composed views |
 | `<leader>ne` / `<leader>no` | Edit diff side / open actual file |
 | `<leader>nD` | Delete selected planning entry |
 | `<leader>nx` / `<leader>nl` | Copy selected text / source path |
