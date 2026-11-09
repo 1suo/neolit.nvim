@@ -89,6 +89,12 @@ local function find_core(opts)
   return cfg, root, neolit_dir
 end
 
+function M.worktree_root(opts)
+  local ok, _, root = pcall(find_core, opts or {})
+  if not ok then return nil, _ end
+  return canonical_worktree(root)
+end
+
 local function diff_command(file, base)
   if file.untracked or (file.status == "added" and #file.hunks == 0) then
     return { "git", "-c", "core.quotePath=false", "diff", "--no-index", "--no-ext-diff", "--no-color", "--", "/dev/null", file.path }
