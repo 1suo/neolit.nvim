@@ -7,7 +7,7 @@ M.defaults = {
   directory = nil,
   comparison_base = "HEAD",
   diff_view = "side_by_side",
-  opencode = { url = "http://127.0.0.1:4096" },
+  codecompanion = { adapter = "opencode" },
   keymaps = {
     open_workspace = "<leader>nn",
     tree_composed = "<leader>nv",
@@ -29,8 +29,6 @@ M.defaults = {
     switch_projection = "<leader>nv",
     copy_source_path = "<leader>nl",
     chat_open = "<leader>nm",
-    chat_send = "<C-s>",
-    chat_close = "<leader>nq",
     tree_toggle = "<leader>nt",
     tree_help = "<leader>n?",
     tree_open_selected = "<leader>n<CR>",
