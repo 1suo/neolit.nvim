@@ -1342,6 +1342,10 @@ function M.open(opts)
     local function state_mark(state)
       return tostring(state or "unmapped"):upper()
     end
+    local composed_expanded = {}
+    local function is_expanded(key)
+      return composed_expanded[key] == true
+    end
     local function source_row(kind, path, range, text, extra)
       local row = {
         kind = kind, path = path,
@@ -1353,8 +1357,26 @@ function M.open(opts)
       for key, value in pairs(extra or {}) do row[key] = value end
       return row
     end
-    add("NEOLIT · " .. (mode == "tasks" and "TASK WORKSPACE" or "REQUIREMENT WORKSPACE")
-      .. (scope_path and (" · " .. scope_path) or "") .. " · context " .. #context_chunks .. " · a add · d remove · Y copy · c clear · v switch · <CR> source · x chunk · y path", { kind = "header" })
+    local scoped_task_count, scoped_requirement_count = 0, 0
+    for _, task in ipairs(workspace.tasks or {}) do
+      local include = not scope_path or task_path(task) == scope_path
+      if scope_path and mode == "tasks" and not include then
+        for _, requirement in ipairs(task.resolvedRequirements or {}) do
+          if requirement.specPath == scope_path then include = true; break end
+        end
+      end
+      if include then scoped_task_count = scoped_task_count + 1 end
+    end
+    for _, spec in ipairs(workspace.specs or {}) do
+      if not scope_path or spec.path == scope_path or mode == "tasks" then
+        for _, requirement in ipairs(spec.requirements or {}) do scoped_requirement_count = scoped_requirement_count + 1 end
+      end
+    end
+    add("NEOLIT · " .. (mode == "tasks" and "TASKS" or "REQUIREMENTS")
+      .. (scope_path and (" · " .. vim.fn.fnamemodify(scope_path, ":t")) or "")
+      .. " · " .. scoped_requirement_count .. " req · " .. scoped_task_count .. " tasks"
+      .. " · ctx " .. #context_chunks .. " · za details · a add · d remove · Y copy · c clear · v switch · ? keys",
+      { kind = "header" })
 
     if mode == "requirements" then
       local scoped_specs = {}
@@ -1380,45 +1402,62 @@ function M.open(opts)
             local projection = requirement_states[ref]
             local linked = requirement_tasks(spec.path, requirement.id)
             local state = projection and projection.state or "unplanned"
-            add("  " .. requirement.id .. " · " .. state_mark(state) .. " · " .. requirement.text,
+            local criterion_count = 0
+            for _, criterion in ipairs(spec.acceptanceCriteria or {}) do
+              if vim.tbl_contains(criterion.requirementIds or {}, requirement.id) then criterion_count = criterion_count + 1 end
+            end
+            local marker = is_expanded("req:" .. ref) and "-" or "+"
+            add("  " .. marker .. " " .. requirement.id .. " [" .. state_mark(state) .. "] "
+              .. requirement.text .. " · " .. #linked .. " tasks · " .. criterion_count .. " AC",
               source_row("requirement", spec.path, requirement.range, requirement.text,
-                { requirement = requirement, state = state, ref = ref }))
-            if #linked == 0 then
-              add("    (no linked TODO task)", { kind = "empty" })
-            else
-              for _, task in ipairs(linked) do
-                local task_state_value, task_projection = task_state(task)
-                local todo = task_path(task)
-                add("    " .. (task.checked and "[x] " or "[ ] ") .. state_mark(task_state_value) .. " · " .. task.text,
-                  source_row("task", todo, task.range, task.text,
-                    { task = task, state = task_state_value, projection = task_projection }))
-                for _, detail in ipairs(task.description or {}) do
-                  add("      " .. detail, source_row("task_detail", todo, task.range, detail, { task = task }))
-                end
-                for _, note in ipairs(task.agentNotes or {}) do
-                  add("      AGENT · " .. note, source_row("task_detail", todo, task.range, note, { task = task }))
-                end
-                for _, changed_path in ipairs((task_projection and task_projection.changedPaths) or {}) do
-                  add("      CHANGE · " .. changed_path, { kind = "changed_file", path = changed_path, line = 1 })
+                { requirement = requirement, state = state, ref = ref, key = "req:" .. ref,
+                  expanded = is_expanded("req:" .. ref) }))
+            if is_expanded("req:" .. ref) then
+              if #linked == 0 then
+                add("    (no linked tasks)", { kind = "empty" })
+              else
+                for _, task in ipairs(linked) do
+                  local task_state_value, task_projection = task_state(task)
+                  local todo = task_path(task)
+                  local task_key = "task:" .. task.key
+                  local changed = #(task_projection and task_projection.changedPaths or {})
+                  local marker_task = is_expanded(task_key) and "-" or "+"
+                  add("    " .. marker_task .. " " .. (task.checked and "[x] " or "[ ] ")
+                    .. "[" .. state_mark(task_state_value) .. "] " .. task.text
+                    .. " · " .. #(task.resolvedAcceptanceCriteria or {}) .. " AC · " .. changed .. " files",
+                    source_row("task", todo, task.range, task.text,
+                      { task = task, state = task_state_value, projection = task_projection,
+                        key = task_key, expanded = is_expanded(task_key) }))
+                  if is_expanded(task_key) then
+                    for _, detail in ipairs(task.description or {}) do
+                      add("      " .. detail, source_row("task_detail", todo, task.range, detail, { task = task }))
+                    end
+                    for _, note in ipairs(task.agentNotes or {}) do
+                      add("      AGENT · " .. note, source_row("task_detail", todo, task.range, note, { task = task }))
+                    end
+                    for _, changed_path in ipairs((task_projection and task_projection.changedPaths) or {}) do
+                      add("      + " .. changed_path, { kind = "changed_file", path = changed_path, line = 1 })
+                    end
+                  end
                 end
               end
-            end
-            for _, criterion in ipairs(spec.acceptanceCriteria or {}) do
-              if vim.tbl_contains(criterion.requirementIds or {}, requirement.id) then
-                local covered, verified = false, false
-                for _, task in ipairs(linked) do
-                  for _, item in ipairs(task.resolvedAcceptanceCriteria or {}) do
-                    if item.specPath == spec.path and item.id == criterion.id then covered = true end
+              for _, criterion in ipairs(spec.acceptanceCriteria or {}) do
+                if vim.tbl_contains(criterion.requirementIds or {}, requirement.id) then
+                  local covered, verified = false, false
+                  for _, task in ipairs(linked) do
+                    for _, item in ipairs(task.resolvedAcceptanceCriteria or {}) do
+                      if item.specPath == spec.path and item.id == criterion.id then covered = true end
+                    end
+                    local projection = task_states[task.key]
+                    for _, evidence in ipairs((projection and projection.acceptanceCriteria) or {}) do
+                      if evidence.ref == (spec.path .. "#" .. criterion.id) and evidence.verified then verified = true end
+                    end
                   end
-                  local projection = task_states[task.key]
-                  for _, evidence in ipairs((projection and projection.acceptanceCriteria) or {}) do
-                    if evidence.ref == (spec.path .. "#" .. criterion.id) and evidence.verified then verified = true end
-                  end
+                  local label = verified and "VERIFIED" or covered and "LINKED" or "UNCOVERED"
+                  add("    AC " .. criterion.id .. " [" .. label .. "] " .. criterion.text,
+                    source_row("criterion", spec.path, criterion.range, criterion.text,
+                      { criterion = criterion, verified = verified }))
                 end
-                local label = verified and "VERIFIED" or covered and "LINKED" or "UNCOVERED"
-                add("    " .. criterion.id .. " · " .. label .. " · " .. criterion.text,
-                  source_row("criterion", spec.path, criterion.range, criterion.text,
-                    { criterion = criterion, verified = verified }))
               end
             end
           end
@@ -1440,32 +1479,41 @@ function M.open(opts)
             add(todo or "TODO", { kind = "document", path = todo, line = 1 })
           end
           local state, projection = task_state(task)
-          add("  " .. (task.checked and "[x] " or "[ ] ") .. state_mark(state) .. " · " .. task.text,
+          local task_key = "task:" .. task.key
+          local linked_count = #(task.resolvedRequirements or {})
+          local criterion_count = #(task.resolvedAcceptanceCriteria or {})
+          local changed_count = #(projection and projection.changedPaths or {})
+          add("  " .. (is_expanded(task_key) and "-" or "+") .. " "
+            .. (task.checked and "[x] " or "[ ] ") .. "[" .. state_mark(state) .. "] " .. task.text
+            .. " · " .. linked_count .. " SPEC · " .. criterion_count .. " AC · " .. changed_count .. " files",
             source_row("task", todo, task.range, task.text,
-              { task = task, state = state, projection = projection }))
-          for _, requirement in ipairs(task.resolvedRequirements or {}) do
-            add("    SPEC · " .. requirement.specPath .. "#" .. requirement.id .. " · " .. requirement.text,
-              source_row("requirement", requirement.sourcePath or requirement.specPath,
-                requirement.range, requirement.text, { requirement = requirement }))
-          end
-          for _, criterion in ipairs(task.resolvedAcceptanceCriteria or {}) do
-            local ref = criterion.specPath .. "#" .. criterion.id
-            local verified = false
-            for _, evidence in ipairs((projection and projection.acceptanceCriteria) or {}) do
-              if evidence.ref == ref and evidence.verified then verified = true; break end
+              { task = task, state = state, projection = projection,
+                key = task_key, expanded = is_expanded(task_key) }))
+          if is_expanded(task_key) then
+            for _, requirement in ipairs(task.resolvedRequirements or {}) do
+              add("    SPEC " .. requirement.id .. " · " .. requirement.text,
+                source_row("requirement", requirement.sourcePath or requirement.specPath,
+                  requirement.range, requirement.text, { requirement = requirement }))
             end
-            add("    AC · " .. criterion.id .. " · " .. (verified and "VERIFIED" or "UNVERIFIED") .. " · " .. criterion.text,
-              source_row("criterion", criterion.sourcePath or criterion.specPath,
-                criterion.range, criterion.text, { criterion = criterion, verified = verified }))
-          end
-          for _, detail in ipairs(task.description or {}) do
-            add("    " .. detail, source_row("task_detail", todo, task.range, detail, { task = task }))
-          end
-          for _, note in ipairs(task.agentNotes or {}) do
-            add("    AGENT · " .. note, source_row("task_detail", todo, task.range, note, { task = task }))
-          end
-          for _, changed_path in ipairs((projection and projection.changedPaths) or {}) do
-            add("    CHANGE · " .. changed_path, { kind = "changed_file", path = changed_path, line = 1 })
+            for _, criterion in ipairs(task.resolvedAcceptanceCriteria or {}) do
+              local ref = criterion.specPath .. "#" .. criterion.id
+              local verified = false
+              for _, evidence in ipairs((projection and projection.acceptanceCriteria) or {}) do
+                if evidence.ref == ref and evidence.verified then verified = true; break end
+              end
+              add("    AC " .. criterion.id .. " [" .. (verified and "VERIFIED" or "UNVERIFIED") .. "] " .. criterion.text,
+                source_row("criterion", criterion.sourcePath or criterion.specPath,
+                  criterion.range, criterion.text, { criterion = criterion, verified = verified }))
+            end
+            for _, detail in ipairs(task.description or {}) do
+              add("    " .. detail, source_row("task_detail", todo, task.range, detail, { task = task }))
+            end
+            for _, note in ipairs(task.agentNotes or {}) do
+              add("    AGENT · " .. note, source_row("task_detail", todo, task.range, note, { task = task }))
+            end
+            for _, changed_path in ipairs((projection and projection.changedPaths) or {}) do
+              add("    + " .. changed_path, { kind = "changed_file", path = changed_path, line = 1 })
+            end
           end
         end
       end
@@ -1709,6 +1757,15 @@ function M.open(opts)
       vim.notify("Context cleared")
     end
     vim.keymap.set("n", "<CR>", navigate, { buffer = view_buf, silent = true })
+    vim.keymap.set("n", "za", function()
+      local row = selected_view_row()
+      if not row or (row.kind ~= "task" and row.kind ~= "requirement") or not row.key then return end
+      composed_expanded[row.key] = not composed_expanded[row.key]
+      open_composed_view(mode, scope_path)
+    end, { buffer = view_buf, silent = true })
+    vim.keymap.set("n", "?", function()
+      vim.notify("Workspace: za expand/collapse · <CR> source · a add context · d remove · Y copy context · c clear · x copy source chunk · y copy path · v switch workspace · q return to tree", vim.log.levels.INFO)
+    end, { buffer = view_buf, silent = true })
     vim.keymap.set("n", "x", copy_chunk, { buffer = view_buf, silent = true })
     vim.keymap.set("n", "a", append_context, { buffer = view_buf, silent = true })
     vim.keymap.set("n", "d", remove_context, { buffer = view_buf, silent = true })
