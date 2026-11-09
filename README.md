@@ -71,8 +71,9 @@ opens that exact native diff.
   criteria, notes, and changed-file evidence stay collapsed until `za` expands
   the selected requirement or task. `<CR>` navigates to the source, `x` copies
   its Markdown range, and `y` copies its source location. Use `a` to add the
-  selected source chunk or diff to a temporary context packet, `d` to remove
-  it, `Y` to copy the assembled packet for the existing agent, and `c` to
+  selected source chunk, file diff, or exact hunk from scope review to a
+  temporary context packet, `d` to remove it, `Y` to copy the assembled packet
+  for the existing agent, and `c` to
   clear it. Press `s` on a task to open an observed-scope review: intent,
   linked requirements/criteria, declared file hints, actual changes, hunk
   attribution, and other changed paths. File hints are not enforced boundaries.
