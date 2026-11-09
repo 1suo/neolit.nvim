@@ -73,8 +73,9 @@ opens that exact native diff.
   its Markdown range, and `y` copies its source location. Use `a` to add the
   selected source chunk or diff to a temporary context packet, `d` to remove
   it, `Y` to copy the assembled packet for the existing agent, and `c` to
-  clear it. `v` switches between requirement/task projections; `?` shows the
-  compact view's keys. Source ranges and diffs are checked again before copying;
+  clear it. A `●` marks rows already in the packet. `v` switches between
+  requirement/task projections; `?` shows the compact view's keys. Source
+  ranges and diffs are checked again before copying;
   changed context is rejected rather than silently replaced. No chat/session
   is created; the packet contains only selected source chunks and diffs. The
   view is a projection; source Markdown remains editable and authoritative.
@@ -84,7 +85,7 @@ opens that exact native diff.
 | Key | Action |
 | --- | --- |
 | `j` / `k` | Move |
-| `za` | Toggle selected directory or changed file |
+| `za` | Toggle selected directory/file or composed task/requirement |
 | `zo` / `zc` | Expand / collapse selected node |
 | `h` / `l` | Parent / expand |
 | `zr` / `zm` | Expand / collapse one visible level |
