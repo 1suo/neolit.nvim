@@ -70,6 +70,7 @@ This setup selects OpenCode's built-in ACP adapter. It requires the `opencode` e
 - <leader>nm opens a CodeCompanion chat using the configured adapter.
 - Use CodeCompanion's /resume command in chat to resume an existing OpenCode session.
 - <leader>nM adds the current Neolit context composition to the active CodeCompanion chat.
+- <leader>nF adds the selected file as a quoted Markdown link, without attaching its contents.
 - <leader>ne invokes CodeCompanion Code Review.
 - <leader>nC invokes CodeCompanion's agent Changes list.
 
@@ -84,6 +85,12 @@ Open Neolit from the repository you want to inspect:
 - Default shortcut: <leader>nn
 
 The workspace opens a 36-column tree on the left and reuses the current window as the source preview on the right. Reopening Neolit focuses the existing workspace. :NeolitClose or <leader>nq closes it.
+
+### Commands
+
+Workspace commands are buffer-local while the Neolit tree is open: `:NeolitCompose`, `:NeolitOpen`, `:NeolitOpenFile`, `:NeolitFilter`, `:NeolitRefresh`, `:NeolitDelete`, `:NeolitCopyText`, `:NeolitCopyPath`, `:NeolitToggle`, `:NeolitChat`, `:NeolitChatFile`, `:NeolitAgentChanges`, and `:NeolitReview`.
+
+Composed views also expose `:NeolitContextAdd`, `:NeolitContextRemove`, `:NeolitContextCopy`, `:NeolitContextClear`, `:NeolitContextReview`, and `:NeolitChatContext`. These commands act on the current Neolit selection; they are not global commands.
 
 ### Navigate and inspect
 
@@ -159,6 +166,7 @@ Default keymaps:
 | context_clear | <leader>nc |
 | chat_open | <leader>nm |
 | chat_context | <leader>nM |
+| chat_file | <leader>nF |
 | review_changes | <leader>ne |
 | agent_changes | <leader>nC |
 | affected_filter | <leader>nf |
@@ -169,15 +177,20 @@ Default keymaps:
 | close_workspace | <leader>nq |
 | view_help | <leader>n? |
 
-Override by action name:
+Override by action name. For example, this restores short tree-local actions while keeping native Neovim keys unchanged elsewhere:
 
 ~~~lua
 keymaps = {
-  open_workspace = "<leader>p",
+  affected_filter = "F",
+  delete_entry = "d",
+  refresh = "r",
+  chat_file = "F", -- choose another key if F is used for filtering
   context_add = "<leader>pa",
   context_copy = "<leader>py",
   delete_entry = false,
 }
 ~~~
+
+Each action mapping is buffer-local to the applicable Neolit view. Defaults are centralized in `lua/neolit/config.lua`; set an action to `false` to disable it.
 
 Neolit's action mappings are buffer-local to its workspace/views. It does not install these mappings in ordinary source-file buffers. Native movement and fold keys remain available.
