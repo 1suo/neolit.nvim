@@ -156,7 +156,7 @@ Default keymaps:
 | --- | --- |
 | open_workspace | <leader>nn |
 | tree_composed | <leader>nv |
-| tree_open_selected | <leader>n<CR> |
+| tree_open_selected | <CR> |
 | tree_toggle | F |
 | tree_expand_node | l |
 | tree_collapse_node | h |
@@ -204,6 +204,4 @@ keymaps = {
 }
 ~~~
 
-Each action mapping is buffer-local to the applicable Neolit view. Defaults are centralized in `lua/neolit/config.lua`; set an action to `false` to disable it.
-
-Neolit's action mappings are buffer-local to its workspace/views. It does not install these mappings in ordinary source-file buffers. Native movement and fold keys remain available.
+Workspace entry, CodeCompanion chat, review, agent changes, and current-file linking are global mappings. Tree navigation/filter/refresh/delete/copy actions are tree-local; task/context actions are available only in the composed views where their selection makes sense. No Neolit mappings are installed in ordinary source-file buffers. Native movement and fold keys remain available.
