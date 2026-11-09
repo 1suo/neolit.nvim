@@ -1903,10 +1903,10 @@ function M.open(opts)
       update_context_header()
       vim.notify("Removed context chunk (" .. #context_chunks .. " remaining)")
     end
-    local function copy_context()
+    local function compose_context()
       if #context_chunks == 0 then
         vim.notify("Context is empty", vim.log.levels.INFO)
-        return
+        return nil
       end
       local current = vim.b[buf].neolit_workspace or workspace
       local output = {}
@@ -1954,7 +1954,83 @@ function M.open(opts)
         end
         output[#output + 1] = item.label .. "\n" .. item.content
       end
-      copy_value(table.concat(output, "\n\n"), "Composed context")
+      return table.concat(output, "\n\n")
+    end
+    local function copy_context()
+      local output = compose_context()
+      if output then copy_value(output, "Composed context") end
+    end
+    local function open_message_draft()
+      local context = compose_context()
+      if not context then return end
+      local draft_buf = vim.api.nvim_create_buf(false, true)
+      vim.bo[draft_buf].buftype = "acwrite"
+      vim.bo[draft_buf].bufhidden = "hide"
+      vim.bo[draft_buf].swapfile = false
+      vim.bo[draft_buf].filetype = "markdown"
+      local draft_lines = { "", "", "## Context" }
+      vim.list_extend(draft_lines, vim.split(context, "\n", { plain = true }))
+      vim.api.nvim_buf_set_lines(draft_buf, 0, -1, false, draft_lines)
+      vim.bo[draft_buf].modifiable = true
+      local width = math.max(40, math.min(vim.o.columns - 8, 100))
+      local height = math.max(10, math.min(vim.o.lines - 8, 32))
+      local win_id = vim.api.nvim_open_win(draft_buf, true, {
+        relative = "editor", style = "minimal", border = "rounded",
+        width = width, height = height,
+        row = math.max(1, math.floor((vim.o.lines - height) / 2) - 1),
+        col = math.max(1, math.floor((vim.o.columns - width) / 2)),
+      })
+      vim.wo[win_id].wrap = true
+      vim.wo[win_id].linebreak = true
+      vim.wo[win_id].number = false
+      vim.api.nvim_win_set_cursor(win_id, { 1, 0 })
+      local session = M.agent_session(root)
+      local function send_draft()
+        local adapter = cfg.agent and cfg.agent.send
+        if type(adapter) ~= "function" then
+          vim.notify("No agent chat adapter configured (cfg.agent.send)", vim.log.levels.WARN)
+          return
+        end
+        if not session or type(session.id) ~= "string" then
+          vim.notify("No agent session bound to this worktree", vim.log.levels.WARN)
+          return
+        end
+        local message = table.concat(vim.api.nvim_buf_get_lines(draft_buf, 0, -1, false), "\n"):gsub("^%s+", ""):gsub("%s+$", "")
+        if message == "" then
+          vim.notify("Message is empty", vim.log.levels.INFO)
+          return
+        end
+        vim.bo[draft_buf].modifiable = true
+        vim.api.nvim_buf_set_lines(draft_buf, -1, -1, false, { "", "## Agent" })
+        local function append_response(chunk)
+          if type(chunk) ~= "string" or chunk == "" then return end
+          vim.schedule(function()
+            if not vim.api.nvim_buf_is_valid(draft_buf) then return end
+            local last = vim.api.nvim_buf_line_count(draft_buf)
+            local existing = vim.api.nvim_buf_get_lines(draft_buf, last - 1, last, false)[1] or ""
+            vim.api.nvim_buf_set_lines(draft_buf, last - 1, last, false, { existing .. chunk })
+          end)
+        end
+        local ok, err = pcall(adapter, {
+          session_id = session.id,
+          worktree = root,
+          message = message,
+          on_chunk = append_response,
+          on_done = function() end,
+          on_error = function(error)
+            vim.schedule(function()
+              vim.notify("Agent chat failed: " .. tostring(error), vim.log.levels.ERROR)
+            end)
+          end,
+        })
+        if not ok then vim.notify("Agent chat failed: " .. tostring(err), vim.log.levels.ERROR) end
+      end
+      bind_key(draft_buf, cfg, "chat_send", "<C-s>", send_draft)
+      bind_key(draft_buf, cfg, "chat_close", "q", function()
+        if vim.api.nvim_win_is_valid(win_id) then vim.api.nvim_win_close(win_id, true) end
+      end)
+      vim.api.nvim_buf_set_name(draft_buf, "neolit://chat-draft")
+      vim.notify("Draft: edit message above Context; <C-s> sends through configured worktree session adapter")
     end
     local function clear_context()
       context_chunks, context_keys = {}, {}
@@ -2238,6 +2314,7 @@ function M.open(opts)
     bind_key(view_buf, cfg, "context_copy", "<leader>ny", copy_context)
     bind_key(view_buf, cfg, "context_clear", "<leader>nc", clear_context)
     bind_key(view_buf, cfg, "context_review", "<leader>np", open_context_view)
+    bind_key(view_buf, cfg, "chat_open", "<leader>nm", open_message_draft)
     bind_key(view_buf, cfg, "copy_path", "<leader>nl", function()
       local row = selected_view_row()
       if row and row.path then copy_value(row.path .. (row.line and (":" .. row.line) or ""), "Source path") end
