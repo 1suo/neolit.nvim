@@ -7,12 +7,39 @@ M.defaults = {
   directory = nil,
   comparison_base = "HEAD",
   diff_view = "side_by_side",
+  keymaps = {
+    open_workspace = "<leader>nn",
+    tree_composed = "<leader>nv",
+    tree_edit_diff = "<leader>ne",
+    tree_open_file = "<leader>no",
+    delete_entry = "<leader>nD",
+    copy_text = "<leader>nx",
+    copy_path = "<leader>nl",
+    refresh = "<leader>nr",
+    affected_filter = "<leader>nf",
+    diff_layout = "<leader>nd",
+    context_add = "<leader>na",
+    context_remove = "<leader>nd",
+    context_copy = "<leader>ny",
+    context_clear = "<leader>nc",
+    context_review = "<leader>np",
+    copy_source = "<leader>nx",
+    task_scope = "<leader>ns",
+    switch_projection = "<leader>nv",
+    copy_source_path = "<leader>nl",
+  },
 }
 
 function M.merge(user)
   local merged = {}
   for key, value in pairs(M.defaults) do merged[key] = value end
-  for key, value in pairs(user or {}) do merged[key] = value end
+  for key, value in pairs(user or {}) do
+    if key == "keymaps" and type(value) == "table" then
+      merged.keymaps = vim.tbl_extend("force", merged.keymaps or {}, value)
+    else
+      merged[key] = value
+    end
+  end
   return merged
 end
 
