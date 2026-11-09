@@ -1797,8 +1797,8 @@ function M.open(opts)
       packet_add("NEOLIT · CONTEXT · " .. #context_chunks
         .. " chunks · Y copy · d remove · c clear · q back · ? keys", { kind = "header" })
       for index, item in ipairs(context_chunks) do
-        local line_count = item.content and (#item.content > 0 and select(2, item.content:gsub("\\n", "\\n")) + 1 or 0) or 0
-        local first_line = item.content and (item.content:match("([^\\n]+)") or "") or ""
+        local line_count = item.content and (#item.content > 0 and select(2, item.content:gsub("\n", "\n")) + 1 or 0) or 0
+        local first_line = item.content and (item.content:match("([^\n]+)") or "") or ""
         first_line = first_line:gsub("^%s+", ""):gsub("%s+$", "")
         if #first_line > 88 then first_line = first_line:sub(1, 85) .. "..." end
         packet_add(string.format("  %d · %s · %d lines · %d bytes",
@@ -1840,7 +1840,10 @@ function M.open(opts)
       end
       vim.keymap.set("n", "Y", copy_context, { buffer = packet_buf, silent = true })
       vim.keymap.set("n", "d", remove_packet_item, { buffer = packet_buf, silent = true })
-      vim.keymap.set("n", "c", clear_context, { buffer = packet_buf, silent = true })
+      vim.keymap.set("n", "c", function()
+        clear_context()
+        open_context_view()
+      end, { buffer = packet_buf, silent = true })
       vim.keymap.set("n", "q", function() open_composed_view(mode, scope_path) end,
         { buffer = packet_buf, silent = true })
       vim.keymap.set("n", "?", function()
