@@ -41,10 +41,11 @@ Install:
 ## Agent chat
 
 Neolit opens [CodeCompanion.nvim](https://github.com/olimorris/codecompanion.nvim)
-with its OpenCode ACP adapter and adds the selected, revalidated context to that
-chat. CodeCompanion owns the chat UI, streaming, permissions, and agent session
-lifecycle. Use CodeCompanion's `/resume` command to load an existing OpenCode
-session; Neolit does not maintain a parallel session registry or transport.
+with its OpenCode ACP adapter. CodeCompanion owns the chat UI, streaming,
+permissions, and agent session lifecycle. Use `/resume` to load an existing
+OpenCode session, then `<leader>nM` from Neolit to add the selected, revalidated
+context to that chat. Neolit does not maintain a parallel session registry or
+transport.
 
 Install CodeCompanion.nvim and configure its ACP adapter for OpenCode. Neolit
 uses `CodeCompanionChat adapter=opencode` by default; change
@@ -88,7 +89,8 @@ ordinary source-file buffers.
 | `<leader>np` | Review context |
 | `<leader>ny` | Copy validated context |
 | `<leader>nc` | Clear context |
-| `<leader>nm` | Open CodeCompanion chat with selected context |\n| `<leader>no` | Open selected source from composed views |
+| `<leader>nm` | Open CodeCompanion chat |
+| `<leader>nM` | Add composed context to active CodeCompanion chat |\n| `<leader>no` | Open selected source from composed views |
 | `<leader>ne` / `<leader>no` | Edit diff side / open actual file |
 | `<leader>nD` | Delete selected planning entry |
 | `<leader>nx` / `<leader>nl` | Copy selected text / source path |
