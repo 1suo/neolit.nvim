@@ -41,6 +41,9 @@ Install:
 `:Neolit` opens one compact repository tree and reuses the existing right
 pane for real source buffers and native diffs. The tree contains repository
 paths only; TODO tasks and SPEC requirements are not duplicated as tree nodes.
+The tree header summarizes task, requirement, changed-file, and unplanned-path
+counts; its navigation column stays 36 columns wide while the preview uses the
+remaining space. Wrapping follows Neovim's global `wrap` option.
 
 Opening a TODO or SPEC file keeps the actual editable Markdown buffer and adds
 derived annotations beside the source entries:
