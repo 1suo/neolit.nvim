@@ -138,7 +138,7 @@ keep a parallel conversation or session store.
 
 Set codecompanion.adapter to the adapter name configured in CodeCompanion.
 The default is "opencode". OpenCode sessions can be resumed with CodeCompanion's
-/ resume command (without the space).
+/resume command.
 
 - <leader>nm opens CodeCompanion chat with the configured adapter.
 - <leader>nM adds the Neolit context composition to the active chat.
