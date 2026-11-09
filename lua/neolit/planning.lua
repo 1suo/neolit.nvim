@@ -1797,14 +1797,14 @@ function M.open(opts)
       packet_add("NEOLIT · CONTEXT · " .. #context_chunks
         .. " chunks · Y copy · d remove · c clear · q back · ? keys", { kind = "header" })
       for index, item in ipairs(context_chunks) do
-        local line_count = item.content and (#item.content > 0 and select(2, item.content:gsub("\n", "\n")) + 1 or 0) or 0
+        local line_count = item.content and (#item.content > 0 and select(2, item.content:gsub("\n", "")) + 1 or 0) or 0
         local first_line = item.content and (item.content:match("([^\n]+)") or "") or ""
         first_line = first_line:gsub("^%s+", ""):gsub("%s+$", "")
         if #first_line > 88 then first_line = first_line:sub(1, 85) .. "..." end
         packet_add(string.format("  %d · %s · %d lines · %d bytes",
           index, item.label, line_count, #(item.content or "")), { index = index, kind = "chunk" })
         if first_line ~= "" then
-          packet_add("      " .. first_line, { kind = "excerpt" })
+          packet_add("      " .. first_line, { kind = "excerpt", index = index })
         end
       end
       if #context_chunks == 0 then packet_add("  (context is empty)", { kind = "empty" }) end
