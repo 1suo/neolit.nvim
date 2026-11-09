@@ -9,6 +9,32 @@ local function bind_key(buf, cfg, action, default, callback, opts)
   vim.keymap.set("n", lhs, callback, options)
 end
 
+local function add_codecompanion_file_reference(root, relative)
+  local target = type(relative) == "string" and safe_repo_path(root, relative) or nil
+  if not target or vim.fn.filereadable(target) ~= 1 then
+    vim.notify("Select an existing file first", vim.log.levels.INFO)
+    return
+  end
+  if vim.fn.exists(":CodeCompanionChat") ~= 2 then
+    vim.notify("CodeCompanion.nvim is required", vim.log.levels.ERROR)
+    return
+  end
+  local name = vim.fn.fnamemodify(target, ":t"):gsub("%[", "\\["):gsub("%]", "\\]")
+  local escaped_target = target:gsub('"', '\\"')
+  local link = "[" .. name .. ']("' .. escaped_target .. '")'
+  local context_buf = vim.api.nvim_create_buf(false, true)
+  vim.bo[context_buf].buftype = "nofile"
+  vim.bo[context_buf].bufhidden = "wipe"
+  vim.bo[context_buf].swapfile = false
+  vim.api.nvim_buf_set_lines(context_buf, 0, -1, false, { link })
+  local ok, err = pcall(vim.api.nvim_buf_call, context_buf, function()
+    vim.cmd("normal! ggVG")
+    vim.cmd("CodeCompanionChat Add")
+  end)
+  if vim.api.nvim_buf_is_valid(context_buf) then pcall(vim.api.nvim_buf_delete, context_buf, { force = true }) end
+  if not ok then vim.notify("Could not add file reference to CodeCompanion: " .. tostring(err), vim.log.levels.ERROR) end
+end
+
 local function state_reason(state, projection)
   if state == "unmapped" then return "No valid SPEC requirement reference" end
   if state == "blocked" then return "Blocked by an explicit blocker" end
@@ -1966,6 +1992,12 @@ function M.open(opts)
       local row = selected_view_row()
       if row and row.kind == "task" and row.task then open_task_scope(row.task) end
     end)
+    bind_key(view_buf, cfg, "chat_file", "<leader>nF", function()
+      local row = selected_view_row()
+      local relative = row and (row.path or (row.task and row.task.key:match("^(.-)::"))
+        or (row.requirement and (row.requirement.sourcePath or row.requirement.specPath)))
+      add_codecompanion_file_reference(root, relative)
+    end)
     vim.api.nvim_buf_create_user_command(view_buf, "NeolitContextAdd", append_context, { desc = "Add selected Neolit item to context", force = true })
     vim.api.nvim_buf_create_user_command(view_buf, "NeolitContextRemove", remove_context, { desc = "Remove selected Neolit item from context", force = true })
     vim.api.nvim_buf_create_user_command(view_buf, "NeolitContextCopy", copy_context, { desc = "Copy composed Neolit context", force = true })
@@ -2390,29 +2422,7 @@ function M.open(opts)
     local relative = selected_file_target(row)
       or (row and row.path)
       or (row and row.reference and row.reference.path)
-    local target = relative and safe_repo_path(root, relative) or nil
-    if not target or vim.fn.filereadable(target) ~= 1 then
-      vim.notify("Select an existing file first", vim.log.levels.INFO)
-      return
-    end
-    if vim.fn.exists(":CodeCompanionChat") ~= 2 then
-      vim.notify("CodeCompanion.nvim is required", vim.log.levels.ERROR)
-      return
-    end
-    local name = vim.fn.fnamemodify(target, ":t"):gsub("%[", "\\["):gsub("%]", "\\]")
-    local escaped_target = target:gsub('"', '\\"')
-    local link = "[" .. name .. ']("' .. escaped_target .. '")'
-    local context_buf = vim.api.nvim_create_buf(false, true)
-    vim.bo[context_buf].buftype = "nofile"
-    vim.bo[context_buf].bufhidden = "wipe"
-    vim.bo[context_buf].swapfile = false
-    vim.api.nvim_buf_set_lines(context_buf, 0, -1, false, { link })
-    local ok, err = pcall(vim.api.nvim_buf_call, context_buf, function()
-      vim.cmd("normal! ggVG")
-      vim.cmd("CodeCompanionChat Add")
-    end)
-    if vim.api.nvim_buf_is_valid(context_buf) then pcall(vim.api.nvim_buf_delete, context_buf, { force = true }) end
-    if not ok then vim.notify("Could not add file reference to CodeCompanion: " .. tostring(err), vim.log.levels.ERROR) end
+    add_codecompanion_file_reference(root, relative)
   end
   vim.api.nvim_buf_create_user_command(buf, "NeolitChatFile", add_file_link_to_chat, { desc = "Add selected file as a quoted Markdown link to CodeCompanion" })
   vim.api.nvim_buf_create_user_command(buf, "NeolitChat", function()
