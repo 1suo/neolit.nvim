@@ -22,7 +22,8 @@ function M.setup(user)
       vim.notify("Usage: :NeolitAgentBind <session-id> [label]", vim.log.levels.ERROR)
       return
     end
-    local root = configured.directory or vim.fn.getcwd()
+    local root, root_err = planning.worktree_root(configured)
+    if not root then vim.notify("Cannot resolve Neolit worktree: " .. tostring(root_err), vim.log.levels.ERROR); return end
     local ok, err = planning.bind_agent_session(root, session_id, table.concat(args.fargs, " ", 2))
     if not ok then vim.notify("Could not bind agent session: " .. tostring(err), vim.log.levels.ERROR); return end
     vim.notify("Bound agent session " .. session_id .. " to " .. vim.fn.fnamemodify(root, ":p"))
