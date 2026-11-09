@@ -30,7 +30,6 @@ Install:
     neolit_dir = "/path/to/neolit",
     -- directory = "/path/to/repository", -- defaults to cwd
     -- comparison_base = "HEAD",
-    -- diff_view = "side_by_side", -- or "unified"
     -- keymaps = { open_workspace = "<leader>nn" },
     -- codecompanion = { adapter = "opencode" },
   },
@@ -54,7 +53,8 @@ uses `CodeCompanionChat adapter=opencode` by default; change
 ## Workspace
 
 `:Neolit` or `<leader>nn` opens one compact repository tree and reuses the
-existing right pane for real source buffers and native diffs. The tree contains
+existing right pane for real source buffers. CodeCompanion owns diff rendering
+and review. The tree contains
 repository paths only; TODO tasks and SPEC requirements are not duplicated as
 tree nodes. The tree header summarizes task, requirement, changed-file, and
 unplanned-path counts; its navigation column stays 36 columns wide while the
@@ -63,13 +63,16 @@ preview uses the remaining space. Wrapping follows Neovim's global `wrap`.
 Opening a TODO or SPEC file keeps the actual editable Markdown buffer and adds
 derived annotations beside source entries. Changed files expand to show
 candidate task links and hunk attribution. File-path hints never prove
-implementation; selecting a hunk opens that exact native diff.
+implementation. Selecting a changed file or hunk navigates to its working-tree
+source; `<leader>ne` opens CodeCompanion Code Review for the actual diff review.
 
 The composed view connects SPEC requirements, TODO tasks, acceptance criteria,
 file hints, and observed Git changes. `za` expands semantic entries and scope
-sections; `<CR>` opens the selected source or diff. Literal source chunks,
-file diffs, and exact hunks can be added to context, reviewed, removed, and
-revalidated before copying or opening the CodeCompanion chat. Source Markdown
+sections; `<CR>` opens the selected source. Literal source chunks, changed-file
+diffs, and exact hunks can be added to context, reviewed, removed, and
+revalidated before copying or opening the CodeCompanion chat. CodeCompanion owns
+diff presentation and accept/revert review actions; Neolit owns planning
+relationships and change-to-task/requirement attribution. Source Markdown
 remains authoritative.
 
 Neolit actions use semantic mappings under `<leader>n` by default. Override
@@ -84,7 +87,7 @@ ordinary source-file buffers.
 | --- | --- |
 | `<leader>nn` | Open workspace |
 | `<leader>nv` | Open composed requirement/task view |
-| `<leader>n<CR>` | Open selected tree entry / diff |
+| `<leader>n<CR>` | Open selected tree entry / source |
 | `<leader>ns` | Open selected task scope |
 | `<leader>na` / `<leader>n-` | Add / remove context |
 | `<leader>np` | Review context |
@@ -93,12 +96,11 @@ ordinary source-file buffers.
 | `<leader>nm` | Open CodeCompanion chat |
 | `<leader>nM` | Add composed context to active CodeCompanion chat |
 | `<leader>no` | Open selected source from composed views |
-| `<leader>ne` / `<leader>no` | Edit diff side / open actual file |
+| `<leader>ne` | Open CodeCompanion Code Review |
 | `<leader>nD` | Delete selected planning entry |
 | `<leader>nx` / `<leader>nl` | Copy selected text / source path |
 | `<leader>nf` | Toggle affected-only paths |
 | `<leader>nr` | Refresh |
-| `<leader>nd` | Toggle diff layout |
 | `<leader>nq` | Close workspace |
 
 `Description:` explains task intent; `Agent notes:` explains actual changes,
