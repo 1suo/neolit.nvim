@@ -179,15 +179,15 @@ DEFAULT KEYMAPS                                                    *neolit-keyma
   Action                 Mapping          Context
   open_workspace         <leader>nn       workspace
   tree_composed          <leader>nv       tree
-  tree_open_selected     <leader>n<CR>    tree
-  tree_open_file         <leader>no       tree
+  tree_open_selected     <CR>             tree
+  tree_open_file         o                tree
   task_scope             <leader>ns       composed view
   context_add            <leader>na       composed/scope view
   context_remove         <leader>n-       composed/scope/context view
   context_review         <leader>np       composed view
   context_copy           <leader>ny       composed/context view
   context_clear          <leader>nc       composed/context view
-  chat_open              <leader>nm       composed view
+  chat_open              <leader>nm       global
   chat_context           <leader>nM       composed/scope view
   chat_file              <leader>nF       tree/composed
   tree_toggle            F              tree
@@ -200,19 +200,20 @@ DEFAULT KEYMAPS                                                    *neolit-keyma
   tree_collapse_level    zm              tree
   tree_expand_all        zR              tree
   tree_collapse_all      zM              tree
-  review_changes         <leader>ne       tree
-  agent_changes          <leader>nC       tree
+  review_changes         <leader>ne       global
+  agent_changes          <leader>nC       global
   affected_filter        <leader>nf       tree
   delete_entry           <leader>nD       tree
   copy_text              <leader>nx       tree
   copy_path              <leader>nl       tree
   refresh                <leader>nr       tree
-  close_workspace        <leader>nq       tree
+  close_workspace        q                tree
   view_help              ?       views
 
-Set any keymaps.<action> to false or "" to disable it. All Neolit action and
-tree-fold mappings are configured in lua/neolit/config.lua and are buffer-local
-to Neolit views; ordinary source buffers keep their normal mappings.
+Set any keymaps.<action> to false or "" to disable it. Workspace entry, CodeCompanion chat, review, agent changes, and current-file
+linking are global mappings. Tree navigation/filter/refresh/delete/copy actions
+are tree-local; task/context actions are available in composed views where
+their selection makes sense. Ordinary source buffers keep native mappings.
 
 Commands are also available in their applicable Neolit buffers:
 :NeolitCompose, :NeolitOpen, :NeolitOpenFile, :NeolitFilter, :NeolitRefresh,
