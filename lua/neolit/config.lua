@@ -28,6 +28,7 @@ M.defaults = {
     copy_source_path = "<leader>nl",
     chat_open = "<leader>nm",
     chat_context = "<leader>nM",
+    chat_file = "<leader>nF",
     tree_toggle = "<leader>nt",
     tree_help = "<leader>n?",
     tree_open_selected = "<leader>n<CR>",
