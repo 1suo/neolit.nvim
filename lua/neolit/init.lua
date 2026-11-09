@@ -7,6 +7,10 @@ local configured
 
 function M.setup(user)
   configured = config.merge(user)
+  local open_key = configured.keymaps and configured.keymaps.open_workspace
+  if open_key and open_key ~= false and open_key ~= "" then
+    vim.keymap.set("n", open_key, M.open, { silent = true, desc = "Neolit: open_workspace" })
+  end
   vim.api.nvim_create_user_command("Neolit", function()
     M.open()
   end, { desc = "Open the Git-native planning workspace", force = true })
