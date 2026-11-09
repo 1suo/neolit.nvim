@@ -71,8 +71,10 @@ opens that exact native diff.
   linked requirements. Press `v` in that view to switch projections; `<CR>
   navigates to the source chunk, `x` copies its Markdown range or selected
   detail, and `y` copies its source location. Use `a` to add the selected source
-  chunk or diff to a temporary context packet, `Y` to copy the assembled packet
-  for the existing agent, and `c` to clear it. No chat/session is created; the
+  chunk or diff to a temporary context packet, `d` to remove the selected chunk,
+  `Y` to copy the assembled packet for the existing agent, and `c` to clear it.
+  Source ranges and diffs are checked again before copying; changed context is
+  rejected rather than silently replaced. No chat/session is created; the
   packet contains only the selected source chunks and diffs. The view is a
   projection; source Markdown remains editable and authoritative.
 
