@@ -40,6 +40,9 @@ Example for lazy.nvim:
       -- context_add = false,
     },
   },
+  keys = {
+    { "<leader>nn", "<cmd>Neolit<cr>", desc = "Open Neolit workspace" },
+  },
   cmd = { "Neolit", "NeolitPlan", "NeolitClose" },
 }
 ~~~
