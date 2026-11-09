@@ -758,7 +758,9 @@ function M.open(opts)
   local composed_expanded, scope_expanded = {}, {}
   local composed_view_buf, context_view_buf
   local filter_mode = "all"
-  local codecompanion_review_diffs = {}
+  local codecompanion_review_diffs
+  local codecompanion_review_loaded = false
+  local codecompanion_preview_cache = {}
 
   local function build_codecompanion_review()
     if not package.loaded["codecompanion"] and vim.fn.exists(":CodeCompanionCodeReview") ~= 2 then
@@ -771,6 +773,40 @@ function M.open(opts)
     local built_ok, built = pcall(checklist.build, { root = root })
     if not built_ok or type(built) ~= "table" then return nil end
     return built
+  end
+
+  local function ensure_codecompanion_review(workspace)
+    if codecompanion_review_loaded then return false end
+    codecompanion_review_loaded = true
+    local built = build_codecompanion_review()
+    if not built then return false end
+    codecompanion_review_diffs = built.diffs or {}
+    workspace.codecompanionReview = built
+    local changed_paths = {}
+    for _, file in ipairs(workspace.git.changedFiles or {}) do changed_paths[file.path] = true end
+    workspace.git.changedFiles = workspace.git.changedFiles or {}
+    for path, diff in pairs(codecompanion_review_diffs) do
+      if not changed_paths[path] then
+        local file = { path = path, hunks = {} }
+        for _, hunk in ipairs(diff.hunks or {}) do
+          file.hunks[#file.hunks + 1] = {
+            oldStart = hunk.from_start, oldLines = hunk.from_count,
+            newStart = hunk.to_start, newLines = hunk.to_count,
+          }
+        end
+        workspace.git.changedFiles[#workspace.git.changedFiles + 1] = file
+      end
+    end
+    return true
+  end
+
+  local function clear_codecompanion_previews()
+    for _, cached in pairs(codecompanion_preview_cache) do
+      if cached.bufnr and vim.api.nvim_buf_is_valid(cached.bufnr) then
+        pcall(vim.api.nvim_buf_delete, cached.bufnr, { force = true })
+      end
+    end
+    codecompanion_preview_cache = {}
   end
 
   local function open_in_preview(relative_path, line, focus)
@@ -836,19 +872,27 @@ function M.open(opts)
       vim.notify("Neolit window roles are inconsistent; close and reopen :Neolit", vim.log.levels.ERROR)
       return
     end
-    local preview = vim.api.nvim_create_buf(false, true)
-    vim.bo[preview].buftype = "nofile"
-    vim.bo[preview].bufhidden = "wipe"
-    vim.bo[preview].swapfile = false
-    vim.bo[preview].modifiable = true
-    vim.api.nvim_buf_set_lines(preview, 0, -1, false, #file_diff.merged.lines > 0 and file_diff.merged.lines or { "" })
-    vim.bo[preview].modifiable = false
-    vim.bo[preview].filetype = file_diff.ft or vim.filetype.match({ filename = file.path }) or "text"
-    vim.api.nvim_buf_set_name(preview, "neolit://review/" .. file.path:gsub("[/\\\\]", "_") .. "-" .. preview)
-    local ns = vim.api.nvim_create_namespace("neolit-codecompanion-diff-" .. preview)
-    local ui_ok, diff_ui = pcall(require, "codecompanion.diff.ui")
-    if ui_ok then
-      pcall(diff_ui.apply_highlights, file_diff, { bufnr = preview, ns = ns })
+    local cached = codecompanion_preview_cache[file.path]
+    local preview
+    if cached and cached.diff == file_diff and vim.api.nvim_buf_is_valid(cached.bufnr) then
+      preview = cached.bufnr
+    else
+      if cached and cached.bufnr and vim.api.nvim_buf_is_valid(cached.bufnr) then
+        pcall(vim.api.nvim_buf_delete, cached.bufnr, { force = true })
+      end
+      preview = vim.api.nvim_create_buf(false, true)
+      vim.bo[preview].buftype = "nofile"
+      vim.bo[preview].bufhidden = "wipe"
+      vim.bo[preview].swapfile = false
+      vim.bo[preview].modifiable = true
+      vim.api.nvim_buf_set_lines(preview, 0, -1, false, #file_diff.merged.lines > 0 and file_diff.merged.lines or { "" })
+      vim.bo[preview].modifiable = false
+      vim.bo[preview].filetype = file_diff.ft or vim.filetype.match({ filename = file.path }) or "text"
+      vim.api.nvim_buf_set_name(preview, "neolit://review/" .. file.path:gsub("[/\\\\]", "_") .. "-" .. preview)
+      local ns = vim.api.nvim_create_namespace("neolit-codecompanion-diff-" .. preview)
+      local ui_ok, diff_ui = pcall(require, "codecompanion.diff.ui")
+      if ui_ok then pcall(diff_ui.apply_highlights, file_diff, { bufnr = preview, ns = ns }) end
+      codecompanion_preview_cache[file.path] = { diff = file_diff, bufnr = preview }
     end
     vim.wo[win].cursorbind = false
     vim.wo[win].scrollbind = false
@@ -957,35 +1001,10 @@ function M.open(opts)
               parent = parent:match("^(.*)/[^/]+$")
             end
           end
-          local built_review = build_codecompanion_review()
-          if built_review then
-            for _, old in pairs(codecompanion_review_diffs) do
-              pcall(vim.api.nvim_buf_delete, old.bufnr, { force = true })
-            end
-            codecompanion_review_diffs = built_review.diffs or {}
-            workspace.codecompanionReview = built_review
-            local changed_paths = {}
-            for _, file in ipairs(workspace.git.changedFiles or {}) do changed_paths[file.path] = true end
-            workspace.git.changedFiles = workspace.git.changedFiles or {}
-            for path, diff in pairs(codecompanion_review_diffs) do
-              if not changed_paths[path] then
-                local file = { path = path, hunks = {} }
-                for _, hunk in ipairs(diff.hunks or {}) do
-                  file.hunks[#file.hunks + 1] = {
-                    oldStart = hunk.from_start, oldLines = hunk.from_count,
-                    newStart = hunk.to_start, newLines = hunk.to_count,
-                  }
-                end
-                workspace.git.changedFiles[#workspace.git.changedFiles + 1] = file
-              end
-            end
-          else
-            for _, old in pairs(codecompanion_review_diffs) do
-              pcall(vim.api.nvim_buf_delete, old.bufnr, { force = true })
-            end
-            codecompanion_review_diffs = {}
-            workspace.codecompanionReview = nil
-          end
+          clear_codecompanion_previews()
+          codecompanion_review_diffs = nil
+          codecompanion_review_loaded = false
+          workspace.codecompanionReview = nil
           render(buf, root, workspace, expanded_files, expanded_dirs, expanded_tasks, filter_mode)
           vim.b[buf].neolit_workspace = workspace
         end)
@@ -2323,7 +2342,16 @@ function M.open(opts)
       expanded_tasks[row.key] = expanded
       rerender_at(row.key)
     elseif row.kind == "file" or row.kind == "planning_document" then
-      expanded_files[row.path or (row.file and row.file.path)] = expanded
+      local path = row.path or (row.file and row.file.path)
+      if expanded and row.kind == "file" then
+        local workspace = vim.b[buf].neolit_workspace
+        if workspace and ensure_codecompanion_review(workspace) then
+          expanded_files[path] = true
+          rerender_at(row.key)
+          return
+        end
+      end
+      expanded_files[path] = expanded
       rerender_at(row.key)
     elseif row.kind == "hunk" then
       return
@@ -2571,10 +2599,9 @@ function M.open(opts)
     callback = function()
       refresh_revision = refresh_revision + 1
       if refresh_job then pcall(vim.fn.jobstop, refresh_job); refresh_job = nil end
-      for _, old in pairs(codecompanion_review_diffs) do
-        pcall(vim.api.nvim_buf_delete, old.bufnr, { force = true })
-      end
-      codecompanion_review_diffs = {}
+      clear_codecompanion_previews()
+      codecompanion_review_diffs = nil
+      codecompanion_review_loaded = false
       pcall(vim.api.nvim_del_augroup_by_id, refresh_group)
     end,
   })
@@ -2667,10 +2694,9 @@ function M.open(opts)
   local function close_workspace()
     refresh_revision = refresh_revision + 1
     if refresh_job then pcall(vim.fn.jobstop, refresh_job); refresh_job = nil end
-    for _, old in pairs(codecompanion_review_diffs) do
-      pcall(vim.api.nvim_buf_delete, old.bufnr, { force = true })
-    end
-    codecompanion_review_diffs = {}
+    clear_codecompanion_previews()
+    codecompanion_review_diffs = nil
+    codecompanion_review_loaded = false
     pcall(vim.api.nvim_del_augroup_by_id, refresh_group)
     if vim.api.nvim_buf_is_valid(buf) then
       for _, win in ipairs(vim.api.nvim_list_wins()) do
