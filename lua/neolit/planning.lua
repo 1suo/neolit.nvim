@@ -1349,6 +1349,14 @@ function M.open(opts)
       for key, value in pairs(extra or {}) do row[key] = value end
       return row
     end
+    local function context_key(row)
+      if not row then return nil end
+      if row.kind == "changed_file" then return "diff:" .. row.path end
+      if row.path and row.first then
+        return row.path .. ":" .. row.kind .. ":" .. tostring(row.first) .. ":"
+          .. tostring(row.last) .. (row.kind == "task_detail" and (":" .. tostring(row.text)) or "")
+      end
+    end
     local scoped_task_count, scoped_requirement_count = 0, 0
     if mode == "requirements" then
       local included_tasks, included_specs = {}, {}
@@ -1632,20 +1640,23 @@ function M.open(opts)
       end
       copy_value(table.concat(chunk, "\n"), row.kind == "task" and "TODO task" or "Planning chunk")
     end
+    local context_ns = vim.api.nvim_create_namespace("neolit-context-selection-" .. view_buf)
     local function update_context_header()
       if not vim.api.nvim_buf_is_valid(view_buf) then return end
       local header = vim.api.nvim_buf_get_lines(view_buf, 0, 1, false)[1] or ""
-      header = header:gsub("context %d+", "context " .. #context_chunks)
+      header = header:gsub("ctx %d+", "ctx " .. #context_chunks)
       vim.bo[view_buf].modifiable = true
       vim.api.nvim_buf_set_lines(view_buf, 0, 1, false, { header })
       vim.bo[view_buf].modifiable = false
-    end
-    local function context_key(row)
-      if not row then return nil end
-      if row.kind == "changed_file" then return "diff:" .. row.path end
-      if row.path and row.first then
-        return row.path .. ":" .. row.kind .. ":" .. tostring(row.first) .. ":"
-          .. tostring(row.last) .. (row.kind == "task_detail" and (":" .. tostring(row.text)) or "")
+      vim.api.nvim_buf_clear_namespace(view_buf, context_ns, 0, -1)
+      for line, row in pairs(rows) do
+        if context_keys[context_key(row)] then
+          pcall(vim.api.nvim_buf_set_extmark, view_buf, context_ns, line - 1, 0, {
+            virt_text = { { "● ", "DiagnosticOk" } },
+            virt_text_pos = "inline",
+            priority = 150,
+          })
+        end
       end
     end
     local function append_context()
@@ -1736,7 +1747,7 @@ function M.open(opts)
           end
           local changed
           for _, file in ipairs(current.git.changedFiles or {}) do
-            if file.path == item.path then changed = file; break end
+            if file.path == item.path or file.previousPath == item.path then changed = file; break end
           end
           if not changed then
             vim.notify("Context is stale: " .. item.path .. " is no longer changed; refresh and re-add it", vim.log.levels.WARN)
@@ -1799,6 +1810,7 @@ function M.open(opts)
     vim.keymap.set("n", "v", function()
       open_composed_view(mode == "requirements" and "tasks" or "requirements", scope_path)
     end, { buffer = view_buf, silent = true })
+    update_context_header()
     vim.keymap.set("n", "q", function()
       if vim.api.nvim_win_is_valid(diff_state.tree_win) then vim.api.nvim_set_current_win(diff_state.tree_win) end
     end, { buffer = view_buf, silent = true })
