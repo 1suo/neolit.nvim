@@ -854,6 +854,7 @@ function M.open(opts)
   local expanded_dirs = {}
   local expanded_tasks = {}
   local diff_state = { tree_win = tree_win, preview_win = preview_win, diff_view = cfg.diff_view or "side_by_side" }
+  local context_chunks, context_keys = {}, {}
   local filter_mode = "all"
 
   local function open_in_preview(relative_path, line, focus)
@@ -1353,7 +1354,7 @@ function M.open(opts)
       return row
     end
     add("NEOLIT · " .. (mode == "tasks" and "TASK WORKSPACE" or "REQUIREMENT WORKSPACE")
-      .. (scope_path and (" · " .. scope_path) or "") .. " · v switch view · <CR> source · x copy chunk · y path", { kind = "header" })
+      .. (scope_path and (" · " .. scope_path) or "") .. " · v switch view · a add context · Y copy · c clear · <CR> source · x chunk · y path", { kind = "header" })
 
     if mode == "requirements" then
       local scoped_specs = {}
@@ -1556,8 +1557,68 @@ function M.open(opts)
       end
       copy_value(table.concat(chunk, "\n"), row.kind == "task" and "TODO task" or "Planning chunk")
     end
+    local function append_context()
+      local row = selected_view_row()
+      if not row then return end
+      local label, content, key
+      if row.kind == "changed_file" then
+        local changed
+        for _, file in ipairs(workspace.git.changedFiles or {}) do
+          if file.path == row.path or file.previousPath == row.path then changed = file; break end
+        end
+        if not changed or not changed.rawDiff or changed.rawDiff == "" then
+          vim.notify("No current diff is available for this file", vim.log.levels.INFO)
+          return
+        end
+        label, content = row.path, changed.rawDiff
+        key = "diff:" .. row.path
+      elseif row.path and row.first then
+        local target = safe_repo_path(root, row.path)
+        if not target or vim.fn.filereadable(target) ~= 1 then
+          vim.notify("Source chunk is no longer available; refresh the workspace", vim.log.levels.WARN)
+          return
+        end
+        if row.kind == "task_detail" then
+          content = row.text or ""
+          label = row.path .. ":" .. tostring(row.line) .. " (detail)"
+        else
+          local source_lines = vim.fn.readfile(target)
+          local chunk = {}
+          for index = row.first, math.min(row.last or row.first, #source_lines) do
+            chunk[#chunk + 1] = source_lines[index]
+          end
+          content = table.concat(chunk, "\n")
+          label = row.path .. ":" .. tostring(row.first)
+        end
+        key = row.path .. ":" .. tostring(row.first) .. ":" .. tostring(row.last)
+      else
+        vim.notify("Select a requirement, task, criterion, detail, or changed file", vim.log.levels.INFO)
+        return
+      end
+      if context_keys[key] then
+        vim.notify("Chunk is already in the context", vim.log.levels.INFO)
+        return
+      end
+      context_keys[key] = true
+      context_chunks[#context_chunks + 1] = label .. "\n" .. content
+      vim.notify("Added context chunk (" .. #context_chunks .. ")")
+    end
+    local function copy_context()
+      if #context_chunks == 0 then
+        vim.notify("Context is empty", vim.log.levels.INFO)
+        return
+      end
+      copy_value(table.concat(context_chunks, "\n\n"), "Composed context")
+    end
+    local function clear_context()
+      context_chunks, context_keys = {}, {}
+      vim.notify("Context cleared")
+    end
     vim.keymap.set("n", "<CR>", navigate, { buffer = view_buf, silent = true })
     vim.keymap.set("n", "x", copy_chunk, { buffer = view_buf, silent = true })
+    vim.keymap.set("n", "a", append_context, { buffer = view_buf, silent = true })
+    vim.keymap.set("n", "Y", copy_context, { buffer = view_buf, silent = true })
+    vim.keymap.set("n", "c", clear_context, { buffer = view_buf, silent = true })
     vim.keymap.set("n", "y", function()
       local row = selected_view_row()
       if row and row.path then copy_value(row.path .. (row.line and (":" .. row.line) or ""), "Source path") end
