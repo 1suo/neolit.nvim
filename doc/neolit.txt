@@ -189,7 +189,7 @@ DEFAULT KEYMAPS                                                    *neolit-keyma
   context_clear          <leader>nc       composed/context view
   chat_open              <leader>nm       composed view
   chat_context           <leader>nM       composed/scope view
-  chat_file              <leader>nF       tree
+  chat_file              <leader>nF       tree/composed
   tree_fold_toggle       za              tree/composed/scope
   tree_fold_close        zc              tree
   tree_fold_open         zo              tree
