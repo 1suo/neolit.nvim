@@ -1,6 +1,14 @@
 --- Read-only Git-native planning workspace backed by the shared TypeScript core.
 local M = {}
 
+local function bind_key(buf, cfg, action, default, callback, opts)
+  local configured = (cfg and cfg.keymaps and cfg.keymaps[action])
+  local lhs = configured == nil and default or configured
+  if lhs == false or lhs == "" then return end
+  local options = vim.tbl_extend("force", { buffer = buf, silent = true, desc = "Neolit: " .. action }, opts or {})
+  vim.keymap.set("n", lhs, callback, options)
+end
+
 local function agent_bindings_path()
   return vim.fn.stdpath("state") .. "/neolit/agent-sessions.json"
 end
@@ -2009,12 +2017,12 @@ function M.open(opts)
         if item then context_keys[item.key] = nil end
         open_context_view()
       end
-      vim.keymap.set("n", "Y", copy_context, { buffer = packet_buf, silent = true })
-      vim.keymap.set("n", "d", remove_packet_item, { buffer = packet_buf, silent = true })
-      vim.keymap.set("n", "c", function()
+      bind_key(packet_buf, cfg, "context_copy", "<leader>ny", copy_context)
+      bind_key(packet_buf, cfg, "context_remove", "<leader>nd", remove_packet_item)
+      bind_key(packet_buf, cfg, "context_clear", "<leader>nc", function()
         clear_context()
         open_context_view()
-      end, { buffer = packet_buf, silent = true })
+      end)
       vim.keymap.set("n", "q", function()
         if return_to then return_to() else open_composed_view(mode, scope_path) end
       end, { buffer = packet_buf, silent = true })
@@ -2024,7 +2032,7 @@ function M.open(opts)
       vim.api.nvim_set_current_win(win)
       vim.api.nvim_win_set_cursor(win, { 1, 0 })
     end
-    vim.keymap.set("n", "<CR>", navigate, { buffer = view_buf, silent = true })
+    bind_key(view_buf, cfg, "open_source", "<CR>", navigate)
     vim.keymap.set("n", "za", function()
       local row = selected_view_row()
       if not row or (row.kind ~= "task" and row.kind ~= "requirement") or not row.key then return end
@@ -2034,9 +2042,9 @@ function M.open(opts)
     vim.keymap.set("n", "?", function()
       vim.notify("Workspace: za expand/collapse · s task scope · p context packet · <CR> source · a add · d remove · Y copy · c clear · x copy · y path · v switch · q tree", vim.log.levels.INFO)
     end, { buffer = view_buf, silent = true })
-    vim.keymap.set("n", "x", copy_chunk, { buffer = view_buf, silent = true })
-    vim.keymap.set("n", "a", append_context, { buffer = view_buf, silent = true })
-    vim.keymap.set("n", "d", remove_context, { buffer = view_buf, silent = true })
+    bind_key(view_buf, cfg, "copy_source", "<leader>nx", copy_chunk)
+    bind_key(view_buf, cfg, "context_add", "<leader>na", append_context)
+    bind_key(view_buf, cfg, "context_remove", "<leader>nd", remove_context)
     local function open_task_scope(task, selected_key)
       local projection = task_states[task.key] or {}
       local scope_lines, scope_rows = {}, {}
@@ -2198,8 +2206,8 @@ function M.open(opts)
           vim.api.nvim_buf_add_highlight(view_buf, ns, "Comment", line - 1, 0, -1)
         end
       end
-      vim.keymap.set("n", "<CR>", navigate, { buffer = view_buf, silent = true })
-      vim.keymap.set("n", "x", copy_chunk, { buffer = view_buf, silent = true })
+      bind_key(view_buf, cfg, "open_source", "<CR>", navigate)
+      bind_key(view_buf, cfg, "copy_source", "<leader>nx", copy_chunk)
       vim.keymap.set("n", "za", function()
         local row = selected_view_row()
         if not row or row.kind ~= "section" or not row.section_key then return end
@@ -2223,20 +2231,20 @@ function M.open(opts)
       vim.api.nvim_win_set_cursor(win, { selected_line, 0 })
     end
 
-    vim.keymap.set("n", "s", function()
+    bind_key(view_buf, cfg, "task_scope", "<leader>ns", function()
       local row = selected_view_row()
       if row and row.kind == "task" and row.task then open_task_scope(row.task) end
-    end, { buffer = view_buf, silent = true })
-    vim.keymap.set("n", "Y", copy_context, { buffer = view_buf, silent = true })
-    vim.keymap.set("n", "c", clear_context, { buffer = view_buf, silent = true })
-    vim.keymap.set("n", "p", open_context_view, { buffer = view_buf, silent = true })
-    vim.keymap.set("n", "y", function()
+    end)
+    bind_key(view_buf, cfg, "context_copy", "<leader>ny", copy_context)
+    bind_key(view_buf, cfg, "context_clear", "<leader>nc", clear_context)
+    bind_key(view_buf, cfg, "context_review", "<leader>np", open_context_view)
+    bind_key(view_buf, cfg, "copy_path", "<leader>nl", function()
       local row = selected_view_row()
       if row and row.path then copy_value(row.path .. (row.line and (":" .. row.line) or ""), "Source path") end
-    end, { buffer = view_buf, silent = true })
-    vim.keymap.set("n", "v", function()
+    end)
+    bind_key(view_buf, cfg, "switch_projection", "<leader>nv", function()
       open_composed_view(mode == "requirements" and "tasks" or "requirements", scope_path)
-    end, { buffer = view_buf, silent = true })
+    end)
     update_context_header()
     vim.keymap.set("n", "q", function()
       if vim.api.nvim_win_is_valid(diff_state.tree_win) then vim.api.nvim_set_current_win(diff_state.tree_win) end
@@ -2251,8 +2259,12 @@ function M.open(opts)
     vim.api.nvim_win_set_cursor(win, { selected_line, 0 })
   end
 
-  local function map(lhs, fn, desc)
-    vim.keymap.set("n", lhs, fn, { buffer = buf, silent = true, nowait = true, desc = desc })
+  local function map(lhs, fn, desc, action)
+    local key = action or desc
+    local configured = cfg.keymaps and cfg.keymaps[key]
+    local resolved = configured == nil and lhs or configured
+    if resolved == false or resolved == "" then return end
+    vim.keymap.set("n", resolved, fn, { buffer = buf, silent = true, nowait = true, desc = "Neolit: " .. key })
   end
   rerender_at = function(key)
     local workspace = vim.b[buf].neolit_workspace
@@ -2577,16 +2589,16 @@ function M.open(opts)
       pcall(vim.api.nvim_del_augroup_by_id, refresh_group)
     end,
   })
-  map("v", function()
+  map("<leader>nv", function()
     local row = current_row()
     local mode = row and row.doc_kind == "TODO" and "tasks" or "requirements"
     open_composed_view(mode, row and row.doc_kind and row.path or nil)
-  end, "Open composed requirement/task workspace")
+  end, "tree_composed", "tree_composed")
   map("<CR>", selected, "Show selected diff or expand/open planning entry")
   map("e", focus_working_diff, "Edit the selected file in the working side of its diff")
   map("o", open_selected_file, "Open the selected actual file without the diff")
-  map("<leader>ne", focus_working_diff, "Edit selected file in diff")
-  map("<leader>no", open_selected_file, "Open selected file without diff")
+  map("<leader>ne", focus_working_diff, "tree_edit_diff", "tree_edit_diff")
+  map("<leader>no", open_selected_file, "tree_open_file", "tree_open_file")
   map("za", toggle_node_at_cursor, "Toggle selected folder, document, task, or diff file")
   map("l", expand_node_at_cursor, "Expand selected folder, task, or diff file")
   map("h", collapse_node_at_cursor, "Collapse selected node or move to parent")
@@ -2605,7 +2617,7 @@ function M.open(opts)
     for _, task in ipairs((vim.b[buf].neolit_workspace or {}).tasks or {}) do expanded_tasks[task.key] = false end
     rerender_at()
   end, "Collapse all folders, documents, tasks, and diffs")
-  map("f", function()
+  map("<leader>nf", function()
     local row = current_row()
     filter_mode = filter_mode == "all" and "affected" or "all"
     if filter_mode == "affected" then
@@ -2617,17 +2629,17 @@ function M.open(opts)
       end
     end
     rerender_at(row and row.key)
-  end, "Show all repository paths / affected paths only")
-  map("r", refresh, "Refresh Git-native planning workspace")
-  map("D", function()
+  end, "affected_filter", "affected_filter")
+  map("<leader>nr", refresh, "refresh", "refresh")
+  map("<leader>nD", function()
     diff_state.diff_view = diff_state.diff_view == "side_by_side" and "unified" or "side_by_side"
     local row = current_row()
     if row then preview_row(row) end
     vim.notify("Neolit diff view: " .. diff_state.diff_view)
-  end, "Toggle side-by-side / unified diff preview")
-  map("d", delete_selected, "Delete selected TODO task, SPEC requirement, or acceptance criterion")
-  map("x", copy_selected_text, "Copy selected task, requirement, description, or row text")
-  map("y", copy_selected_path, "Copy selected repository path and source line")
+  end, "diff_layout", "diff_layout")
+  map("<leader>nD", delete_selected, "delete_entry", "delete_entry")
+  map("<leader>nx", copy_selected_text, "copy_text", "copy_text")
+  map("<leader>nl", copy_selected_path, "copy_path", "copy_path")
   map("?", function()
     vim.notify("Tree: v composed requirement/task view · <CR> expand/open · za toggle · zo open · zc close · h/l expand/collapse-or-parent · zr/zm one level · zR/zM all · f affected-only · d delete selected task or requirement · D diff view · e / <leader>ne edit working side · o / <leader>no open file · x copy text · y copy path · r refresh · q/<Esc> close", vim.log.levels.INFO)
   end, "Show Neolit tree keys")
