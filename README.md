@@ -73,7 +73,10 @@ opens that exact native diff.
   its Markdown range, and `y` copies its source location. Use `a` to add the
   selected source chunk or diff to a temporary context packet, `d` to remove
   it, `Y` to copy the assembled packet for the existing agent, and `c` to
-  clear it. A `●` marks rows already in the packet; `p` opens a compact packet
+  clear it. Press `s` on a task to open an observed-scope review: intent,
+  linked requirements/criteria, declared file hints, actual changes, hunk
+  attribution, and other changed paths. File hints are not enforced boundaries.
+  A `●` marks rows already in the packet; `p` opens a compact packet
   review where chunks can be removed individually before copying. `v` switches
   between requirement/task projections; `?` shows the compact view's keys. Source
   ranges and diffs are checked again before copying;
@@ -87,6 +90,7 @@ opens that exact native diff.
 | --- | --- |
 | `j` / `k` | Move |
 | `za` | Toggle selected directory/file or composed task/requirement |
+| `s` | Review observed scope of selected task |
 | `zo` / `zc` | Expand / collapse selected node |
 | `h` / `l` | Parent / expand |
 | `zr` / `zm` | Expand / collapse one visible level |
