@@ -88,7 +88,7 @@ The workspace opens a 36-column tree on the left and reuses the current window a
 
 ### Commands
 
-Workspace commands are buffer-local while the Neolit tree is open: `:NeolitCompose`, `:NeolitOpen`, `:NeolitOpenFile`, `:NeolitFilter`, `:NeolitRefresh`, `:NeolitDelete`, `:NeolitCopyText`, `:NeolitCopyPath`, `:NeolitToggle`, `:NeolitChat`, `:NeolitChatFile`, `:NeolitAgentChanges`, and `:NeolitReview`.
+Workspace commands are buffer-local while the Neolit tree is open (and `:NeolitChatFile` is also available in composed views): `:NeolitCompose`, `:NeolitOpen`, `:NeolitOpenFile`, `:NeolitFilter`, `:NeolitRefresh`, `:NeolitDelete`, `:NeolitCopyText`, `:NeolitCopyPath`, `:NeolitToggle`, `:NeolitChat`, `:NeolitChatFile`, `:NeolitAgentChanges`, and `:NeolitReview`.
 
 Composed views also expose `:NeolitContextAdd`, `:NeolitContextRemove`, `:NeolitContextCopy`, `:NeolitContextClear`, `:NeolitContextReview`, and `:NeolitChatContext`. These commands act on the current Neolit selection; they are not global commands.
 
@@ -173,6 +173,14 @@ Default keymaps:
 | delete_entry | <leader>nD |
 | copy_text | <leader>nx |
 | copy_path | <leader>nl |
+| chat_file | <leader>nF |
+| tree_fold_toggle | za |
+| tree_fold_close | zc |
+| tree_fold_open | zo |
+| tree_expand_level | zr |
+| tree_collapse_level | zm |
+| tree_expand_all | zR |
+| tree_collapse_all | zM |
 | refresh | <leader>nr |
 | close_workspace | <leader>nq |
 | view_help | <leader>n? |
