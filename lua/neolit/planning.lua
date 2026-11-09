@@ -2385,9 +2385,9 @@ function M.open(opts)
       vim.notify("CodeCompanion.nvim is required", vim.log.levels.ERROR)
       return
     end
-    local name = vim.fn.fnamemodify(target, ":t"):gsub("%[", "\\\\["):gsub("%]", "\\\\]")
-    local link = "[" .. name .. ' ]("' .. target:gsub('"', '\\\\"') .. '")'
-    link = link:gsub(" %]", "]")
+    local name = vim.fn.fnamemodify(target, ":t"):gsub("%[", "\\["):gsub("%]", "\\]")
+    local escaped_target = target:gsub('"', '\\"')
+    local link = "[" .. name .. ']("' .. escaped_target .. '")'
     local context_buf = vim.api.nvim_create_buf(false, true)
     vim.bo[context_buf].buftype = "nofile"
     vim.bo[context_buf].bufhidden = "wipe"
