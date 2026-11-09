@@ -82,6 +82,7 @@ function M.find_neolit_dir(cfg, ctx)
   end
 
   add(ctx.env.NEOLIT_DIR)
+  if ctx.plugin_root then add(ctx.plugin_root .. "/node_modules/neolit") end
   if ctx.plugin_root then add(ctx.plugin_root .. "/../neolit") end
   if ctx.npm_root then add(ctx.npm_root .. "/neolit") end
 
