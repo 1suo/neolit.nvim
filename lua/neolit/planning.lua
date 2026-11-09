@@ -2,9 +2,8 @@
 local M = {}
 
 local function bind_key(buf, cfg, action, default, callback, opts)
-  local configured = (cfg and cfg.keymaps and cfg.keymaps[action])
-  local lhs = configured == nil and default or configured
-  if lhs == false or lhs == "" then return end
+  local lhs = cfg and cfg.keymaps and cfg.keymaps[action]
+  if type(lhs) ~= "string" or lhs == "" then return end
   local options = vim.tbl_extend("force", { buffer = buf, silent = true, desc = "Neolit: " .. action }, opts or {})
   vim.keymap.set("n", lhs, callback, options)
 end
@@ -2065,9 +2064,8 @@ function M.open(opts)
 
   local function map(lhs, fn, desc, action)
     local key = action or desc
-    local configured = cfg.keymaps and cfg.keymaps[key]
-    local resolved = configured == nil and lhs or configured
-    if resolved == false or resolved == "" then return end
+    local resolved = cfg.keymaps and cfg.keymaps[key]
+    if type(resolved) ~= "string" or resolved == "" then return end
     vim.keymap.set("n", resolved, fn, { buffer = buf, silent = true, desc = "Neolit: " .. key })
   end
   rerender_at = function(key)
