@@ -222,7 +222,9 @@ Commands are also available in their applicable Neolit buffers:
 :NeolitContextClear, :NeolitContextReview, and :NeolitChatContext in composed
 views.
 
-Native movement remains native (j/k, h/l). Fold keys can be remapped through
+Native vertical movement remains native (j/k). The default h/l mappings expand
+or collapse the selected tree node; F toggles it. These are buffer-local and
+can be remapped or disabled. Fold keys can be remapped through
 keymaps.tree_fold_toggle, tree_fold_close, tree_fold_open, tree_expand_level,
 tree_collapse_level, tree_expand_all, and tree_collapse_all.
 
