@@ -2,7 +2,6 @@
 local M = {}
 
 M.defaults = {
-  neolit_dir = nil,
   node = "node",
   directory = nil,
   comparison_base = "HEAD",
@@ -82,7 +81,6 @@ function M.find_neolit_dir(cfg, ctx)
     end
   end
 
-  add(cfg.neolit_dir)
   add(ctx.env.NEOLIT_DIR)
   if ctx.plugin_root then add(ctx.plugin_root .. "/../neolit") end
   if ctx.npm_root then add(ctx.npm_root .. "/neolit") end
