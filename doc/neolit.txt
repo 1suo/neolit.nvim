@@ -33,9 +33,12 @@ Install 1suo/neolit.nvim with your plugin manager. Example lazy.nvim spec:
       todo_file = "TODO.md",
       spec_file = "SPEC.md",
       codecompanion = { adapter = "opencode" },
-    },
-    keys = {
-      { "<leader>nn", "<cmd>Neolit<cr>", desc = "Open Neolit workspace" },
+      keymaps = {
+        open_workspace = "<leader>nn",
+        tree_open_selected = "<CR>",
+        tree_open_file = "o",
+        close_workspace = "q",
+      },
     },
     cmd = { "Neolit", "NeolitPlan", "NeolitClose" },
   }
@@ -59,15 +62,16 @@ Call require("neolit").setup(opts), or provide opts through your plugin manager.
     },
     keymaps = {
       open_workspace = "<leader>nn",
-      -- Override individual actions by action name.
+      -- Add only the actions you want mapped.
     },
   }
 
 The plugin build step installs and builds the core dependency inside the plugin. No global install, second checkout, or core path configuration is required.
 
-Keymap overrides are per action. Set an action to false or "" to disable it.
-Unspecified actions keep their defaults. The full action list is in
-|neolit-keymaps|.
+Keymaps are opt-in. Neolit installs no mappings unless an action is
+explicitly configured in keymaps. Unspecified actions remain unmapped; set an
+action to false or "" to leave it unmapped. Commands remain available without
+mappings. The action list is in |neolit-keymaps|.
 
 ==============================================================================
 COMMANDS                                                           *neolit-commands*
@@ -99,8 +103,8 @@ COMMANDS                                                           *neolit-comma
 ==============================================================================
 WORKSPACE                                                          *neolit-usage*
 
-Open Neolit from the repository being inspected with :Neolit or the default
-<leader>nn mapping. The workspace uses a 36-column tree on the left and the
+Open Neolit from the repository being inspected with :Neolit, or configure
+keymaps.open_workspace if you want a shortcut. The workspace uses a 36-column tree on the left and the
 current window as its right-hand source preview. Reopening focuses the existing
 workspace rather than opening another tree.
 
@@ -136,12 +140,9 @@ daily level-two headings and timestamped entries. todo_file and spec_file are
 repository-relative paths; their configured files are loaded even when they
 are not linked from README. Other linked TODO/SPEC documents remain discoverable.
 
-Default mappings:
-- <leader>nj captures a journal entry.
-- <leader>nJ opens the current monthly journal file.
-- <leader>nt captures a TODO checkbox.
-- <leader>nR captures the next R-NN requirement.
-- <leader>nA captures the next AC-NN acceptance criterion.
+Configure keymaps.capture_journal and keymaps.open_journal for journal actions;
+keymaps.capture_task for TODO capture; and keymaps.capture_requirement and
+keymaps.capture_criterion for SPEC capture.
 
 Capture buffers save with Ctrl-S or :write and cancel with Ctrl-C. Captured
 TODO tasks still need explicit SPEC references; acceptance criteria should
@@ -154,14 +155,8 @@ The context composer collects literal source excerpts, planning entries,
 changed-file diffs, and exact hunks. It does not generate a prompt and does not
 send a message by itself.
 
-- <leader>na adds the selected source chunk or change/hunk.
-- <leader>np opens the context review view.
-- In context review, <leader>n- removes the selected item.
-- <leader>ny copies the assembled context.
-- <leader>nc clears the context.
-- <leader>nM adds the composed context to the active CodeCompanion chat.
-- <leader>nx copies selected text.
-- <leader>nl copies the selected source path and line, when available.
+Configure keymaps.context_add, context_review, context_remove, context_copy,
+context_clear, chat_context, copy_text, and copy_path for these actions.
 
 Captured source ranges and diffs are revalidated before copying or chat
 insertion. Stale content is rejected rather than silently replaced. Unsaved,
@@ -178,10 +173,8 @@ Set codecompanion.adapter to the adapter name configured in CodeCompanion.
 The default is "opencode". OpenCode sessions can be resumed with CodeCompanion's
 /resume command.
 
-- <leader>nm opens CodeCompanion chat with the configured adapter.
-- <leader>nM adds the Neolit context composition to the active chat.
-- <leader>ne invokes :CodeCompanionCodeReview.
-- <leader>nC invokes :CodeCompanionChat Changes.
+Configure keymaps.chat_open, chat_context, review_changes, and agent_changes for
+these actions.
 
 The CodeCompanion Changes list tracks CodeCompanion tool/ACP edits observed
 during the current Neovim session. Neolit's Git view independently discovers
@@ -195,7 +188,7 @@ changed file or hunk navigates to its working-tree source.
 DELETE A PLANNING ENTRY                                           *neolit-delete*
 
 In the tree or a composed view, select a TODO task, SPEC requirement, or
-acceptance criterion and press <leader>nD. Neolit removes that complete parsed
+acceptance criterion and invoke :NeolitDelete (or configure keymaps.delete_entry). Neolit removes that complete parsed
 entry from its Markdown source. It rejects unsafe paths and modified source
 buffers; write the buffer before deleting. This mapping is not installed in
 ordinary source-file buffers.
