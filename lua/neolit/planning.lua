@@ -1451,10 +1451,21 @@ function M.open(opts)
                   local todo = task_path(task)
                   local task_key = "task:" .. task.key
                   local changed = #(task_projection and task_projection.changedPaths or {})
+                  local task_criteria = 0
+                  for _, criterion in ipairs(task.resolvedAcceptanceCriteria or {}) do
+                    local linked = criterion.specPath == spec.path
+                      and vim.tbl_contains(criterion.requirementIds or {}, requirement.id)
+                    if not linked and criterion.specPath == spec.path and #(criterion.requirementIds or {}) == 0
+                      and #(task.resolvedRequirements or {}) == 1 then
+                      local only = task.resolvedRequirements[1]
+                      linked = only.specPath == spec.path and only.id == requirement.id
+                    end
+                    if linked then task_criteria = task_criteria + 1 end
+                  end
                   local marker_task = is_expanded(task_key) and "-" or "+"
                   add("    " .. marker_task .. " " .. (task.checked and "[x] " or "[ ] ")
                     .. "[" .. state_mark(task_state_value) .. "] " .. task.text
-                    .. " · " .. #(task.resolvedAcceptanceCriteria or {}) .. " AC · " .. changed .. " files",
+                    .. " · " .. task_criteria .. " AC · " .. changed .. " files",
                     source_row("task", todo, task.range, task.text,
                       { task = task, state = task_state_value, projection = task_projection,
                         key = task_key, expanded = is_expanded(task_key) }))
