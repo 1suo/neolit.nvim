@@ -1656,7 +1656,7 @@ function M.open(opts)
             vim.notify("Context is stale: " .. item.path .. " is no longer changed; refresh and re-add it", vim.log.levels.WARN)
             return
           end
-          local result = vim.system(diff_command(root, changed, current.git.base), { cwd = root, text = true }):wait()
+          local result = vim.system(diff_command(changed, current.git.base), { cwd = root, text = true }):wait()
           if result.code > 1 or normalize_diff(result.stdout or "") ~= normalize_diff(item.expected_diff) then
             vim.notify("Context is stale: diff changed for " .. item.path .. "; refresh and re-add it", vim.log.levels.WARN)
             return
