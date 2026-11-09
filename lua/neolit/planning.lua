@@ -771,9 +771,12 @@ function M.open(opts)
     if refresh_job then pcall(vim.fn.jobstop, refresh_job) end
     local url = vim.uri_from_fname(neolit_dir .. "/dist/planning/workspace.js")
     local comparison_base = vim.json.encode(cfg.comparison_base or "HEAD")
+    local spec_path = vim.json.encode(cfg.spec_file or "SPEC.md")
+    local todo_path = vim.json.encode(cfg.todo_file or "TODO.md")
     local js = "import { execFileSync } from \"node:child_process\"; "
       .. "const m = await import(" .. string.format("%q", url) .. "); "
-      .. "const w = await m.loadPlanningWorkspace(process.cwd(), { comparisonBase: " .. comparison_base .. " }); "
+      .. "const w = await m.loadPlanningWorkspace(process.cwd(), { comparisonBase: " .. comparison_base
+      .. ", specPaths: [" .. spec_path .. "], todoPaths: [" .. todo_path .. "] }); "
       .. "w.git.repositoryFiles = execFileSync(\"git\", [\"ls-files\", \"--cached\", \"--others\", \"--exclude-standard\", \"-z\"], { cwd: process.cwd(), encoding: \"utf8\" }).split(\"\\0\").filter(Boolean).sort(); "
       .. "w.git.diff = ''; "
       .. "for (const f of w.git.changedFiles) for (const h of f.hunks) { "
