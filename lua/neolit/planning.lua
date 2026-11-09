@@ -1447,6 +1447,16 @@ function M.open(opts)
               source_row("requirement", requirement.sourcePath or requirement.specPath,
                 requirement.range, requirement.text, { requirement = requirement }))
           end
+          for _, criterion in ipairs(task.resolvedAcceptanceCriteria or {}) do
+            local ref = criterion.specPath .. "#" .. criterion.id
+            local verified = false
+            for _, evidence in ipairs((projection and projection.acceptanceCriteria) or {}) do
+              if evidence.ref == ref and evidence.verified then verified = true; break end
+            end
+            add("    AC · " .. criterion.id .. " · " .. (verified and "VERIFIED" or "UNVERIFIED") .. " · " .. criterion.text,
+              source_row("criterion", criterion.sourcePath or criterion.specPath,
+                criterion.range, criterion.text, { criterion = criterion, verified = verified }))
+          end
           for _, detail in ipairs(task.description or {}) do
             add("    " .. detail, source_row("task_detail", todo, task.range, detail, { task = task }))
           end
@@ -1514,8 +1524,15 @@ function M.open(opts)
       local row = selected_view_row()
       if not row then return end
       if row.kind == "changed_file" then
-        local target = safe_repo_path(root, row.path)
-        if target and vim.fn.filereadable(target) == 1 then open_in_preview(row.path, row.line, true) end
+        local changed
+        for _, file in ipairs(workspace.git.changedFiles or {}) do
+          if file.path == row.path or file.previousPath == row.path then changed = file; break end
+        end
+        if changed then open_diff(root, changed, nil, workspace.git.base, nil, diff_state, true)
+        else
+          local target = safe_repo_path(root, row.path)
+          if target and vim.fn.filereadable(target) == 1 then open_in_preview(row.path, row.line, true) end
+        end
       elseif row.path and row.kind ~= "empty" and row.kind ~= "header" then
         open_in_preview(row.path, row.line, true)
       end
@@ -1526,6 +1543,10 @@ function M.open(opts)
       local target = safe_repo_path(root, row.path)
       if not target or vim.fn.filereadable(target) ~= 1 then
         vim.notify("Source chunk is no longer available; refresh the workspace", vim.log.levels.WARN)
+        return
+      end
+      if row.kind == "task_detail" then
+        copy_value(row.text or "", "Task detail")
         return
       end
       local source_lines = vim.fn.readfile(target)
