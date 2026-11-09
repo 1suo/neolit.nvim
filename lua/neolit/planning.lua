@@ -208,7 +208,7 @@ local function open_diff(root, file, selected_hunk, comparison_base, selected_li
       vim.bo[working_buf].modifiable = true
       vim.api.nvim_buf_set_lines(working_buf, 0, -1, false, { "" })
       vim.bo[working_buf].modifiable = false
-      set_source_language(working_buf, base_path)
+      set_source_language(working_buf, file.path)
     end
     vim.api.nvim_win_set_buf(win, working_buf)
     pcall(vim.api.nvim_win_call, base_win, function() vim.cmd("diffthis") end)
@@ -257,7 +257,7 @@ local function open_diff(root, file, selected_hunk, comparison_base, selected_li
   vim.bo[preview_buf].modifiable = false
   local source_filetype = vim.filetype.match({ filename = file.path }) or ""
   local base_source = vim.system({ "git", "show", (comparison_base or "HEAD") .. ":" .. base_path }, { cwd = root, text = true }):wait()
-  local old_lines = base_source.code == 0 and vim.split(base_source.stdout or "", "\\n", { plain = true }) or {}
+  local old_lines = base_source.code == 0 and vim.split(base_source.stdout or "", "\n", { plain = true }) or {}
   if old_lines[#old_lines] == "" then table.remove(old_lines) end
   local new_lines = vim.fn.filereadable(path) == 1 and vim.fn.readfile(path) or {}
   highlight_unified_source(preview_buf, diff_lines, old_lines, new_lines, source_filetype)
