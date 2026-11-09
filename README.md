@@ -91,7 +91,11 @@ opens that exact native diff.
 | --- | --- |
 | `j` / `k` | Move |
 | `za` | Toggle selected directory/file or composed task/requirement |
+| `v` | Open composed view / switch requirement-task projection |
 | `s` | Review observed scope of selected task |
+| `p` | Review composed context packet |
+| `a` / `d` | Add / remove selected context chunk in composed views |
+| `Y` / `c` | Copy assembled packet / clear context |
 | `zo` / `zc` | Expand / collapse selected node |
 | `h` / `l` | Parent / expand |
 | `zr` / `zm` | Expand / collapse one visible level |
