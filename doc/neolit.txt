@@ -29,6 +29,9 @@ Install 1suo/neolit.nvim with your plugin manager. Example lazy.nvim spec:
     opts = {
       comparison_base = "HEAD",
       node = "node",
+      journal_dir = "~/Documents/memo/journal",
+      todo_file = "TODO.md",
+      spec_file = "SPEC.md",
       codecompanion = { adapter = "opencode" },
     },
     keys = {
@@ -177,7 +180,7 @@ Agent notes:
 DEFAULT KEYMAPS                                                    *neolit-keymaps*
 
   Action                 Mapping          Context
-  open_workspace         <leader>nn       workspace
+  open_workspace         <leader>nn       workspace\n  open_journal           <leader>nJ       global\n  capture_journal        <leader>nj       global\n  capture_task           <leader>nt       global\n  capture_requirement    <leader>nR       global\n  capture_criterion      <leader>nA       global
   tree_composed          <leader>nv       tree
   tree_open_selected     <CR>             tree
   tree_open_file         o                tree
