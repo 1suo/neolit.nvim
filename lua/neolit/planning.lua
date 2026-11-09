@@ -1404,7 +1404,7 @@ function M.open(opts)
     add("NEOLIT · " .. (mode == "tasks" and "TASKS" or "REQUIREMENTS")
       .. (scope_path and (" · " .. vim.fn.fnamemodify(scope_path, ":t")) or "")
       .. " · " .. scoped_requirement_count .. " req · " .. scoped_task_count .. " tasks"
-      .. " · ctx " .. #context_chunks .. " · za details · a add · d remove · Y copy · c clear · v switch · ? keys",
+      .. " · ctx " .. #context_chunks .. " · za details · p packet · a add · d remove · Y copy · c clear · v switch · ? keys",
       { kind = "header" })
 
     if mode == "requirements" then
@@ -1788,6 +1788,67 @@ function M.open(opts)
       update_context_header()
       vim.notify("Context cleared")
     end
+    local function open_context_view()
+      local packet_lines, packet_rows = {}, {}
+      local function packet_add(line, row)
+        packet_lines[#packet_lines + 1] = line
+        packet_rows[#packet_lines] = row
+      end
+      packet_add("NEOLIT · CONTEXT · " .. #context_chunks
+        .. " chunks · Y copy · d remove · c clear · q back · ? keys", { kind = "header" })
+      for index, item in ipairs(context_chunks) do
+        local line_count = item.content and (#item.content > 0 and select(2, item.content:gsub("\\n", "\\n")) + 1 or 0) or 0
+        local first_line = item.content and (item.content:match("([^\\n]+)") or "") or ""
+        first_line = first_line:gsub("^%s+", ""):gsub("%s+$", "")
+        if #first_line > 88 then first_line = first_line:sub(1, 85) .. "..." end
+        packet_add(string.format("  %d · %s · %d lines · %d bytes",
+          index, item.label, line_count, #(item.content or "")), { index = index, kind = "chunk" })
+        if first_line ~= "" then
+          packet_add("      " .. first_line, { kind = "excerpt" })
+        end
+      end
+      if #context_chunks == 0 then packet_add("  (context is empty)", { kind = "empty" }) end
+      local packet_buf = vim.api.nvim_create_buf(false, true)
+      vim.bo[packet_buf].buftype = "nofile"
+      vim.bo[packet_buf].bufhidden = "hide"
+      vim.bo[packet_buf].swapfile = false
+      vim.bo[packet_buf].buflisted = false
+      vim.bo[packet_buf].filetype = "neolit-context"
+      vim.api.nvim_buf_set_lines(packet_buf, 0, -1, false, packet_lines)
+      vim.bo[packet_buf].modifiable = false
+      vim.api.nvim_win_set_buf(win, packet_buf)
+      vim.wo[win].wrap = vim.go.wrap
+      local packet_ns = vim.api.nvim_create_namespace("neolit-context-view-" .. packet_buf)
+      for line, row in pairs(packet_rows) do
+        if row.kind == "header" then
+          vim.api.nvim_buf_add_highlight(packet_buf, packet_ns, "Title", line - 1, 0, -1)
+        elseif row.kind == "chunk" then
+          vim.api.nvim_buf_add_highlight(packet_buf, packet_ns, "Identifier", line - 1, 0, -1)
+        elseif row.kind == "excerpt" then
+          vim.api.nvim_buf_add_highlight(packet_buf, packet_ns, "Comment", line - 1, 0, -1)
+        end
+      end
+      local function selected_packet_row()
+        return packet_rows[vim.api.nvim_win_get_cursor(win)[1]]
+      end
+      local function remove_packet_item()
+        local row = selected_packet_row()
+        if not row or not row.index then return end
+        local item = table.remove(context_chunks, row.index)
+        if item then context_keys[item.key] = nil end
+        open_context_view()
+      end
+      vim.keymap.set("n", "Y", copy_context, { buffer = packet_buf, silent = true })
+      vim.keymap.set("n", "d", remove_packet_item, { buffer = packet_buf, silent = true })
+      vim.keymap.set("n", "c", clear_context, { buffer = packet_buf, silent = true })
+      vim.keymap.set("n", "q", function() open_composed_view(mode, scope_path) end,
+        { buffer = packet_buf, silent = true })
+      vim.keymap.set("n", "?", function()
+        vim.notify("Context: Y copy validated packet · d remove selected chunk · c clear · q back", vim.log.levels.INFO)
+      end, { buffer = packet_buf, silent = true })
+      vim.api.nvim_set_current_win(win)
+      vim.api.nvim_win_set_cursor(win, { 1, 0 })
+    end
     vim.keymap.set("n", "<CR>", navigate, { buffer = view_buf, silent = true })
     vim.keymap.set("n", "za", function()
       local row = selected_view_row()
@@ -1796,13 +1857,14 @@ function M.open(opts)
       open_composed_view(mode, scope_path)
     end, { buffer = view_buf, silent = true })
     vim.keymap.set("n", "?", function()
-      vim.notify("Workspace: za expand/collapse · <CR> source · a add context · d remove · Y copy context · c clear · x copy source chunk · y copy path · v switch workspace · q return to tree", vim.log.levels.INFO)
+      vim.notify("Workspace: za expand/collapse · p context packet · <CR> source · a add · d remove · Y copy · c clear · x copy chunk · y path · v switch · q tree", vim.log.levels.INFO)
     end, { buffer = view_buf, silent = true })
     vim.keymap.set("n", "x", copy_chunk, { buffer = view_buf, silent = true })
     vim.keymap.set("n", "a", append_context, { buffer = view_buf, silent = true })
     vim.keymap.set("n", "d", remove_context, { buffer = view_buf, silent = true })
     vim.keymap.set("n", "Y", copy_context, { buffer = view_buf, silent = true })
     vim.keymap.set("n", "c", clear_context, { buffer = view_buf, silent = true })
+    vim.keymap.set("n", "p", open_context_view, { buffer = view_buf, silent = true })
     vim.keymap.set("n", "y", function()
       local row = selected_view_row()
       if row and row.path then copy_value(row.path .. (row.line and (":" .. row.line) or ""), "Source path") end
