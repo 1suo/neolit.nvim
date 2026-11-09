@@ -1,6 +1,20 @@
 --- Read-only Git-native planning workspace backed by the shared TypeScript core.
 local M = {}
 
+local function state_reason(state, projection)
+  if state == "unmapped" then return "No valid SPEC requirement reference" end
+  if state == "blocked" then return "Blocked by an explicit blocker" end
+  if state == "planned" then return "No changed file matches this task's file hints" end
+  if state == "in-progress" then
+    return #(projection and projection.hunkReviews or {}) > 0
+      and "Changed hunks are candidates, not proof of implementation"
+      or "File hints match; no precise hunk attribution"
+  end
+  if state == "implemented" then return "Implementation evidence exists; verification is incomplete" end
+  if state == "verified" then return "Current diff has matching passing verification evidence" end
+  return "Derived from Markdown and current Git evidence"
+end
+
 local function find_core(opts)
   local config = require("neolit.config")
   local cfg = config.merge(opts or {})
