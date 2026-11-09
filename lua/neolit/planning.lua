@@ -1971,6 +1971,10 @@ function M.open(opts)
       local hints = task.filePaths or {}
       local changed_paths = projection.changedPaths or {}
       local hunk_reviews = projection.hunkReviews or {}
+      local diagnostics = {}
+      for _, diagnostic in ipairs(workspace.diagnostics or {}) do
+        if diagnostic.taskKey == task.key then diagnostics[#diagnostics + 1] = diagnostic end
+      end
       local changed_set = {}
       for _, path in ipairs(changed_paths) do changed_set[path] = true end
       local other_changes = {}
@@ -1984,6 +1988,7 @@ function M.open(opts)
       scope_add(#requirements .. " SPEC · " .. #criteria .. " AC · " .. #hints
         .. " file hints · " .. #changed_paths .. " changed · " .. #hunk_reviews .. " hunks",
         { kind = "summary" })
+      scope_add("STATE · " .. state_reason(state, projection), { kind = "summary" })
 
       scope_add("INTENT · " .. #task.description .. " lines", { kind = "section" })
       if #task.description == 0 then scope_add("  (none)", { kind = "empty" }) end
@@ -2055,6 +2060,12 @@ function M.open(opts)
       if #other_changes == 0 then scope_add("  (none)", { kind = "empty" }) end
       for _, file in ipairs(other_changes) do
         scope_add("  ? " .. file.path, { kind = "changed_file", path = file.path, line = 1 })
+      end
+      if #diagnostics > 0 then
+        scope_add("DIAGNOSTICS · " .. #diagnostics, { kind = "section" })
+        for _, diagnostic in ipairs(diagnostics) do
+          scope_add("  ! " .. diagnostic.message, { kind = "empty" })
+        end
       end
       if #(task.unresolvedReferences or {}) > 0 then
         scope_add("UNRESOLVED REFERENCES · " .. #task.unresolvedReferences, { kind = "section" })
