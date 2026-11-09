@@ -322,12 +322,11 @@ local function open_diff(root, file, selected_hunk, comparison_base, selected_li
     pcall(vim.api.nvim_win_call, base_win, function() vim.cmd("diffthis") end)
     pcall(vim.api.nvim_win_call, win, function() vim.cmd("diffthis") end)
 
-    -- Keep the two actual diff windows synchronized for both scrolling and
-    -- cursor movement, regardless of which side currently has focus.
+    -- Keep diff panes vertically aligned while leaving each cursor independent.
     for _, diff_win in ipairs({ base_win, win }) do
       vim.wo[diff_win].wrap = vim.go.wrap
       vim.wo[diff_win].scrollbind = true
-      vim.wo[diff_win].cursorbind = true
+      vim.wo[diff_win].cursorbind = false
     end
 
     local base_line = selected_hunk and selected_hunk.oldStart or 1
@@ -2476,13 +2475,12 @@ function M.open(opts)
     end
   end
   local refresh_group = vim.api.nvim_create_augroup("NeolitPlanning" .. buf, { clear = true })
+  -- Cursor movement is navigation only. Preview generation performs synchronous
+  -- Git reads and buffer/window changes, so it belongs to an explicit open action.
   vim.api.nvim_create_autocmd("CursorMoved", {
     group = refresh_group,
     buffer = buf,
-    callback = function()
-      highlight_related()
-      preview_row(current_row())
-    end,
+    callback = highlight_related,
   })
   vim.api.nvim_create_autocmd({ "BufWritePost", "FileChangedShellPost" }, {
     group = refresh_group,
