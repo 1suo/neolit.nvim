@@ -29,10 +29,7 @@ local function find_core(opts)
   local root = vim.fn.fnamemodify(cfg.directory or vim.fn.getcwd(), ":p")
   local plugin_root = config.plugin_root()
   local env = vim.fn.environ()
-  local npm_root
-  if not env.NEOLIT_DIR and not (plugin_root and vim.fn.isdirectory(plugin_root .. "/../neolit") == 1) then
-    npm_root = vim.fn.system({ "npm", "root", "-g" }):gsub("%s+$", "")
-  end
+  local npm_root = vim.fn.system({ "npm", "root", "-g" }):gsub("%s+$", "")
   local neolit_dir = config.find_neolit_dir(cfg, {
     env = env,
     plugin_root = plugin_root,
