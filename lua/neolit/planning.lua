@@ -1709,6 +1709,12 @@ function M.open(opts)
       if not row then return end
       local label, content, key, expected_source, expected_diff
       if row.kind == "changed_file" then
+        local target = safe_repo_path(root, row.path)
+        local loaded = target and vim.fn.bufnr(target) or -1
+        if loaded >= 0 and vim.bo[loaded].modified then
+          vim.notify("Write the modified buffer before adding its diff to context", vim.log.levels.WARN)
+          return
+        end
         local changed
         for _, file in ipairs(workspace.git.changedFiles or {}) do
           if file.path == row.path or file.previousPath == row.path then changed = file; break end
@@ -1721,6 +1727,12 @@ function M.open(opts)
         expected_diff = changed.rawDiff
         key = "diff:" .. row.path
       elseif row.kind == "task_hunk" then
+        local target = safe_repo_path(root, row.path)
+        local loaded = target and vim.fn.bufnr(target) or -1
+        if loaded >= 0 and vim.bo[loaded].modified then
+          vim.notify("Write the modified buffer before adding its hunk to context", vim.log.levels.WARN)
+          return
+        end
         local changed = row.file
         if not changed then
           for _, file in ipairs(workspace.git.changedFiles or {}) do
