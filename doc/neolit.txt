@@ -21,6 +21,9 @@ Install 1suo/neolit.nvim with your plugin manager. Example lazy.nvim spec:
       node = "node",
       codecompanion = { adapter = "opencode" },
     },
+    keys = {
+      { "<leader>nn", "<cmd>Neolit<cr>", desc = "Open Neolit workspace" },
+    },
     cmd = { "Neolit", "NeolitPlan", "NeolitClose" },
   }
 
