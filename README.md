@@ -39,47 +39,45 @@ Install:
 ## Workspace
 
 `:Neolit` opens one compact repository tree and reuses the existing right
-pane for source previews and diffs. Directories and planning documents start
-collapsed.
+pane for real source buffers and native diffs. The tree contains repository
+paths only; TODO tasks and SPEC requirements are not duplicated as tree nodes.
 
-- Expand a TODO document to see parsed tasks, descriptions, agent implementation
-  notes, linked SPEC requirements, acceptance criteria, current derived state,
-  and change evidence.
-- Expand a SPEC document, then a requirement, to see referencing TODO tasks,
-  acceptance-criterion coverage, and related changed hunks.
-- Expand a changed file to see candidate task links and each hunk's attribution
-  state and reason. File markers are `?` (no task hint), `~` (candidate or
-  ambiguous hint), and `D` (planning-document change). A file hint never gets
-  a confirmed-mapping checkmark: source-code hunk attribution is not inferred
-  from a path alone. Selecting a hunk opens that exact diff.
-- Select a task or requirement to highlight its related rows. Links use resolved
-  Markdown references; file-path hints and source-range hunk matches are shown
-  as evidence candidates, never as proof that implementation is complete.
-- `f` toggles affected-only mode. It keeps relevant TODO/SPEC source documents
-  visible alongside changed paths.
-- `za` expands a changed file's task/hunk evidence. `<CR>` on a changed
-  file or hunk opens its native diff directly. `<CR>` on a task or requirement
-  opens its Markdown source. `e` focuses the editable working side; `o`
-  opens the actual file without a diff.
-- `d` deletes the selected TODO task, SPEC requirement, or acceptance criterion
-  from its source Markdown file. The action is tree-only; Git history retains the
-  previous content. Modified buffers and stale/ambiguous source ranges are refused.
+Opening a TODO or SPEC file keeps the actual editable Markdown buffer and adds
+derived annotations beside the source entries:
+
+- TODO task lines show their derived state, linked requirement count, and
+  changed-file evidence count.
+- SPEC requirement lines show their derived state and number of linked tasks.
+- Acceptance-criterion lines show whether they are uncovered, linked to a task,
+  or have matching verification evidence.
+- Markdown remains the source of truth. Annotations are virtual text; they do
+  not modify file contents or replace normal Markdown/LSP behavior.
+
+Changed files expand to show candidate task links and each hunk's attribution
+state and reason. File markers are `?` (no task hint) and `~` (candidate or
+ambiguous hint). File-path hints never prove implementation. Selecting a hunk
+opens that exact native diff.
+
+- `f` toggles affected-only mode, retaining relevant planning documents.
+- `<CR>` on a changed file or hunk opens its native diff. `e` focuses the
+  editable working side; `o` opens the actual file without a diff.
 - `D` toggles side-by-side/unified diff presentation. `r` refreshes;
   writes, focus return, and idle refreshes also pick up external agent edits.
+- `x` copies the selected literal text/diff/hunk; `y` copies its source path
+  and line.
 
 ## Keys
 
 | Key | Action |
 | --- | --- |
 | `j` / `k` | Move |
-| `za` | Toggle selected directory, document, task, or requirement |
+| `za` | Toggle selected directory or changed file |
 | `zo` / `zc` | Expand / collapse selected node |
 | `h` / `l` | Parent / expand |
 | `zr` / `zm` | Expand / collapse one visible level |
 | `zR` / `zM` | Expand / collapse all |
 | `f` | All paths / affected paths and related planning docs |
-| `d` | Delete selected TODO task, SPEC requirement, or criterion |
-| `x` | Copy selected text, task, requirement, file diff, or hunk |
+| `x` | Copy selected text, file diff, or hunk |
 | `y` | Copy selected source path and line |
 | `e` | Focus editable working side of selected diff |
 | `o` | Open actual file without diff |
@@ -88,7 +86,8 @@ collapsed.
 | `q` / `Esc` | Close workspace |
 | `?` | Show key summary |
 
-The tree's `d` action is the only planning-document edit. It operates on the selected parsed entry, never on a normal preview buffer. Deleted text remains recoverable from Git history. `Description:` explains intent; `Agent notes:` explains actual changes, rationale, deviations, or caveats. Notes are not verification evidence.
+`Description:` explains task intent; `Agent notes:` explains actual changes,
+rationale, deviations, or caveats. Notes are not verification evidence.
 
 Derived states come from parsed planning documents and current Git metadata;
 verification requires matching evidence for the current base commit and diff.
