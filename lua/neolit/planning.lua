@@ -738,7 +738,12 @@ function M.open(opts)
     -- Hover previews should not flood the user's buffer list. Preserve the
     -- listed state of buffers that were already open before Neolit previewed them.
     if existing_buf < 0 then vim.bo[target_buf].buflisted = false end
-    vim.api.nvim_win_set_buf(win, target_buf)
+    -- Preview windows frequently replace a modified source buffer. A normal
+    -- nvim_win_set_buf() raises E37 when that buffer is no longer shown in any
+    -- window; :hide preserves it without forcing a write or discarding edits.
+    vim.api.nvim_win_call(win, function()
+      vim.cmd("hide buffer " .. target_buf)
+    end)
     vim.wo[win].wrap = vim.go.wrap
     if focus then
       vim.api.nvim_set_current_win(win)
