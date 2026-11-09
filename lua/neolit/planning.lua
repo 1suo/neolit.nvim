@@ -2462,7 +2462,7 @@ function M.open(opts)
   map("v", function()
     local row = current_row()
     local mode = row and row.doc_kind == "TODO" and "tasks" or "requirements"
-    open_composed_view(mode, row and row.kind == "planning_document" and row.path or nil)
+    open_composed_view(mode, row and row.doc_kind and row.path or nil)
   end, "Open composed requirement/task workspace")
   map("<CR>", selected, "Show selected diff or expand/open planning entry")
   map("e", focus_working_diff, "Edit the selected file in the working side of its diff")
