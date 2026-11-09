@@ -95,7 +95,6 @@ local function open_diff(root, file, selected_hunk, comparison_base, selected_li
     local base_buf = diff_state and diff_state.base_buf
     if not base_buf or not vim.api.nvim_buf_is_valid(base_buf) then
       base_buf = vim.api.nvim_create_buf(false, true)
-      vim.api.nvim_buf_set_name(base_buf, "neolit-diff-base://" .. vim.fn.sha256(file.path):sub(1, 12))
       vim.bo[base_buf].buftype = "nofile"
       vim.bo[base_buf].bufhidden = "hide"
       vim.bo[base_buf].swapfile = false
@@ -133,7 +132,6 @@ local function open_diff(root, file, selected_hunk, comparison_base, selected_li
       working_buf = diff_state and diff_state.deleted_buf
       if not working_buf or not vim.api.nvim_buf_is_valid(working_buf) then
         working_buf = vim.api.nvim_create_buf(false, true)
-        vim.api.nvim_buf_set_name(working_buf, "neolit-diff-empty://" .. vim.fn.sha256(file.path):sub(1, 12))
         vim.bo[working_buf].buftype = "nofile"
         vim.bo[working_buf].bufhidden = "hide"
         vim.bo[working_buf].swapfile = false
@@ -179,7 +177,6 @@ local function open_diff(root, file, selected_hunk, comparison_base, selected_li
   local preview_buf = diff_state and diff_state.preview_buf
   if not preview_buf or not vim.api.nvim_buf_is_valid(preview_buf) then
     preview_buf = vim.api.nvim_create_buf(false, true)
-    vim.api.nvim_buf_set_name(preview_buf, "neolit-diff-preview://" .. vim.fn.sha256(file.path):sub(1, 12))
     vim.bo[preview_buf].buftype = "nofile"
     vim.bo[preview_buf].bufhidden = "hide"
     vim.bo[preview_buf].swapfile = false
