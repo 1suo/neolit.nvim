@@ -1977,6 +1977,7 @@ function M.open(opts)
       end
       local changed_set = {}
       for _, path in ipairs(changed_paths) do changed_set[path] = true end
+      for _, review in ipairs(hunk_reviews) do changed_set[review.path] = true end
       local other_changes = {}
       for _, file in ipairs(workspace.git.changedFiles or {}) do
         if not changed_set[file.path] then other_changes[#other_changes + 1] = file end
