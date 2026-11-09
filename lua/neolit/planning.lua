@@ -2465,7 +2465,6 @@ function M.open(opts)
       pcall(vim.api.nvim_buf_delete, buf, { force = true })
     end
   end
-  create_action_command("NeolitClose", close_workspace, "Close Neolit workspace")
   map("<leader>nq", close_workspace, "close_workspace", "close_workspace")
   
   refresh()
