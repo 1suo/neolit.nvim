@@ -67,6 +67,16 @@ local function find_core(opts)
   return cfg, root, neolit_dir
 end
 
+local function canonical_worktree(root)
+  local result = vim.system({ "git", "-C", root, "rev-parse", "--show-toplevel" }, { text = true }):wait()
+  if result.code ~= 0 then
+    error("Could not resolve Git worktree root: " .. (result.stderr or "git rev-parse failed"))
+  end
+  local worktree = vim.trim(result.stdout or "")
+  if worktree == "" then error("Git returned an empty worktree root") end
+  return vim.fn.resolve(vim.fn.fnamemodify(worktree, ":p")):gsub("/+$", "")
+end
+
 function M.worktree_root(opts)
   local ok, _, root = pcall(find_core, opts or {})
   if not ok then return nil, _ end
@@ -1724,7 +1734,7 @@ function M.open(opts)
       vim.bo[context_buf].buftype = "nofile"
       vim.bo[context_buf].bufhidden = "wipe"
       vim.bo[context_buf].swapfile = false
-      vim.api.nvim_buf_set_lines(context_buf, 0, -1, false, vim.split(context, "\\n", { plain = true }))
+      vim.api.nvim_buf_set_lines(context_buf, 0, -1, false, vim.split(context, "\n", { plain = true }))
       local added, add_err = pcall(vim.api.nvim_buf_call, context_buf, function()
         vim.cmd("normal! ggVG")
         vim.cmd("CodeCompanionChat Add")
