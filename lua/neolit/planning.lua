@@ -496,10 +496,13 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
     for _, item in ipairs(workspace.git.hunkAssociations or {}) do
       if item.path == path then file_hunks[#file_hunks + 1] = item end
     end
+    local cc_review = workspace.codecompanionReview
+    local cc_diff = cc_review and cc_review.diffs and cc_review.diffs[path]
     -- TODO/SPEC contents are presented in their source buffers, not duplicated
     -- as a second navigation tree. Only changed code files expand to evidence.
     local has_children = changed ~= nil
-      and ((file_association and #(file_association.taskKeys or {}) > 0) or #file_hunks > 0)
+      and ((file_association and #(file_association.taskKeys or {}) > 0)
+        or (cc_diff and #cc_diff.hunks > 0) or #file_hunks > 0)
     add(prefix .. branch .. (has_children and (is_expanded and "-" or "+") or " ")
       .. entry.name
       .. (marker ~= "" and (" " .. marker) or "")
@@ -518,15 +521,29 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
               parent_key = "file:" .. path, file = changed, association = file_association, task = task })
         end
       end
-      for _, item in ipairs(file_hunks) do
-        local task_count = #(item.candidateTaskKeys or {})
-        local requirement_count = #(item.candidateRequirementRefs or {})
-        local related = task_count .. " task · " .. requirement_count .. " req"
-        add(child_prefix .. " HUNK " .. tostring(item.hunkIndex + 1) .. " "
-          .. tostring(item.state):upper() .. " · " .. related,
-          { kind = "task_hunk", key = "file-hunk:" .. path .. ":" .. tostring(item.hunkIndex),
-            parent_key = "file:" .. path, file = changed, hunkIndex = item.hunkIndex,
-            hunk = find_changed_hunk(changed, item.hunkIndex), hunkAssociation = item })
+      if cc_diff then
+        for entry_index, entry in ipairs(cc_review.entries or {}) do
+          if entry.kind == "hunk" and entry.path == path then
+            local first_hunk = entry.hunks and entry.hunks[1]
+            local hunk = first_hunk and cc_diff.hunks[first_hunk] or nil
+            local summary = cc_review.lines and cc_review.lines[entry_index] or "CodeCompanion review hunk"
+            add(child_prefix .. " HUNK " .. summary,
+              { kind = "task_hunk", key = "file-cch:" .. path .. ":" .. tostring(entry_index),
+                parent_key = "file:" .. path, file = changed, hunkIndex = first_hunk and first_hunk - 1,
+                hunk = hunk, ccHunkIndex = first_hunk, ccReviewEntry = entry, hunkAssociation = nil })
+          end
+        end
+      else
+        for _, item in ipairs(file_hunks) do
+          local task_count = #(item.candidateTaskKeys or {})
+          local requirement_count = #(item.candidateRequirementRefs or {})
+          local related = task_count .. " task · " .. requirement_count .. " req"
+          add(child_prefix .. " HUNK " .. tostring(item.hunkIndex + 1) .. " "
+            .. tostring(item.state):upper() .. " · " .. related,
+            { kind = "task_hunk", key = "file-hunk:" .. path .. ":" .. tostring(item.hunkIndex),
+              parent_key = "file:" .. path, file = changed, hunkIndex = item.hunkIndex,
+              hunk = find_changed_hunk(changed, item.hunkIndex), hunkAssociation = item })
+        end
       end
     end
   end
@@ -720,6 +737,20 @@ function M.open(opts)
   local composed_expanded, scope_expanded = {}, {}
   local composed_view_buf, context_view_buf
   local filter_mode = "all"
+  local codecompanion_review_diffs = {}
+
+  local function build_codecompanion_review()
+    if not package.loaded["codecompanion"] and vim.fn.exists(":CodeCompanionCodeReview") ~= 2 then
+      return nil
+    end
+    local ok, baseline = pcall(require, "codecompanion.interactions.code_review.baseline")
+    if not ok or not baseline.get(root) then return nil end
+    local loaded, checklist = pcall(require, "codecompanion.interactions.code_review.checklist")
+    if not loaded then return nil end
+    local built_ok, built = pcall(checklist.build, { root = root })
+    if not built_ok or type(built) ~= "table" then return nil end
+    return built
+  end
 
   local function open_in_preview(relative_path, line, focus)
     local original_win = vim.api.nvim_get_current_win()
@@ -769,8 +800,68 @@ function M.open(opts)
       vim.api.nvim_win_set_cursor(win, { math.max(1, line), 0 })
     end
   end
-  local function open_change_source(file, selected_hunk, selected_line, focus)
+  local function open_codecompanion_diff(file, file_diff, hunk_index, focus)
+    local original_win = vim.api.nvim_get_current_win()
+    local tree = view_state.tree_win
+    if not tree or not vim.api.nvim_win_is_valid(tree) then return end
+    local win = view_state.preview_win
+    if not win or not vim.api.nvim_win_is_valid(win) or win == tree then
+      vim.api.nvim_set_current_win(tree)
+      vim.cmd("rightbelow vsplit")
+      win = vim.api.nvim_get_current_win()
+      view_state.preview_win = win
+    end
+    if win == tree or vim.api.nvim_win_get_buf(tree) ~= buf then
+      vim.notify("Neolit window roles are inconsistent; close and reopen :Neolit", vim.log.levels.ERROR)
+      return
+    end
+    local preview = vim.api.nvim_create_buf(false, true)
+    vim.bo[preview].buftype = "nofile"
+    vim.bo[preview].bufhidden = "wipe"
+    vim.bo[preview].swapfile = false
+    vim.bo[preview].modifiable = true
+    vim.api.nvim_buf_set_lines(preview, 0, -1, false, #file_diff.merged.lines > 0 and file_diff.merged.lines or { "" })
+    vim.bo[preview].modifiable = false
+    vim.bo[preview].filetype = file_diff.ft or vim.filetype.match({ filename = file.path }) or "text"
+    vim.api.nvim_buf_set_name(preview, "neolit://review/" .. file.path:gsub("[/\\\\]", "_") .. "-" .. preview)
+    local ns = vim.api.nvim_create_namespace("neolit-codecompanion-diff-" .. preview)
+    local ui_ok, diff_ui = pcall(require, "codecompanion.diff.ui")
+    if ui_ok then
+      pcall(diff_ui.apply_highlights, file_diff, { bufnr = preview, ns = ns })
+    end
+    vim.wo[win].cursorbind = false
+    vim.wo[win].scrollbind = false
+    vim.api.nvim_win_call(win, function()
+      vim.cmd("hide buffer " .. preview)
+    end)
+    vim.wo[win].wrap = vim.go.wrap
+    if hunk_index and file_diff.hunks[hunk_index] then
+      vim.api.nvim_win_set_cursor(win, { math.max(1, file_diff.hunks[hunk_index].pos[1] + 1), 0 })
+    end
+    if focus then
+      vim.api.nvim_set_current_win(win)
+    elseif vim.api.nvim_win_is_valid(original_win) then
+      vim.api.nvim_set_current_win(original_win)
+    end
+  end
+
+  local function open_change_source(file, selected_hunk, selected_line, focus, codecompanion_hunk_index)
     if type(file) ~= "table" or type(file.path) ~= "string" then return end
+    local workspace = vim.b[buf].neolit_workspace
+    local review = workspace and workspace.codecompanionReview
+    local file_diff = review and review.diffs and review.diffs[file.path]
+    if file_diff then
+      local index = codecompanion_hunk_index
+      if not index and selected_hunk then
+        for i, hunk in ipairs(file_diff.hunks or {}) do
+          local start = hunk.to_start or 1
+          local finish = start + math.max(hunk.to_count or 0, 1) - 1
+          local line = selected_hunk.newStart or selected_hunk.newLine or selected_hunk.line
+          if line and line >= start and line <= finish then index = i; break end
+        end
+      end
+      return open_codecompanion_diff(file, file_diff, index, focus)
+    end
     local line
     if selected_line and selected_line.side == "+" then
       line = selected_line.lineNumber
@@ -779,7 +870,7 @@ function M.open(opts)
     end
     local target = safe_repo_path(root, file.path)
     if not target or vim.fn.filereadable(target) ~= 1 then
-      vim.notify("This change has no working-tree source file; use <leader>ne for CodeCompanion review", vim.log.levels.INFO)
+      vim.notify("This change has no working-tree source file; use CodeCompanion review baseline or refresh", vim.log.levels.INFO)
       return
     end
     open_in_preview(file.path, line, focus)
@@ -844,6 +935,20 @@ function M.open(opts)
               if expanded_dirs[parent] == nil then expanded_dirs[parent] = false end
               parent = parent:match("^(.*)/[^/]+$")
             end
+          end
+          local built_review = build_codecompanion_review()
+          if built_review then
+            for _, old in pairs(codecompanion_review_diffs) do
+              pcall(vim.api.nvim_buf_delete, old.bufnr, { force = true })
+            end
+            codecompanion_review_diffs = built_review.diffs or {}
+            workspace.codecompanionReview = built_review
+          else
+            for _, old in pairs(codecompanion_review_diffs) do
+              pcall(vim.api.nvim_buf_delete, old.bufnr, { force = true })
+            end
+            codecompanion_review_diffs = {}
+            workspace.codecompanionReview = nil
           end
           render(buf, root, workspace, expanded_files, expanded_dirs, expanded_tasks, filter_mode)
           vim.b[buf].neolit_workspace = workspace
@@ -952,7 +1057,7 @@ function M.open(opts)
       end
     elseif row.kind == "task_hunk" then
       if row.file and row.hunk then
-        open_change_source(row.file, row.hunk, nil, true)
+        open_change_source(row.file, row.hunk, nil, true, row.ccHunkIndex)
       else
         vim.notify("The linked hunk is no longer in the workspace; refresh", vim.log.levels.WARN)
       end
@@ -984,7 +1089,7 @@ function M.open(opts)
       if row.file then open_change_source(row.file, nil, nil, false) end
     elseif row.kind == "task_hunk" then
       if row.file and row.hunk then
-        open_change_source(row.file, row.hunk, nil, false)
+        open_change_source(row.file, row.hunk, nil, false, row.ccHunkIndex)
       end
     elseif row.kind == "file" then
       open_change_source(row.file, nil, nil, false)
