@@ -19,7 +19,15 @@ Example for lazy.nvim:
   "1suo/neolit.nvim",
   build = "npm install", -- installs/builds the core dependency automatically
   dependencies = {
-    "olimorris/codecompanion.nvim", -- optional; required for agent chat/review
+    {
+      "olimorris/codecompanion.nvim",
+      dependencies = { "nvim-lua/plenary.nvim", "nvim-treesitter/nvim-treesitter" },
+      opts = {
+        interactions = {
+          chat = { adapter = "opencode" }, -- starts OpenCode through ACP
+        },
+      },
+    },
   },
   opts = {
     -- Repository to inspect; defaults to the current working directory.
@@ -55,7 +63,9 @@ The lazy.nvim build step installs the core directly into the plugin. No global n
 
 ### CodeCompanion
 
-CodeCompanion is optional for browsing and planning. Install and configure CodeCompanion with an adapter you use; the default Neolit adapter name is opencode. OpenCode is accessed through CodeCompanion's ACP integration, not a Neolit-owned transport.
+The dependency above installs **and configures** CodeCompanion. Merely listing it as a dependency is not enough: lazy.nvim only runs its setup when it has `opts` (or an explicit `config` function). Without setup, commands such as `:CodeCompanionChat` do not exist.
+
+This setup selects OpenCode's built-in ACP adapter. It requires the `opencode` executable on your PATH and a working OpenCode login/configuration. If you already configure CodeCompanion elsewhere, keep that setup and merge the `interactions.chat.adapter = "opencode"` setting into it.
 
 - <leader>nm opens a CodeCompanion chat using the configured adapter.
 - Use CodeCompanion's /resume command in chat to resume an existing OpenCode session.
