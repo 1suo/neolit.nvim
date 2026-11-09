@@ -27,6 +27,11 @@ M.defaults = {
     task_scope = "<leader>ns",
     switch_projection = "<leader>nv",
     copy_source_path = "<leader>nl",
+    chat_open = "<leader>nm",
+    chat_send = "<C-s>",
+    chat_close = "q",
+    tree_toggle = "<leader>nt",
+    tree_help = "<leader>n?",
   },
 }
 
