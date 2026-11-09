@@ -853,6 +853,8 @@ function M.open(opts)
   -- Keep the navigation column fixed while preview/diff windows split and
   -- resize the remaining space. The right side then owns all remaining width.
   vim.wo[tree_win].winfixwidth = true
+  vim.wo[tree_win].cursorbind = false
+  vim.wo[tree_win].scrollbind = false
   vim.wo[tree_win].wrap = vim.go.wrap
   vim.bo[buf].tabstop = 2
   vim.bo[buf].shiftwidth = 2
@@ -899,6 +901,8 @@ function M.open(opts)
       diff_state.working_win = nil
     end
     pcall(vim.api.nvim_win_call, win, function() vim.cmd("diffoff") end)
+    vim.wo[win].cursorbind = false
+    vim.wo[win].scrollbind = false
     local existing_buf = vim.fn.bufnr(target)
     local target_buf = vim.fn.bufadd(target)
     vim.fn.bufload(target_buf)
