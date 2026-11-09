@@ -1968,7 +1968,7 @@ function M.open(opts)
       vim.bo[draft_buf].bufhidden = "hide"
       vim.bo[draft_buf].swapfile = false
       vim.bo[draft_buf].filetype = "markdown"
-      local draft_lines = { "", "", "## Context" }
+      local draft_lines = { "## You", "", "## Context" }
       vim.list_extend(draft_lines, vim.split(context, "\n", { plain = true }))
       vim.api.nvim_buf_set_lines(draft_buf, 0, -1, false, draft_lines)
       vim.bo[draft_buf].modifiable = true
@@ -1985,6 +1985,7 @@ function M.open(opts)
       vim.wo[win_id].number = false
       vim.api.nvim_win_set_cursor(win_id, { 1, 0 })
       local session = M.agent_session(root)
+      local busy = false
       local function send_draft()
         local adapter = cfg.agent and cfg.agent.send
         if type(adapter) ~= "function" then
@@ -1995,11 +1996,27 @@ function M.open(opts)
           vim.notify("No agent session bound to this worktree", vim.log.levels.WARN)
           return
         end
-        local message = table.concat(vim.api.nvim_buf_get_lines(draft_buf, 0, -1, false), "\n"):gsub("^%s+", ""):gsub("%s+$", "")
-        if message == "" then
+        if busy then return end
+        context = compose_context()
+        if not context then return end
+        local lines = vim.api.nvim_buf_get_lines(draft_buf, 0, -1, false)
+        local you_line
+        for index, line in ipairs(lines) do
+          if line == "## You" then you_line = index end
+        end
+        if not you_line then return end
+        local prompt_lines = {}
+        for index = you_line + 1, #lines do
+          if lines[index]:match("^## ") then break end
+          prompt_lines[#prompt_lines + 1] = lines[index]
+        end
+        local prompt = table.concat(prompt_lines, "\n"):gsub("^%s+", ""):gsub("%s+$", "")
+        if prompt == "" then
           vim.notify("Message is empty", vim.log.levels.INFO)
           return
         end
+        local message = prompt .. "\n\n## Context\n" .. context
+        busy = true
         vim.bo[draft_buf].modifiable = true
         vim.api.nvim_buf_set_lines(draft_buf, -1, -1, false, { "", "## Agent" })
         local function append_response(chunk)
@@ -2018,21 +2035,32 @@ function M.open(opts)
           worktree = root,
           message = message,
           on_chunk = append_response,
-          on_done = function() end,
+          on_done = function()
+            vim.schedule(function()
+              if not vim.api.nvim_buf_is_valid(draft_buf) then return end
+              busy = false
+              vim.bo[draft_buf].modifiable = true
+              vim.api.nvim_buf_set_lines(draft_buf, -1, -1, false, { "", "## You", "" })
+            end)
+          end,
           on_error = function(error)
             vim.schedule(function()
+              busy = false
               vim.notify("Agent chat failed: " .. tostring(error), vim.log.levels.ERROR)
             end)
           end,
         })
-        if not ok then vim.notify("Agent chat failed: " .. tostring(err), vim.log.levels.ERROR) end
+        if not ok then
+          busy = false
+          vim.notify("Agent chat failed: " .. tostring(err), vim.log.levels.ERROR)
+        end
       end
       bind_key(draft_buf, cfg, "chat_send", "<C-s>", send_draft)
       bind_key(draft_buf, cfg, "chat_close", "q", function()
         if vim.api.nvim_win_is_valid(win_id) then vim.api.nvim_win_close(win_id, true) end
       end)
       pcall(vim.api.nvim_buf_set_name, draft_buf, "neolit://chat-draft-" .. draft_buf)
-      vim.notify("Draft: edit message above Context; <C-s> sends through configured worktree session adapter")
+      vim.notify("Chat draft: type under You; <C-s> sends to the bound session; replies stream below Agent")
     end
     local function clear_context()
       context_chunks, context_keys = {}, {}
