@@ -1298,7 +1298,7 @@ function M.open(opts)
   end
 
 
-  local function open_composed_view(mode, scope_path)
+  local function open_composed_view(mode, scope_path, selected_key)
     local workspace = vim.b[buf].neolit_workspace
     if type(workspace) ~= "table" then return end
     local lines, rows = {}, {}
@@ -1857,7 +1857,7 @@ function M.open(opts)
       local row = selected_view_row()
       if not row or (row.kind ~= "task" and row.kind ~= "requirement") or not row.key then return end
       composed_expanded[row.key] = not composed_expanded[row.key]
-      open_composed_view(mode, scope_path)
+      open_composed_view(mode, scope_path, row.key)
     end, { buffer = view_buf, silent = true })
     vim.keymap.set("n", "?", function()
       vim.notify("Workspace: za expand/collapse · p context packet · <CR> source · a add · d remove · Y copy · c clear · x copy chunk · y path · v switch · q tree", vim.log.levels.INFO)
@@ -1880,7 +1880,13 @@ function M.open(opts)
       if vim.api.nvim_win_is_valid(diff_state.tree_win) then vim.api.nvim_set_current_win(diff_state.tree_win) end
     end, { buffer = view_buf, silent = true })
     vim.api.nvim_set_current_win(win)
-    vim.api.nvim_win_set_cursor(win, { 1, 0 })
+    local selected_line = 1
+    if selected_key then
+      for line, row in pairs(rows) do
+        if row and row.key == selected_key then selected_line = line; break end
+      end
+    end
+    vim.api.nvim_win_set_cursor(win, { selected_line, 0 })
   end
 
   local function map(lhs, fn, desc)
