@@ -718,14 +718,20 @@ function M.open(opts)
       vim.notify("File is no longer available: " .. tostring(relative_path), vim.log.levels.WARN)
       return
     end
+    local tree = view_state.tree_win
+    if not tree or not vim.api.nvim_win_is_valid(tree) then return end
+    -- Tree and preview are distinct, permanent window roles. Never fall back
+    -- to the tree window: doing so replaces the navigator with a source file.
     local win = view_state.preview_win
-    if not win or not vim.api.nvim_win_is_valid(win) then
-      win = view_state.tree_win
-      if not win or not vim.api.nvim_win_is_valid(win) then return end
-      vim.api.nvim_set_current_win(win)
+    if not win or not vim.api.nvim_win_is_valid(win) or win == tree then
+      vim.api.nvim_set_current_win(tree)
       vim.cmd("rightbelow vsplit")
       win = vim.api.nvim_get_current_win()
       view_state.preview_win = win
+    end
+    if win == tree or vim.api.nvim_win_get_buf(tree) ~= buf then
+      vim.notify("Neolit window roles are inconsistent; close and reopen :Neolit", vim.log.levels.ERROR)
+      return
     end
     vim.wo[win].cursorbind = false
     vim.wo[win].scrollbind = false
@@ -858,7 +864,9 @@ function M.open(opts)
 
   local function selected()
     local workspace = vim.b[buf].neolit_workspace
-    local row = vim.b[buf].neolit_rows and vim.b[buf].neolit_rows[vim.api.nvim_win_get_cursor(0)[1]]
+    local tree = view_state.tree_win
+    if not tree or not vim.api.nvim_win_is_valid(tree) or vim.api.nvim_win_get_buf(tree) ~= buf then return end
+    local row = vim.b[buf].neolit_rows and vim.b[buf].neolit_rows[vim.api.nvim_win_get_cursor(tree)[1]]
     if not row then return end
     if row.kind == "tree_directory" then
       expanded_dirs[row.path] = true
@@ -2062,11 +2070,13 @@ function M.open(opts)
     vim.api.nvim_win_set_cursor(win, { selected_line, 0 })
   end
 
-  local function map(lhs, fn, desc, action)
+  local function map(_, fn, desc, action)
     local key = action or desc
     local resolved = cfg.keymaps and cfg.keymaps[key]
     if type(resolved) ~= "string" or resolved == "" then return end
-    vim.keymap.set("n", resolved, fn, { buffer = buf, silent = true, desc = "Neolit: " .. key })
+    vim.keymap.set("n", resolved, fn, {
+      buffer = buf, silent = true, nowait = false, desc = "Neolit: " .. key,
+    })
   end
   rerender_at = function(key)
     local workspace = vim.b[buf].neolit_workspace
@@ -2075,14 +2085,17 @@ function M.open(opts)
     if key then
       for line, row in pairs(vim.b[buf].neolit_rows or {}) do
         if row and row.key == key then
-          vim.api.nvim_win_set_cursor(0, { line, 0 })
+          local tree = view_state.tree_win
+          if tree and vim.api.nvim_win_is_valid(tree) then vim.api.nvim_win_set_cursor(tree, { line, 0 }) end
           return
         end
       end
     end
   end
   current_row = function()
-    return vim.b[buf].neolit_rows and vim.b[buf].neolit_rows[vim.api.nvim_win_get_cursor(0)[1]]
+    local tree = view_state.tree_win
+    if not tree or not vim.api.nvim_win_is_valid(tree) or vim.api.nvim_win_get_buf(tree) ~= buf then return nil end
+    return vim.b[buf].neolit_rows and vim.b[buf].neolit_rows[vim.api.nvim_win_get_cursor(tree)[1]]
   end
 
   local function delete_selected()
@@ -2182,7 +2195,8 @@ function M.open(opts)
     if not parent_key then return end
     for line, parent in pairs(vim.b[buf].neolit_rows or {}) do
       if parent and parent.key == parent_key then
-        vim.api.nvim_win_set_cursor(0, { line, 0 })
+        local tree = view_state.tree_win
+        if tree and vim.api.nvim_win_is_valid(tree) then vim.api.nvim_win_set_cursor(tree, { line, 0 }) end
         return
       end
     end
@@ -2269,7 +2283,9 @@ function M.open(opts)
     vim.api.nvim_buf_clear_namespace(buf, related_ns, 0, -1)
     local rows = vim.b[buf].neolit_rows
     if type(rows) ~= "table" then return end
-    local cursor = vim.api.nvim_win_get_cursor(0)
+    local tree = view_state.tree_win
+    if not tree or not vim.api.nvim_win_is_valid(tree) or vim.api.nvim_win_get_buf(tree) ~= buf then return end
+    local cursor = vim.api.nvim_win_get_cursor(tree)
     local selected_row = rows[cursor[1]]
     if type(selected_row) ~= "table"
       or (selected_row.kind ~= "task" and selected_row.kind ~= "requirement") then return end
@@ -2369,6 +2385,11 @@ function M.open(opts)
     group = refresh_group,
     buffer = buf,
     callback = function()
+      -- CursorMoved fires for every window displaying this buffer. Only the
+      -- designated navigator window is allowed to drive hover previews.
+      if not vim.api.nvim_win_is_valid(view_state.tree_win)
+        or vim.api.nvim_get_current_win() ~= view_state.tree_win
+        or vim.api.nvim_win_get_buf(view_state.tree_win) ~= buf then return end
       highlight_related()
       preview_row(current_row())
     end,
