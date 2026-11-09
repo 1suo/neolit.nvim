@@ -29,9 +29,13 @@ M.defaults = {
     copy_source_path = "<leader>nl",
     chat_open = "<leader>nm",
     chat_send = "<C-s>",
-    chat_close = "q",
+    chat_close = "<leader>nq",
     tree_toggle = "<leader>nt",
     tree_help = "<leader>n?",
+    tree_open_selected = "<leader>n<CR>",
+    open_source = "<leader>no",
+    view_back = "<leader>nq",
+    view_help = "<leader>n?",
   },
 }
 
