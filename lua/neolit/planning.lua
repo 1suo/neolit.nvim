@@ -526,11 +526,32 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
           if entry.kind == "hunk" and entry.path == path then
             local first_hunk = entry.hunks and entry.hunks[1]
             local hunk = first_hunk and cc_diff.hunks[first_hunk] or nil
+            local candidate_tasks, candidate_requirements = {}, {}
+            local task_seen, requirement_seen = {}, {}
+            for _, cc_index in ipairs(entry.hunks or {}) do
+              local cc_hunk = cc_diff.hunks[cc_index]
+              local cc_first = cc_hunk and math.max(cc_hunk.to_start or 1, 1) or nil
+              local cc_last = cc_hunk and math.max(cc_first, cc_first + (cc_hunk.to_count or 0) - 1) or nil
+              for _, association in ipairs(file_hunks) do
+                local old_hunk = find_changed_hunk(changed, association.hunkIndex)
+                local old_first = old_hunk and tonumber(old_hunk.newStart)
+                local old_last = old_first and (old_first + math.max(tonumber(old_hunk.newLines) or 1, 1) - 1) or nil
+                if cc_first and old_first and old_first <= cc_last and cc_first <= old_last then
+                  for _, key in ipairs(association.candidateTaskKeys or {}) do
+                    if not task_seen[key] then task_seen[key] = true; candidate_tasks[#candidate_tasks + 1] = key end
+                  end
+                  for _, ref in ipairs(association.candidateRequirementRefs or {}) do
+                    if not requirement_seen[ref] then requirement_seen[ref] = true; candidate_requirements[#candidate_requirements + 1] = ref end
+                  end
+                end
+              end
+            end
+            local mapped = { candidateTaskKeys = candidate_tasks, candidateRequirementRefs = candidate_requirements }
             local summary = cc_review.lines and cc_review.lines[entry_index] or "CodeCompanion review hunk"
             add(child_prefix .. " HUNK " .. summary,
               { kind = "task_hunk", key = "file-cch:" .. path .. ":" .. tostring(entry_index),
                 parent_key = "file:" .. path, file = changed, hunkIndex = first_hunk and first_hunk - 1,
-                hunk = hunk, ccHunkIndex = first_hunk, ccReviewEntry = entry, hunkAssociation = nil })
+                hunk = hunk, ccHunkIndex = first_hunk, ccReviewEntry = entry, hunkAssociation = mapped })
           end
         end
       else
@@ -943,6 +964,21 @@ function M.open(opts)
             end
             codecompanion_review_diffs = built_review.diffs or {}
             workspace.codecompanionReview = built_review
+            local changed_paths = {}
+            for _, file in ipairs(workspace.git.changedFiles or {}) do changed_paths[file.path] = true end
+            workspace.git.changedFiles = workspace.git.changedFiles or {}
+            for path, diff in pairs(codecompanion_review_diffs) do
+              if not changed_paths[path] then
+                local file = { path = path, hunks = {} }
+                for _, hunk in ipairs(diff.hunks or {}) do
+                  file.hunks[#file.hunks + 1] = {
+                    oldStart = hunk.from_start, oldLines = hunk.from_count,
+                    newStart = hunk.to_start, newLines = hunk.to_count,
+                  }
+                end
+                workspace.git.changedFiles[#workspace.git.changedFiles + 1] = file
+              end
+            end
           else
             for _, old in pairs(codecompanion_review_diffs) do
               pcall(vim.api.nvim_buf_delete, old.bufnr, { force = true })
@@ -2535,6 +2571,10 @@ function M.open(opts)
     callback = function()
       refresh_revision = refresh_revision + 1
       if refresh_job then pcall(vim.fn.jobstop, refresh_job); refresh_job = nil end
+      for _, old in pairs(codecompanion_review_diffs) do
+        pcall(vim.api.nvim_buf_delete, old.bufnr, { force = true })
+      end
+      codecompanion_review_diffs = {}
       pcall(vim.api.nvim_del_augroup_by_id, refresh_group)
     end,
   })
@@ -2627,6 +2667,10 @@ function M.open(opts)
   local function close_workspace()
     refresh_revision = refresh_revision + 1
     if refresh_job then pcall(vim.fn.jobstop, refresh_job); refresh_job = nil end
+    for _, old in pairs(codecompanion_review_diffs) do
+      pcall(vim.api.nvim_buf_delete, old.bufnr, { force = true })
+    end
+    codecompanion_review_diffs = {}
     pcall(vim.api.nvim_del_augroup_by_id, refresh_group)
     if vim.api.nvim_buf_is_valid(buf) then
       for _, win in ipairs(vim.api.nvim_list_wins()) do
