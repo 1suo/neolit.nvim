@@ -663,7 +663,7 @@ function M.open(opts)
   local expanded_files = {}
   local expanded_dirs = {}
   local expanded_tasks = {}
-  local diff_state = { tree_win = tree_win, preview_win = preview_win }
+  local view_state = { tree_win = tree_win, preview_win = preview_win }
   local context_chunks, context_keys = {}, {}
   local composed_expanded, scope_expanded = {}, {}
   local composed_view_buf, context_view_buf
@@ -676,14 +676,14 @@ function M.open(opts)
       vim.notify("File is no longer available: " .. tostring(relative_path), vim.log.levels.WARN)
       return
     end
-    local win = diff_state.preview_win
+    local win = view_state.preview_win
     if not win or not vim.api.nvim_win_is_valid(win) then
-      win = diff_state.tree_win
+      win = view_state.tree_win
       if not win or not vim.api.nvim_win_is_valid(win) then return end
       vim.api.nvim_set_current_win(win)
       vim.cmd("rightbelow vsplit")
       win = vim.api.nvim_get_current_win()
-      diff_state.preview_win = win
+      view_state.preview_win = win
     end
     pcall(vim.api.nvim_win_call, win, function() vim.cmd("diffoff") end)
     vim.wo[win].cursorbind = false
@@ -1365,14 +1365,14 @@ function M.open(opts)
     end
     if #lines == 1 then add("  (no matching planning entries)", { kind = "empty" }) end
 
-    local win = diff_state.preview_win
+    local win = view_state.preview_win
     if not win or not vim.api.nvim_win_is_valid(win) then
-      win = diff_state.tree_win
+      win = view_state.tree_win
       if not win or not vim.api.nvim_win_is_valid(win) then return end
       vim.api.nvim_set_current_win(win)
       vim.cmd("rightbelow vsplit")
       win = vim.api.nvim_get_current_win()
-      diff_state.preview_win = win
+      view_state.preview_win = win
     end
     local view_buf = composed_view_buf
     if not view_buf or not vim.api.nvim_buf_is_valid(view_buf) then
@@ -1984,7 +1984,7 @@ function M.open(opts)
     end)
     update_context_header()
     bind_key(view_buf, cfg, "view_back", "<leader>nq", function()
-      if vim.api.nvim_win_is_valid(diff_state.tree_win) then vim.api.nvim_set_current_win(diff_state.tree_win) end
+      if vim.api.nvim_win_is_valid(view_state.tree_win) then vim.api.nvim_set_current_win(view_state.tree_win) end
     end)
     vim.api.nvim_set_current_win(win)
     local selected_line = 1
@@ -2332,12 +2332,20 @@ function M.open(opts)
     open_composed_view(mode, row and row.doc_kind and row.path or nil)
   end, "tree_composed", "tree_composed")
   map("<leader>n<CR>", selected, "tree_open_selected", "tree_open_selected")
+  map("<leader>nC", function()
+    if vim.fn.exists(":CodeCompanionChat") ~= 2 then
+      vim.notify("CodeCompanion.nvim is required", vim.log.levels.ERROR)
+      return
+    end
+    vim.api.nvim_set_current_win(view_state.tree_win)
+    vim.cmd("CodeCompanionChat Changes")
+  end, "agent_changes", "agent_changes")
   map("<leader>ne", function()
     if vim.fn.exists(":CodeCompanionCodeReview") ~= 2 then
       vim.notify("CodeCompanion.nvim Code Review is required", vim.log.levels.ERROR)
       return
     end
-    vim.api.nvim_set_current_win(diff_state.tree_win)
+    vim.api.nvim_set_current_win(view_state.tree_win)
     vim.cmd("CodeCompanionCodeReview")
   end, "review_changes", "review_changes")
   map("<leader>no", open_selected_file, "tree_open_file", "tree_open_file")
