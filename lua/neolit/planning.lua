@@ -1964,7 +1964,7 @@ function M.open(opts)
       local context = compose_context()
       if not context then return end
       local draft_buf = vim.api.nvim_create_buf(false, true)
-      vim.bo[draft_buf].buftype = "acwrite"
+      vim.bo[draft_buf].buftype = "nofile"
       vim.bo[draft_buf].bufhidden = "hide"
       vim.bo[draft_buf].swapfile = false
       vim.bo[draft_buf].filetype = "markdown"
@@ -2008,7 +2008,9 @@ function M.open(opts)
             if not vim.api.nvim_buf_is_valid(draft_buf) then return end
             local last = vim.api.nvim_buf_line_count(draft_buf)
             local existing = vim.api.nvim_buf_get_lines(draft_buf, last - 1, last, false)[1] or ""
-            vim.api.nvim_buf_set_lines(draft_buf, last - 1, last, false, { existing .. chunk })
+            local parts = vim.split(chunk, "\n", { plain = true })
+            parts[1] = existing .. (parts[1] or "")
+            vim.api.nvim_buf_set_lines(draft_buf, last - 1, last, false, parts)
           end)
         end
         local ok, err = pcall(adapter, {
@@ -2029,7 +2031,7 @@ function M.open(opts)
       bind_key(draft_buf, cfg, "chat_close", "q", function()
         if vim.api.nvim_win_is_valid(win_id) then vim.api.nvim_win_close(win_id, true) end
       end)
-      vim.api.nvim_buf_set_name(draft_buf, "neolit://chat-draft")
+      pcall(vim.api.nvim_buf_set_name, draft_buf, "neolit://chat-draft-" .. draft_buf)
       vim.notify("Draft: edit message above Context; <C-s> sends through configured worktree session adapter")
     end
     local function clear_context()
