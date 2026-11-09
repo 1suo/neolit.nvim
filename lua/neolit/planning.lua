@@ -1525,6 +1525,12 @@ function M.open(opts)
       local row = selected_view_row()
       if not row then return end
       if row.kind == "changed_file" then
+        local target = safe_repo_path(root, row.path)
+        local loaded = target and vim.fn.bufnr(target) or -1
+        if loaded >= 0 and vim.bo[loaded].modified then
+          vim.notify("Write the modified buffer before adding its diff to context", vim.log.levels.WARN)
+          return
+        end
         local changed
         for _, file in ipairs(workspace.git.changedFiles or {}) do
           if file.path == row.path or file.previousPath == row.path then changed = file; break end
@@ -1595,6 +1601,11 @@ function M.open(opts)
           vim.notify("Source chunk is no longer available; refresh the workspace", vim.log.levels.WARN)
           return
         end
+        local loaded = vim.fn.bufnr(target)
+        if loaded >= 0 and vim.bo[loaded].modified then
+          vim.notify("Write the modified planning buffer before adding its chunk to context", vim.log.levels.WARN)
+          return
+        end
         local source_lines = vim.fn.readfile(target)
         local chunk = {}
         for index = row.first, math.min(row.last or row.first, #source_lines) do
@@ -1648,6 +1659,12 @@ function M.open(opts)
       local output = {}
       for _, item in ipairs(context_chunks) do
         if item.expected_diff then
+          local target = safe_repo_path(root, item.path)
+          local loaded = target and vim.fn.bufnr(target) or -1
+          if loaded >= 0 and vim.bo[loaded].modified then
+            vim.notify("Context is stale: write the modified buffer before copying", vim.log.levels.WARN)
+            return
+          end
           local changed
           for _, file in ipairs(current.git.changedFiles or {}) do
             if file.path == item.path then changed = file; break end
@@ -1665,6 +1682,11 @@ function M.open(opts)
           local target = safe_repo_path(root, item.path)
           if not target or vim.fn.filereadable(target) ~= 1 then
             vim.notify("Context is stale: source disappeared at " .. item.path, vim.log.levels.WARN)
+            return
+          end
+          local loaded = vim.fn.bufnr(target)
+          if loaded >= 0 and vim.bo[loaded].modified then
+            vim.notify("Context is stale: write the modified buffer before copying", vim.log.levels.WARN)
             return
           end
           local source_lines = vim.fn.readfile(target)
