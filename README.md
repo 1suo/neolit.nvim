@@ -36,6 +36,11 @@ Example for lazy.nvim:
     comparison_base = "HEAD",
     node = "node",
 
+    -- Markdown capture destinations (relative planning paths are repo-relative).
+    journal_dir = "~/Documents/memo/journal",
+    todo_file = "TODO.md",
+    spec_file = "SPEC.md",
+
     -- CodeCompanion adapter used by <leader>nm.
     codecompanion = { adapter = "opencode" },
 
@@ -51,7 +56,11 @@ Example for lazy.nvim:
   keys = {
     { "<leader>nn", "<cmd>Neolit<cr>", desc = "Open Neolit workspace" },
   },
-  cmd = { "Neolit", "NeolitPlan", "NeolitClose" },
+  cmd = {
+    "Neolit", "NeolitPlan", "NeolitClose", "NeolitJournal",
+    "NeolitCaptureJournal", "NeolitCaptureTask",
+    "NeolitCaptureRequirement", "NeolitCaptureCriterion",
+  },
 }
 ~~~
 
@@ -91,6 +100,17 @@ The workspace opens a 36-column tree on the left and reuses the current window a
 Workspace commands are buffer-local while the Neolit tree is open (and `:NeolitChatFile` is also available in composed views): `:NeolitCompose`, `:NeolitOpen`, `:NeolitOpenFile`, `:NeolitFilter`, `:NeolitRefresh`, `:NeolitDelete`, `:NeolitCopyText`, `:NeolitCopyPath`, `:NeolitToggle`, `:NeolitChat`, `:NeolitChatFile`, `:NeolitAgentChanges`, and `:NeolitReview`.
 
 Composed views also expose `:NeolitContextAdd`, `:NeolitContextRemove`, `:NeolitContextCopy`, `:NeolitContextClear`, `:NeolitContextReview`, and `:NeolitChatContext`. These commands act on the current Neolit selection; they are not global commands.
+
+### Capture and journal
+
+- `<leader>nj` opens a short journal capture; `<leader>nJ` opens the current monthly journal file.
+- `<leader>nt` captures a checkbox task into the configured TODO file.
+- `<leader>nR` captures the next `R-NN` requirement; `<leader>nA` captures the next `AC-NN` acceptance criterion.
+- Capture buffers save with `Ctrl-S` (or `:write`) and cancel with `Ctrl-C`.
+- Journal files are monthly Markdown files with daily headings and timestamped entries. Tasks and specifications are inserted under `## Tasks`, `## Requirements`, and `## Acceptance criteria` respectively.
+- Commands: `:NeolitJournal`, `:NeolitCaptureJournal`, `:NeolitCaptureTask`, `:NeolitCaptureRequirement`, and `:NeolitCaptureCriterion`.
+
+Captured tasks still need explicit `SPEC:` references to participate in requirement traceability. Acceptance criteria should name their applicable `R-NN` IDs. The configured TODO and SPEC files are loaded even when they are not linked from README; additional linked planning documents continue to be discovered normally.
 
 ### Navigate and inspect
 
@@ -146,7 +166,7 @@ In the tree or a composed view, select a TODO task, SPEC requirement, or accepta
 | --- | --- | --- |
 | node | "node" | Node.js executable |
 | directory | current working directory | Repository to inspect |
-| comparison_base | "HEAD" | Git base for change discovery |
+| comparison_base | "HEAD" | Git base for change discovery |\n| journal_dir | "~/Documents/memo/journal" | Directory for monthly journal Markdown files |\n| todo_file | "TODO.md" | Repository-relative TODO capture and discovery path |\n| spec_file | "SPEC.md" | Repository-relative SPEC capture and discovery path |
 | codecompanion.adapter | "opencode" | CodeCompanion adapter for <leader>nm |
 | keymaps | see below | Per-action normal-mode mapping overrides |
 
@@ -154,7 +174,7 @@ Default keymaps:
 
 | Action | Default |
 | --- | --- |
-| open_workspace | <leader>nn |
+| open_workspace | <leader>nn |\n| open_journal | <leader>nJ |\n| capture_journal | <leader>nj |\n| capture_task | <leader>nt |\n| capture_requirement | <leader>nR |\n| capture_criterion | <leader>nA |
 | tree_composed | <leader>nv |
 | tree_open_selected | <CR> |
 | tree_toggle | F |
