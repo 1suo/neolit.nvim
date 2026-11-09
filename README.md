@@ -84,7 +84,7 @@ ordinary source-file buffers.
 | `<leader>nn` | Open workspace |
 | `<leader>nv` | Open composed requirement/task view |\n| `<leader>n<CR>` | Open selected tree entry / diff |
 | `<leader>ns` | Open selected task scope |
-| `<leader>na` / `<leader>nd` | Add / remove context |
+| `<leader>na` / `<leader>n-` | Add / remove context |
 | `<leader>np` | Review context |
 | `<leader>ny` | Copy validated context |
 | `<leader>nc` | Clear context |
