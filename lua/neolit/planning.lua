@@ -67,6 +67,20 @@ local function safe_repo_path(root, relative)
   return absolute
 end
 
+local function extract_diff_hunk(diff, wanted_index)
+  if type(diff) ~= "string" or type(wanted_index) ~= "number" then return nil end
+  local result, index, collecting = {}, -1, false
+  for _, line in ipairs(vim.split(diff, "\\n", { plain = true })) do
+    if line:match("^@@ ") then
+      index = index + 1
+      if collecting then break end
+      collecting = index == wanted_index
+    end
+    if collecting then result[#result + 1] = line end
+  end
+  return #result > 0 and table.concat(result, "\\n") or nil
+end
+
 local function set_source_language(buf, path)
   local filetype = vim.filetype.match({ filename = path }) or ""
   if filetype ~= "" and vim.bo[buf].filetype ~= filetype then
@@ -854,7 +868,7 @@ function M.open(opts)
         if file.path == row.path or file.previousPath == row.path then changed = file; break end
       end
       if changed then
-        open_diff(root, changed, nil, workspace.git.base, nil, diff_state, true)
+        open_change_source(changed, nil, nil, true)
       else
         local target = safe_repo_path(root, row.path)
         if target and vim.fn.filereadable(target) == 1 then
@@ -876,7 +890,7 @@ function M.open(opts)
         vim.notify("The linked hunk is no longer in the workspace; refresh", vim.log.levels.WARN)
       end
     elseif row.kind == "file" then
-      open_diff(root, row.file, nil, workspace and workspace.git.base, nil, diff_state, true)
+      open_change_source(row.file, nil, nil, true)
     elseif row.kind == "hunk" or row.kind == "change_line" then
       open_change_source(row.file, row.hunk,
         row.kind == "change_line" and { side = row.side, lineNumber = row.lineNumber } or nil, true)
@@ -906,7 +920,7 @@ function M.open(opts)
         open_change_source(row.file, row.hunk, nil, false)
       end
     elseif row.kind == "file" then
-      open_diff(root, row.file, nil, workspace and workspace.git.base, nil, diff_state, false)
+      open_change_source(row.file, nil, nil, false)
     elseif row.kind == "hunk" or row.kind == "change_line" then
       open_change_source(row.file, row.hunk,
         row.kind == "change_line" and { side = row.side, lineNumber = row.lineNumber } or nil, false)
@@ -929,7 +943,7 @@ function M.open(opts)
       for _, file in ipairs(workspace and workspace.git.changedFiles or {}) do
         if file.path == row.path or file.previousPath == row.path then changed = file; break end
       end
-      if changed then open_diff(root, changed, nil, workspace.git.base, nil, diff_state, false)
+      if changed then open_change_source(changed, nil, nil, false)
       else open_in_preview(row.path, nil, false) end
     end
   end
@@ -968,30 +982,6 @@ function M.open(opts)
     end
     open_in_preview(path, line, true)
   end
-  local function focus_working_diff()
-    local row = current_row()
-    local path = selected_file_target(row)
-    if not path then
-      vim.notify("Select a file or diff row first", vim.log.levels.INFO)
-      return
-    end
-    local workspace = vim.b[buf].neolit_workspace
-    local changed = row.file
-    if not changed then
-      for _, file in ipairs(workspace and workspace.git.changedFiles or {}) do
-        if file.path == path or file.previousPath == path then changed = file; break end
-      end
-    end
-    if changed then
-      local hunk = row.hunk or (row.hunkAssociation and row.hunkAssociation.hunk)
-      open_change_source(changed, hunk,
-        row.kind == "change_line" and { side = row.side, lineNumber = row.lineNumber } or nil, true)
-    else
-      open_in_preview(path, nil, true)
-    end
-  end
-
-
   local function copy_value(value, label)
     if type(value) ~= "string" or value == "" then
       vim.notify("Nothing to copy for this selection", vim.log.levels.INFO)
@@ -1384,12 +1374,6 @@ function M.open(opts)
       win = vim.api.nvim_get_current_win()
       diff_state.preview_win = win
     end
-    if diff_state.base_win and vim.api.nvim_win_is_valid(diff_state.base_win) then
-      pcall(vim.api.nvim_win_call, diff_state.base_win, function() vim.cmd("diffoff") end)
-      pcall(vim.api.nvim_win_close, diff_state.base_win, true)
-      diff_state.base_win = nil
-      diff_state.working_win = nil
-    end
     local view_buf = composed_view_buf
     if not view_buf or not vim.api.nvim_buf_is_valid(view_buf) then
       view_buf = vim.api.nvim_create_buf(false, true)
@@ -1447,7 +1431,7 @@ function M.open(opts)
         for _, file in ipairs(workspace.git.changedFiles or {}) do
           if file.path == row.path or file.previousPath == row.path then changed = file; break end
         end
-        if changed then open_diff(root, changed, nil, workspace.git.base, nil, diff_state, true)
+        if changed then open_change_source(changed, nil, nil, true)
         else
           local target = safe_repo_path(root, row.path)
           if target and vim.fn.filereadable(target) == 1 then open_in_preview(row.path, row.line, true) end
