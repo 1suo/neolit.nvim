@@ -69,8 +69,8 @@ opens that exact native diff.
   shows each requirement with linked TODO tasks, descriptions, acceptance
   criteria, and changed-file evidence. From a TODO file it shows its tasks and
   linked requirements. Press `v` in that view to switch projections; `<CR>
-  navigates to the source chunk, `x` copies its exact Markdown range, and `y`
-  copies its source location. The view is a projection; source Markdown remains
+  navigates to the source chunk, `x` copies its Markdown range or selected
+  detail, and `y` copies its source location. The view is a projection; source Markdown remains
   editable and authoritative.
 
 ## Keys
