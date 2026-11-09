@@ -12,6 +12,7 @@ M.defaults = {
     tree_composed = "<leader>nv",
     tree_open_file = "<leader>no",
     review_changes = "<leader>ne",
+    agent_changes = "<leader>nC",
     delete_entry = "<leader>nD",
     copy_text = "<leader>nx",
     copy_path = "<leader>nl",
