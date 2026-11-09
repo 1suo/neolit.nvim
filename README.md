@@ -31,10 +31,28 @@ Install:
     -- directory = "/path/to/repository", -- defaults to cwd
     -- comparison_base = "HEAD",
     -- diff_view = "side_by_side", -- or "unified"; toggle with D
+  -- Agent sessions are bound per canonical worktree path.
   },
   cmd = { "Neolit", "NeolitPlan", "NeolitClose" },
 }
 ```
+
+## Agent session binding
+
+Agent sessions are associated with the canonical worktree path and stored in
+Neovim's state directory, independently for each worktree. The binding stores
+only the host session ID and display label; it does not store transcripts or
+messages.
+
+- `:NeolitAgentBind <session-id> [label]` binds an existing host session to
+  the configured worktree (or the current working directory).
+- `:NeolitAgentSession` displays the current binding.
+- `:NeolitAgentUnbind` removes it.
+
+The tree header shows the bound session label after refresh. Binding does not
+create, discover, resume, or message agent sessions. Those actions require an
+integration with the specific agent host's supported session API; Neolit does
+not invent a generic agent protocol.
 
 ## Workspace
 
