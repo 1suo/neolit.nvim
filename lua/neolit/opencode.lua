@@ -16,7 +16,7 @@ local function request(opts, method, path, body, callback)
   local base = (opts.url or "http://127.0.0.1:4096"):gsub("/+$", "")
   local url = base .. path
   local command = {
-    "curl", "--silent", "--show-error",
+    "curl", "--silent", "--show-error", "--connect-timeout", "2", "--max-time", "1800",
     "--request", method,
     "--header", "Accept: application/json",
     "--write-out", "\\n%{http_code}",
