@@ -177,7 +177,12 @@ Default keymaps:
 
 | Action | Default |
 | --- | --- |
-| open_workspace | <leader>nn |\n| open_journal | <leader>nJ |\n| capture_journal | <leader>nj |\n| capture_task | <leader>nt |\n| capture_requirement | <leader>nR |\n| capture_criterion | <leader>nA |
+| open_workspace | <leader>nn |
+| open_journal | <leader>nJ |
+| capture_journal | <leader>nj |
+| capture_task | <leader>nt |
+| capture_requirement | <leader>nR |
+| capture_criterion | <leader>nA |
 | tree_composed | <leader>nv |
 | tree_open_selected | <CR> |
 | tree_toggle | F |
