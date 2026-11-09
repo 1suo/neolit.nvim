@@ -34,7 +34,7 @@ local function request(opts, method, path, body, callback)
     text = true,
   }, function(result)
     local output = result.stdout or ""
-    local payload, status = output:match("^(.*)\\n(%d%d%d)\\s*$")
+    local payload, status = output:match("^(.*)\n(%d%d%d)%s*$")
     if not status then
       callback(nil, result.stderr ~= "" and result.stderr or "Invalid OpenCode server response")
       return
@@ -106,7 +106,7 @@ function M.send(opts, input)
         input.on_error("OpenCode returned no assistant text")
         return
       end
-      input.on_chunk(table.concat(chunks, "\\n"))
+      input.on_chunk(table.concat(chunks, "\n"))
       input.on_done()
     end)
   end)
