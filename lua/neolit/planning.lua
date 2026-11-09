@@ -685,7 +685,6 @@ function M.open(opts)
       win = vim.api.nvim_get_current_win()
       view_state.preview_win = win
     end
-    pcall(vim.api.nvim_win_call, win, function() vim.cmd("diffoff") end)
     vim.wo[win].cursorbind = false
     vim.wo[win].scrollbind = false
     local existing_buf = vim.fn.bufnr(target)
