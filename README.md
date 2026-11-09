@@ -73,8 +73,9 @@ opens that exact native diff.
   its Markdown range, and `y` copies its source location. Use `a` to add the
   selected source chunk or diff to a temporary context packet, `d` to remove
   it, `Y` to copy the assembled packet for the existing agent, and `c` to
-  clear it. A `●` marks rows already in the packet. `v` switches between
-  requirement/task projections; `?` shows the compact view's keys. Source
+  clear it. A `●` marks rows already in the packet; `p` opens a compact packet
+  review where chunks can be removed individually before copying. `v` switches
+  between requirement/task projections; `?` shows the compact view's keys. Source
   ranges and diffs are checked again before copying;
   changed context is rejected rather than silently replaced. No chat/session
   is created; the packet contains only selected source chunks and diffs. The
