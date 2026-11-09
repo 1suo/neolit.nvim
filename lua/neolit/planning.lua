@@ -724,10 +724,8 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
     local association = associations[file.path]
     if not association or association.state == "unplanned" then unplanned_count = unplanned_count + 1 end
   end
-  local agent_session = M.agent_session(root)
   add("NEOLIT · " .. vim.fn.fnamemodify(root, ":t") .. " · " .. workspace.git.branch
     .. "@" .. (workspace.git.base or workspace.git.head):sub(1, 8)
-    .. " · AGENT " .. (agent_session and agent_session.label or "UNBOUND")
     .. " · " .. #((workspace.tasks) or {}) .. "T/" .. requirement_count .. "R/"
     .. #((workspace.git.changedFiles) or {}) .. "Δ/" .. unplanned_count .. "?"
     .. " · " .. (filter_mode == "affected" and "AFFECTED" or "ALL")
@@ -2233,7 +2231,7 @@ function M.open(opts)
     bind_key(view_buf, cfg, "context_copy", "<leader>ny", copy_context)
     bind_key(view_buf, cfg, "context_clear", "<leader>nc", clear_context)
     bind_key(view_buf, cfg, "context_review", "<leader>np", open_context_view)
-    bind_key(view_buf, cfg, "chat_open", "<leader>nm", open_message_chat)
+    bind_key(view_buf, cfg, "chat_open", "<leader>nm", open_codecompanion_chat)
     bind_key(view_buf, cfg, "copy_path", "<leader>nl", function()
       local row = selected_view_row()
       if row and row.path then copy_value(row.path .. (row.line and (":" .. row.line) or ""), "Source path") end
