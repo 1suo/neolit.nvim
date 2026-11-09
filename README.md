@@ -32,7 +32,8 @@ Install:
     -- comparison_base = "HEAD",
     -- diff_view = "side_by_side", -- or "unified"
     -- keymaps = { open_workspace = "<leader>nn" },
-    -- agent = { send = function(request) ... end }, -- host adapter
+    -- opencode = { url = "http://127.0.0.1:4096" },
+    -- agent = { send = function(request) ... end }, -- optional override
   },
   cmd = { "Neolit", "NeolitPlan", "NeolitClose" },
 }
@@ -51,15 +52,26 @@ messages.
 - `:NeolitAgentUnbind` removes it.
 
 The composed view opens an editable floating message draft (`<leader>nm`)
-containing the selected, revalidated context. `<C-s>` sends it only when
-`agent.send` is configured.
+containing the selected, revalidated context. Neolit uses the OpenCode HTTP
+server by default and sends to the exact bound session ID; the conversation
+remains in OpenCode's session store. Responses are displayed when the request
+finishes (the HTTP adapter does not yet stream tokens).
 
-`agent.send` is a host adapter function called with
-`{ session_id, worktree, message, on_chunk, on_done, on_error }`. It must send
-to that exact existing session and forward streamed response text through
-`on_chunk`. Neolit does not supply a generic agent protocol or silently create
-a replacement session. Without an adapter, the floating draft remains an
-editable composition surface; sending reports that no adapter is configured.
+Start a server for the worktree with:
+
+```sh
+opencode serve --hostname 127.0.0.1 --port 4096
+```
+
+Set `opts.opencode.url` if it listens elsewhere. The adapter verifies the
+session ID and, when the server reports it, checks that its directory matches
+the selected worktree before sending. It uses the existing session's agent and
+model; it does not create a session or start a second agent runtime. `curl`
+must be available.
+
+An optional `opts.agent.send(request)` function overrides the built-in
+transport. The request contains `session_id`, `worktree`, `message`,
+`on_chunk`, `on_done`, and `on_error`.
 
 ## Workspace
 
