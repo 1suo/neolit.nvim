@@ -88,7 +88,7 @@ workspace rather than opening another tree.
 
 Tree navigation:
 - <CR> opens the selected source or expands the selected tree node.
-- <leader>no opens the selected file in the preview pane.
+- `o` opens the selected file in the preview pane; `F` toggles the selected tree node; `h` / `l` collapse/expand or move to the parent.
 - za / zo / zc toggle, open, or close the selected node.
 - zr / zm open or close one visible level.
 - zR / zM expand or collapse all.
@@ -97,7 +97,7 @@ Tree navigation:
 - <leader>nf toggles affected-only paths.
 - <leader>nr refreshes Git and planning data.
 - <leader>n? shows context-sensitive key hints.
-- <leader>nq closes the workspace.
+- `q` closes the workspace.
 
 The composed view links SPEC requirements, TODO tasks, acceptance criteria,
 file hints, and current Git changes. From a TODO document, <leader>nv starts
@@ -190,6 +190,9 @@ DEFAULT KEYMAPS                                                    *neolit-keyma
   chat_open              <leader>nm       composed view
   chat_context           <leader>nM       composed/scope view
   chat_file              <leader>nF       tree/composed
+  tree_toggle            F              tree
+  tree_expand_node       l              tree
+  tree_collapse_node     h              tree
   tree_fold_toggle       za              tree/composed/scope
   tree_fold_close        zc              tree
   tree_fold_open         zo              tree
@@ -205,7 +208,7 @@ DEFAULT KEYMAPS                                                    *neolit-keyma
   copy_path              <leader>nl       tree
   refresh                <leader>nr       tree
   close_workspace        <leader>nq       tree
-  view_help              <leader>n?       views
+  view_help              ?       views
 
 Set any keymaps.<action> to false or "" to disable it. All Neolit action and
 tree-fold mappings are configured in lua/neolit/config.lua and are buffer-local
