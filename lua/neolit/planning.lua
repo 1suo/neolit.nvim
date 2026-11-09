@@ -352,7 +352,10 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
     doc_kind[spec.path] = "SPEC"
     requirements_by_doc[spec.path] = spec.requirements or {}
   end
-  for _, todo in ipairs(workspace.todos or {}) do doc_kind[todo.path] = "TODO" end
+  for _, todo in ipairs(workspace.todos or {}) do
+    -- Archived TODO copies are ordinary repository files, never active plans.
+    if not todo.path:lower():match("%.archive%.md$") then doc_kind[todo.path] = "TODO" end
+  end
   for _, task in ipairs(workspace.tasks or {}) do
     local path = task.key:match("^(.-)::") or "TODO.md"
     tasks_by_doc[path] = tasks_by_doc[path] or {}
@@ -541,9 +544,10 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
     local status, kind = git_status[path], doc_kind[path]
     local git_marker = status and (status.index .. status.worktree) or "  "
     local association = associations[path] or { state = "unplanned", taskKeys = {} }
-    local marker = changed and (
+    -- Planning-document identity already explains its role; don't add a
+    -- second, overlapping association marker. Keep mapping markers for code.
+    local marker = changed and not kind and (
       association.state == "unplanned" and "?"
-      or association.state == "documentation" and "D"
       or "~"
     ) or ""
     local is_expanded = expanded_files[path] == true
@@ -799,11 +803,10 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
       elseif row.kind == "file" then
         if row.doc_kind then mark(line, "[" .. row.doc_kind .. "]", "Special") end
         local association = row.association or {}
-        local group = association.state == "unplanned" and "DiagnosticWarn"
-          or association.state == "documentation" and "Special" or "DiagnosticInfo"
-        local marker = association.state == "unplanned" and "?"
-          or association.state == "documentation" and "D" or "~"
-        mark(line, marker, group)
+        if not row.doc_kind then
+          local group = association.state == "unplanned" and "DiagnosticWarn" or "DiagnosticInfo"
+          mark(line, association.state == "unplanned" and "?" or "~", group)
+        end
         local git = row.git_status
         if git then
           local code = "[" .. tostring(git.index or " ") .. tostring(git.worktree or " ") .. "]"
