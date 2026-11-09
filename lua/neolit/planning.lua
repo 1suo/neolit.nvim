@@ -1422,14 +1422,19 @@ function M.open(opts)
     end
     if #lines == 1 then add("  (no matching planning entries)", { kind = "empty" }) end
 
+    local tree = view_state.tree_win
+    if not tree or not vim.api.nvim_win_is_valid(tree) then return end
     local win = view_state.preview_win
-    if not win or not vim.api.nvim_win_is_valid(win) then
-      win = view_state.tree_win
-      if not win or not vim.api.nvim_win_is_valid(win) then return end
-      vim.api.nvim_set_current_win(win)
+    if not win or not vim.api.nvim_win_is_valid(win) or win == tree
+      or vim.api.nvim_win_get_buf(win) == buf then
+      vim.api.nvim_set_current_win(tree)
       vim.cmd("rightbelow vsplit")
       win = vim.api.nvim_get_current_win()
       view_state.preview_win = win
+    end
+    if win == tree or vim.api.nvim_win_get_buf(tree) ~= buf then
+      vim.notify("Neolit window roles are inconsistent; close and reopen :Neolit", vim.log.levels.ERROR)
+      return
     end
     local view_buf = composed_view_buf
     if not view_buf or not vim.api.nvim_buf_is_valid(view_buf) then
