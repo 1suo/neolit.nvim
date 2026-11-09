@@ -2338,13 +2338,19 @@ function M.open(opts)
     end
   end
   local refresh_group = vim.api.nvim_create_augroup("NeolitPlanning" .. buf, { clear = true })
-  -- Cursor movement is navigation only. Preview generation performs synchronous
-  -- Git reads and buffer/window changes, so it belongs to an explicit open action.
+  -- Hover previews reuse the single right-hand preview window. Enter promotes
+  -- that preview by focusing it; it must not require a separate open-file chord.
   vim.api.nvim_create_autocmd("CursorMoved", {
     group = refresh_group,
     buffer = buf,
-    callback = highlight_related,
+    callback = function()
+      highlight_related()
+      preview_row(current_row())
+    end,
   })
+  -- Keep Neovim's native K (LSP hover/man-page lookup) available. If an older
+  -- Neolit buffer-local mapping survived a reload, remove only that local map.
+  pcall(vim.keymap.del, "n", "K", { buffer = buf })
   vim.api.nvim_create_autocmd({ "BufWritePost", "FileChangedShellPost" }, {
     group = refresh_group,
     callback = function(event)
