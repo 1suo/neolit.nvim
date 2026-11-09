@@ -1,12 +1,14 @@
 --- Neovim entry point for the Git-native planning companion.
 local config = require("neolit.config")
 local planning = require("neolit.planning")
+local capture = require("neolit.capture")
 
 local M = {}
 local configured
 
 function M.setup(user)
   configured = config.merge(user)
+  capture.setup(configured)
   local open_key = configured.keymaps and configured.keymaps.open_workspace
   if open_key and open_key ~= false and open_key ~= "" then
     vim.keymap.set("n", open_key, M.open, { silent = true, desc = "Neolit: open_workspace" })
