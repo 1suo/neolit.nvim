@@ -6,9 +6,7 @@
   "type": "module",
   "author": "1suo",
   "license": "MIT",
-  "scripts": {
-    "install": "npm install --no-audit --no-fund"
-  },
+  "scripts": {},
   "dependencies": {
     "neolit": "github:1suo/neolit#main"
   }
