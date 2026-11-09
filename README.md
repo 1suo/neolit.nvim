@@ -57,12 +57,13 @@ server by default and sends to the exact bound session ID; the conversation
 remains in OpenCode's session store. Responses are displayed when the request
 finishes (the HTTP adapter does not yet stream tokens).
 
-Start a server for the worktree with:
+Expose the OpenCode server on a stable local port when starting the TUI:
 
 ```sh
-opencode serve --hostname 127.0.0.1 --port 4096
+opencode --hostname 127.0.0.1 --port 4096
 ```
 
+Alternatively, run `opencode serve --hostname 127.0.0.1 --port 4096`.
 Set `opts.opencode.url` if it listens elsewhere. The adapter verifies the
 session ID and, when the server reports it, checks that its directory matches
 the selected worktree before sending. It uses the existing session's agent and
