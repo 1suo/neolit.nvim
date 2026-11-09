@@ -30,8 +30,9 @@ Install:
     neolit_dir = "/path/to/neolit",
     -- directory = "/path/to/repository", -- defaults to cwd
     -- comparison_base = "HEAD",
-    -- diff_view = "side_by_side", -- or "unified"; toggle with D
-  -- Agent sessions are bound per canonical worktree path.
+    -- diff_view = "side_by_side", -- or "unified"
+    -- keymaps = { open_workspace = "<leader>nn" },
+    -- agent = { send = function(request) ... end }, -- host adapter
   },
   cmd = { "Neolit", "NeolitPlan", "NeolitClose" },
 }
