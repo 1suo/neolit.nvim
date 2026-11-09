@@ -53,6 +53,74 @@ local function normalize_diff(diff)
   return (diff or ""):gsub("\r\n", "\n"):gsub("\n+$", "")
 end
 
+local function set_source_language(buf, path)
+  local filetype = vim.filetype.match({ filename = path }) or ""
+  if filetype ~= "" and vim.bo[buf].filetype ~= filetype then
+    vim.bo[buf].filetype = filetype
+  end
+  if filetype ~= "" and vim.treesitter and vim.treesitter.start then
+    pcall(vim.treesitter.start, buf, filetype)
+  end
+  return filetype
+end
+
+-- Unified diffs are still diff buffers, but syntax captures are projected
+-- from parsed old/new source onto their corresponding diff lines.
+local function highlight_unified_source(buf, diff_lines, old_lines, new_lines, filetype)
+  if not filetype or filetype == "" or not (vim.treesitter and vim.treesitter.get_string_parser) then return end
+  local old_map, new_map = {}, {}
+  local old_line, new_line = 0, 0
+  for diff_row, line in ipairs(diff_lines) do
+    local old_start, old_count, new_start, new_count =
+      line:match("^@@ %-(%d+),?(%d*) %+(%d+),?(%d*) @@")
+    if old_start then
+      old_line, new_line = tonumber(old_start) - 1, tonumber(new_start) - 1
+    elseif line:sub(1, 1) == " " then
+      old_line, new_line = old_line + 1, new_line + 1
+      old_map[old_line], new_map[new_line] = diff_row - 1, diff_row - 1
+    elseif line:sub(1, 1) == "-" and not line:match("^---") then
+      old_line = old_line + 1
+      old_map[old_line] = diff_row - 1
+    elseif line:sub(1, 1) == "+" and not line:match("^%+%+%+") then
+      new_line = new_line + 1
+      new_map[new_line] = diff_row - 1
+    end
+  end
+
+  local ns = vim.api.nvim_create_namespace("neolit-unified-source-" .. buf)
+  vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1)
+  local function project(lines, line_map, sign)
+    if not lines or #lines == 0 then return end
+    local source = table.concat(lines, "\n")
+    local ok, parser = pcall(vim.treesitter.get_string_parser, source, filetype)
+    if not ok or not parser then return end
+    local parsed, trees = pcall(parser.parse, parser)
+    if not parsed or not trees or not trees[1] then return end
+    local query_ok, query = pcall(vim.treesitter.query.get, filetype, "highlights")
+    if not query_ok or not query then return end
+    local root = trees[1]:root()
+    for id, node in query:iter_captures(root, source, 0, -1) do
+      local capture = query.captures[id]
+      local start_row, start_col, end_row, end_col = node:range()
+      for source_row = start_row, end_row do
+        local diff_row = line_map[source_row + 1]
+        if diff_row then
+          local first_col = source_row == start_row and start_col or 0
+          local last_col = source_row == end_row and end_col or #(lines[source_row + 1] or "")
+          if last_col > first_col then
+            pcall(vim.api.nvim_buf_set_extmark, buf, ns, diff_row, first_col + 1, {
+              end_row = diff_row, end_col = last_col + 1,
+              hl_group = capture, priority = 110, hl_mode = "combine",
+            })
+          end
+        end
+      end
+    end
+  end
+  project(old_lines, old_map, "-")
+  project(new_lines, new_map, "+")
+end
+
 local function open_diff(root, file, selected_hunk, comparison_base, selected_line, diff_state, focus)
   local original_win = vim.api.nvim_get_current_win()
   local function restore_focus()
@@ -117,7 +185,7 @@ local function open_diff(root, file, selected_hunk, comparison_base, selected_li
     vim.bo[base_buf].modifiable = true
     vim.api.nvim_buf_set_lines(base_buf, 0, -1, false, base_lines)
     vim.bo[base_buf].modifiable = false
-    vim.bo[base_buf].filetype = vim.filetype.match({ filename = base_path }) or ""
+    local source_filetype = set_source_language(base_buf, base_path)
     vim.api.nvim_win_set_buf(base_win, base_buf)
 
     local working_buf
@@ -140,6 +208,7 @@ local function open_diff(root, file, selected_hunk, comparison_base, selected_li
       vim.bo[working_buf].modifiable = true
       vim.api.nvim_buf_set_lines(working_buf, 0, -1, false, { "" })
       vim.bo[working_buf].modifiable = false
+      set_source_language(working_buf, base_path)
     end
     vim.api.nvim_win_set_buf(win, working_buf)
     pcall(vim.api.nvim_win_call, base_win, function() vim.cmd("diffthis") end)
@@ -186,6 +255,12 @@ local function open_diff(root, file, selected_hunk, comparison_base, selected_li
   vim.bo[preview_buf].modifiable = true
   vim.api.nvim_buf_set_lines(preview_buf, 0, -1, false, diff_lines)
   vim.bo[preview_buf].modifiable = false
+  local source_filetype = vim.filetype.match({ filename = file.path }) or ""
+  local base_source = vim.system({ "git", "show", (comparison_base or "HEAD") .. ":" .. base_path }, { cwd = root, text = true }):wait()
+  local old_lines = base_source.code == 0 and vim.split(base_source.stdout or "", "\\n", { plain = true }) or {}
+  if old_lines[#old_lines] == "" then table.remove(old_lines) end
+  local new_lines = vim.fn.filereadable(path) == 1 and vim.fn.readfile(path) or {}
+  highlight_unified_source(preview_buf, diff_lines, old_lines, new_lines, source_filetype)
   vim.api.nvim_win_set_buf(win, preview_buf)
   vim.wo[win].wrap = vim.go.wrap
   if focus then vim.api.nvim_set_current_win(win) else restore_focus() end
@@ -814,6 +889,7 @@ function M.open(opts)
     local existing_buf = vim.fn.bufnr(target)
     local target_buf = vim.fn.bufadd(target)
     vim.fn.bufload(target_buf)
+    set_source_language(target_buf, relative_path)
     -- Hover previews should not flood the user's buffer list. Preserve the
     -- listed state of buffers that were already open before Neolit previewed them.
     if existing_buf < 0 then vim.bo[target_buf].buflisted = false end
