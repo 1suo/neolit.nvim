@@ -15,7 +15,17 @@ Install 1suo/neolit.nvim with your plugin manager. Example lazy.nvim spec:
   {
     "1suo/neolit.nvim",
     build = "npm install",
-    dependencies = { "olimorris/codecompanion.nvim" },
+    dependencies = {
+      {
+        "olimorris/codecompanion.nvim",
+        dependencies = { "nvim-lua/plenary.nvim", "nvim-treesitter/nvim-treesitter" },
+        opts = {
+          interactions = {
+            chat = { adapter = "opencode" },
+          },
+        },
+      },
+    },
     opts = {
       comparison_base = "HEAD",
       node = "node",
@@ -27,8 +37,10 @@ Install 1suo/neolit.nvim with your plugin manager. Example lazy.nvim spec:
     cmd = { "Neolit", "NeolitPlan", "NeolitClose" },
   }
 
-CodeCompanion is optional for repository browsing and planning. It is needed
-for the chat, agent Changes, and Code Review actions.
+CodeCompanion is installed and configured by this spec. Its setup is essential:
+without opts (or config) lazy.nvim can install the plugin without registering
+commands such as :CodeCompanionChat. The example selects OpenCode over ACP;
+the opencode executable must be available on PATH and already configured.
 
 ==============================================================================
 CONFIGURATION                                                     *neolit-config*
