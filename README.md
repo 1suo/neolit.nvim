@@ -93,13 +93,13 @@ ordinary source-file buffers.
 | Mapping | Action |
 | --- | --- |
 | `<leader>nn` | Open workspace |
-| `<leader>nv` | Open composed requirement/task view |
+| `<leader>nv` | Open composed requirement/task view |\n| `<leader>n<CR>` | Open selected tree entry / diff |
 | `<leader>ns` | Open selected task scope |
 | `<leader>na` / `<leader>nd` | Add / remove context |
 | `<leader>np` | Review context |
 | `<leader>ny` | Copy validated context |
 | `<leader>nc` | Clear context |
-| `<leader>nm` | Open floating message draft |
+| `<leader>nm` | Open floating message draft |\n| `<leader>no` | Open selected source from composed views |
 | `<leader>ne` / `<leader>no` | Edit diff side / open actual file |
 | `<leader>nD` | Delete selected planning entry |
 | `<leader>nx` / `<leader>nl` | Copy selected text / source path |
