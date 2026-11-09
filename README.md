@@ -1,113 +1,189 @@
 # neolit.nvim
 
-Neovim companion for [Neolit](https://github.com/1suo/neolit), a Git-native
-planning workspace with an explicit tree-only planning-entry delete action.
+Neovim companion for [Neolit](https://github.com/1suo/neolit), a Git-native planning workspace. It connects TODO/SPEC documents to current Git changes and composes exact source and diff context for an existing coding-agent chat.
 
-Neolit parses linked README/SPEC/TODO documents and relates TODO tasks,
-SPEC requirements, acceptance criteria, planned files, and current Git changes.
-It does not own an agent runtime or persist conversation history, and it does not modify the Git index or history. The explicit tree delete action edits only the selected Markdown entry in the worktree.
+Neolit is not an agent runtime or a diff-review UI. Markdown remains the planning source of truth; Git remains the source of truth for code changes. CodeCompanion owns chat, agent sessions, diff presentation, and review.
 
 ## Requirements
 
 - Neovim 0.10+
 - Node.js 22.12+
-- A built Neolit checkout containing `dist/index.js` and `dist/planning/`
+- A built Neolit core checkout containing dist/index.js and dist/planning/workspace.js
 
 Build the core:
 
-```sh
-cd /path/to/neolit
+~~~sh
+git clone https://github.com/1suo/neolit.git
+cd neolit
 npm install
 npm run build
-```
+~~~
 
-Install:
+## Install and configure
 
-```lua
+Example for lazy.nvim:
+
+~~~lua
 {
   "1suo/neolit.nvim",
+  dependencies = {
+    "olimorris/codecompanion.nvim", -- optional; required for agent chat/review
+  },
   opts = {
-    neolit_dir = "/path/to/neolit",
-    -- directory = "/path/to/repository", -- defaults to cwd
-    -- comparison_base = "HEAD",
-    -- keymaps = { open_workspace = "<leader>nn" },
-    -- codecompanion = { adapter = "opencode" },
+    -- Path to the built core checkout.
+    neolit_dir = vim.fn.expand("~/Projects/neolit"),
+
+    -- Repository to inspect; defaults to the current working directory.
+    -- directory = vim.fn.getcwd(),
+
+    comparison_base = "HEAD",
+    node = "node",
+
+    -- CodeCompanion adapter used by <leader>nm.
+    codecompanion = { adapter = "opencode" },
+
+    -- Override individual Neolit normal-mode mappings.
+    keymaps = {
+      open_workspace = "<leader>nn",
+      review_changes = "<leader>ne",
+      agent_changes = "<leader>nC",
+      -- Set an action to false to disable its mapping.
+      -- context_add = false,
+    },
   },
   cmd = { "Neolit", "NeolitPlan", "NeolitClose" },
 }
-```
+~~~
 
-## Agent chat
+Call require("neolit").setup(opts) if your plugin manager does not pass opts automatically.
 
-Neolit opens [CodeCompanion.nvim](https://github.com/olimorris/codecompanion.nvim)
-with its OpenCode ACP adapter. CodeCompanion owns the chat UI, streaming,
-permissions, and agent session lifecycle. Use `/resume` to load an existing
-OpenCode session, then `<leader>nM` from Neolit to add the selected, revalidated
-context to that chat. Neolit does not maintain a parallel session registry or
-transport.
+### Core discovery
 
-Install CodeCompanion.nvim and configure its ACP adapter for OpenCode. Neolit
-uses `CodeCompanionChat adapter=opencode` by default; change
-`opts.codecompanion.adapter` to use another CodeCompanion adapter.
+Neolit looks for the built core in this order:
 
-## Workspace
+1. opts.neolit_dir
+2. $NEOLIT_DIR
+3. A sibling ../neolit checkout next to the plugin
+4. The global npm root's neolit directory
 
-`:Neolit` or `<leader>nn` opens one compact repository tree and reuses the
-existing right pane for real source buffers. CodeCompanion owns diff rendering
-and review. The tree contains
-repository paths only; TODO tasks and SPEC requirements are not duplicated as
-tree nodes. The tree header summarizes task, requirement, changed-file, and
-unplanned-path counts; its navigation column stays 36 columns wide while the
-preview uses the remaining space. Wrapping follows Neovim's global `wrap`.
+Set neolit_dir or NEOLIT_DIR if your checkout is elsewhere. Neolit does not build the core automatically.
 
-Opening a TODO or SPEC file keeps the actual editable Markdown buffer and adds
-derived annotations beside source entries. Changed files expand to show
-candidate task links and hunk attribution. File-path hints never prove
-implementation. Selecting a changed file or hunk navigates to its working-tree
-source; `<leader>ne` opens CodeCompanion Code Review for the actual diff review.
-`<leader>nC` opens CodeCompanion's agent-edited-files quickfix list (ACP/tool edits
-observed during the current Neovim session).
+### CodeCompanion
 
-The composed view connects SPEC requirements, TODO tasks, acceptance criteria,
-file hints, and observed Git changes. `za` expands semantic entries and scope
-sections; `<CR>` opens the selected source. Literal source chunks, changed-file
-diffs, and exact hunks can be added to context, reviewed, removed, and
-revalidated before copying or opening the CodeCompanion chat. CodeCompanion owns
-diff presentation and accept/revert review actions; Neolit owns planning
-relationships and change-to-task/requirement attribution. Source Markdown
-remains authoritative.
+CodeCompanion is optional for browsing and planning. Install and configure CodeCompanion with an adapter you use; the default Neolit adapter name is opencode. OpenCode is accessed through CodeCompanion's ACP integration, not a Neolit-owned transport.
 
-Neolit actions use semantic mappings under `<leader>n` by default. Override
-individual actions with `opts.keymaps`; set an action to `false` to disable it.
-Native navigation and fold mappings remain native (`j`/`k`, `h`/`l`, `za`,
-`zo`, `zc`, `zr`, `zm`, `zR`, `zM`). Neolit does not install its action maps in
-ordinary source-file buffers.
+- <leader>nm opens a CodeCompanion chat using the configured adapter.
+- Use CodeCompanion's /resume command in chat to resume an existing OpenCode session.
+- <leader>nM adds the current Neolit context composition to the active CodeCompanion chat.
+- <leader>ne invokes CodeCompanion Code Review.
+- <leader>nC invokes CodeCompanion's agent Changes list.
 
-## Default actions
+The Changes list reflects CodeCompanion tool/ACP edits observed during the current Neovim session. Neolit's Git view independently discovers repository changes, including changes made by external CLI runs.
 
-| Mapping | Action |
+## Usage
+
+Open Neolit from the repository you want to inspect:
+
+- :Neolit
+- :NeolitPlan
+- Default shortcut: <leader>nn
+
+The workspace opens a 36-column tree on the left and reuses the current window as the source preview on the right. Reopening Neolit focuses the existing workspace. :NeolitClose or <leader>nq closes it.
+
+### Navigate and inspect
+
+- Expand/collapse folders, planning files, and changed files with za, zo, and zc.
+- zr / zm open or close one visible level; zR / zM expand or collapse all.
+- <CR> opens the selected source or expands the selected tree node.
+- <leader>no opens the selected file in the right pane.
+- <leader>nv opens the composed task/requirement view. From a TODO file it starts with tasks; from a SPEC file it starts with requirements.
+- <leader>ns opens the selected task's focused scope.
+- In composed views, za expands/collapses the selected task or requirement, and <leader>nv switches task/requirement projection.
+- <leader>nf toggles between all repository paths and affected-only paths.
+- <leader>nr refreshes the workspace.
+- <leader>n? displays view-specific key hints.
+
+Opening TODO/SPEC files shows derived annotations beside the real Markdown source. Composed views connect requirements, tasks, acceptance criteria, file hints, and observed Git changes. File hints are relevance signals, not proof that a task is implemented. Verification is based on evidence associated with the current base and diff.
+
+### Compose context for an agent
+
+Context composition is temporary and literal: it collects selected source excerpts, planning entries, changed-file diffs, or exact hunks. It does not generate a prompt or send a message by itself.
+
+- <leader>na adds the selected source chunk or change/hunk to the context.
+- <leader>np opens the context review view.
+- In the context view, <leader>n- removes the selected item; <leader>ny copies the assembled context; <leader>nc clears it.
+- <leader>ny also copies the assembled context from composed views.
+- <leader>nM adds the composed context to the active CodeCompanion chat.
+- <leader>nx copies selected text; <leader>nl copies the selected source path (and line, when available).
+
+Before copy or chat insertion, Neolit revalidates captured source ranges and diffs. Stale content and modified, unsaved planning buffers are not silently substituted.
+
+### Review changes
+
+Neolit supplies Git-wide changed-file discovery, affected-only filtering, and task/requirement/hunk attribution. Selecting a changed file or hunk navigates to its working-tree source.
+
+Use CodeCompanion for diff presentation and review actions:
+
+- <leader>ne — CodeCompanion Code Review
+- <leader>nC — CodeCompanion agent Changes list
+
+Neolit does not stage, reset, checkout, apply, commit, or rewrite Git history. Its explicit planning-entry delete action is separate from Git operations.
+
+### Delete a planning entry
+
+In the tree or a composed view, select a TODO task, SPEC requirement, or acceptance criterion and press <leader>nD. The selected Markdown entry is removed from its source file. This action rejects unsafe paths and modified source buffers; write the buffer first. There is no delete mapping in ordinary preview buffers.
+
+### Task fields
+
+- **Description** states the task's intent and desired outcome.
+- **Agent notes** summarize actual implementation, rationale, deviations, or caveats. They are not verification evidence.
+
+## Configuration reference
+
+| Option | Default | Purpose |
+| --- | --- | --- |
+| neolit_dir | nil | Path to the built Neolit core checkout |
+| node | "node" | Node.js executable |
+| directory | current working directory | Repository to inspect |
+| comparison_base | "HEAD" | Git base for change discovery |
+| codecompanion.adapter | "opencode" | CodeCompanion adapter for <leader>nm |
+| keymaps | see below | Per-action normal-mode mapping overrides |
+
+Default keymaps:
+
+| Action | Default |
 | --- | --- |
-| `<leader>nn` | Open workspace |
-| `<leader>nv` | Open composed requirement/task view |
-| `<leader>n<CR>` | Open selected tree entry / source |
-| `<leader>ns` | Open selected task scope |
-| `<leader>na` / `<leader>n-` | Add / remove context |
-| `<leader>np` | Review context |
-| `<leader>ny` | Copy validated context |
-| `<leader>nc` | Clear context |
-| `<leader>nm` | Open CodeCompanion chat |
-| `<leader>nM` | Add composed context to active CodeCompanion chat |
-| `<leader>no` | Open selected source from composed views |
-| `<leader>ne` | Open CodeCompanion Code Review |
-| `<leader>nC` | Open CodeCompanion agent changes list |
-| `<leader>nD` | Delete selected planning entry |
-| `<leader>nx` / `<leader>nl` | Copy selected text / source path |
-| `<leader>nf` | Toggle affected-only paths |
-| `<leader>nr` | Refresh |
-| `<leader>nq` | Close workspace |
+| open_workspace | <leader>nn |
+| tree_composed | <leader>nv |
+| tree_open_selected | <leader>n<CR> |
+| tree_open_file | <leader>no |
+| task_scope | <leader>ns |
+| context_add | <leader>na |
+| context_remove | <leader>n- |
+| context_review | <leader>np |
+| context_copy | <leader>ny |
+| context_clear | <leader>nc |
+| chat_open | <leader>nm |
+| chat_context | <leader>nM |
+| review_changes | <leader>ne |
+| agent_changes | <leader>nC |
+| affected_filter | <leader>nf |
+| delete_entry | <leader>nD |
+| copy_text | <leader>nx |
+| copy_path | <leader>nl |
+| refresh | <leader>nr |
+| close_workspace | <leader>nq |
+| view_help | <leader>n? |
 
-`Description:` explains task intent; `Agent notes:` explains actual changes,
-rationale, deviations, or caveats. Notes are not verification evidence.
+Override by action name:
 
-Derived states come from parsed planning documents and current Git metadata;
-verification requires matching evidence for the current base commit and diff.
+~~~lua
+keymaps = {
+  open_workspace = "<leader>p",
+  context_add = "<leader>pa",
+  context_copy = "<leader>py",
+  delete_entry = false,
+}
+~~~
+
+Neolit's action mappings are buffer-local to its workspace/views. It does not install these mappings in ordinary source-file buffers. Native movement and fold keys remain available.
