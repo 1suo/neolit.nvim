@@ -129,7 +129,6 @@ In the tree or a composed view, select a TODO task, SPEC requirement, or accepta
 
 | Option | Default | Purpose |
 | --- | --- | --- |
-| neolit_dir | nil | Path to the built Neolit core checkout |
 | node | "node" | Node.js executable |
 | directory | current working directory | Repository to inspect |
 | comparison_base | "HEAD" | Git base for change discovery |
