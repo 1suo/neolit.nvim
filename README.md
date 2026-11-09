@@ -44,17 +44,26 @@ Example for lazy.nvim:
     -- CodeCompanion adapter used by <leader>nm.
     codecompanion = { adapter = "opencode" },
 
-    -- Override individual Neolit normal-mode mappings.
+    -- Neolit installs no keymaps unless you define them here.
     keymaps = {
       open_workspace = "<leader>nn",
+      chat_open = "<leader>nm",
       review_changes = "<leader>ne",
       agent_changes = "<leader>nC",
-      -- Set an action to false to disable its mapping.
-      -- context_add = false,
+      chat_file = "<leader>nF",
+      tree_open_selected = "<CR>",
+      tree_open_file = "o",
+      tree_toggle = "F",
+      tree_expand_node = "l",
+      tree_collapse_node = "h",
+      close_workspace = "q",
+      tree_help = "?",
+      open_journal = "<leader>nJ",
+      capture_journal = "<leader>nj",
+      capture_task = "<leader>nt",
+      capture_requirement = "<leader>nR",
+      capture_criterion = "<leader>nA",
     },
-  },
-  keys = {
-    { "<leader>nn", "<cmd>Neolit<cr>", desc = "Open Neolit workspace" },
   },
   cmd = {
     "Neolit", "NeolitPlan", "NeolitClose", "NeolitJournal",
@@ -91,7 +100,7 @@ Open Neolit from the repository you want to inspect:
 
 - :Neolit
 - :NeolitPlan
-- Default shortcut: <leader>nn
+- Optional shortcut: configure `keymaps.open_workspace`
 
 The workspace opens a 36-column tree on the left and reuses the current window as the source preview on the right. Reopening Neolit focuses the existing workspace. :NeolitClose or `q` closes it.
 
@@ -162,74 +171,12 @@ In the tree or a composed view, select a TODO task, SPEC requirement, or accepta
 
 ## Configuration reference
 
-| Option | Default | Purpose |
-| --- | --- | --- |
-| node | "node" | Node.js executable |
-| directory | current working directory | Repository to inspect |
-| comparison_base | "HEAD" | Git base for change discovery |
-| journal_dir | "~/Documents/memo/journal" | Directory for monthly journal Markdown files |
-| todo_file | "TODO.md" | Repository-relative TODO capture and discovery path |
-| spec_file | "SPEC.md" | Repository-relative SPEC capture and discovery path |
-| codecompanion.adapter | "opencode" | CodeCompanion adapter for <leader>nm |
-| keymaps | see below | Per-action normal-mode mapping overrides |
+Neolit installs **no keymaps by default**. All mappings are opt-in through the `keymaps` table in your plugin configuration. Omit an action to leave its keys untouched; set it to `false` or `""` to disable it explicitly. Commands remain available without mappings.
 
-Default keymaps:
+Keymap action names include:
 
-| Action | Default |
-| --- | --- |
-| open_workspace | <leader>nn |
-| open_journal | <leader>nJ |
-| capture_journal | <leader>nj |
-| capture_task | <leader>nt |
-| capture_requirement | <leader>nR |
-| capture_criterion | <leader>nA |
-| tree_composed | <leader>nv |
-| tree_open_selected | <CR> |
-| tree_toggle | F |
-| tree_expand_node | l |
-| tree_collapse_node | h |
-| tree_open_file | o |
-| task_scope | <leader>ns |
-| context_add | <leader>na |
-| context_remove | <leader>n- |
-| context_review | <leader>np |
-| context_copy | <leader>ny |
-| context_clear | <leader>nc |
-| chat_open | <leader>nm |
-| chat_context | <leader>nM |
-| chat_file | <leader>nF |
-| review_changes | <leader>ne |
-| agent_changes | <leader>nC |
-| affected_filter | <leader>nf |
-| delete_entry | <leader>nD |
-| copy_text | <leader>nx |
-| copy_path | <leader>nl |
-| tree_fold_toggle | za |
-| tree_fold_close | zc |
-| tree_fold_open | zo |
-| tree_expand_level | zr |
-| tree_collapse_level | zm |
-| tree_expand_all | zR |
-| tree_collapse_all | zM |
-| refresh | <leader>nr |
-| close_workspace | q |
-| view_help | ? |
+- Global: `open_workspace`, `chat_open`, `agent_changes`, `review_changes`, `chat_file`, `open_journal`, `capture_journal`, `capture_task`, `capture_requirement`, `capture_criterion`.
+- Tree: `tree_open_selected`, `tree_open_file`, `tree_toggle`, `tree_expand_node`, `tree_collapse_node`, `tree_composed`, `task_scope`, `affected_filter`, `refresh`, `delete_entry`, `copy_text`, `copy_path`, `close_workspace`, `tree_help`, and `tree_fold_toggle`, `tree_fold_open`, `tree_fold_close`, `tree_expand_level`, `tree_collapse_level`, `tree_expand_all`, `tree_collapse_all`.
+- Composed/context views: `open_source`, `view_back`, `view_help`, `context_add`, `context_remove`, `context_copy`, `context_clear`, `context_review`, `chat_context`, `switch_projection`, `copy_source`, `copy_path`.
 
-Override by action name. For example, this restores short tree-local actions while keeping native Neovim keys unchanged elsewhere:
-
-~~~lua
-keymaps = {
-  tree_toggle = "F",
-  tree_expand_node = "l",
-  tree_collapse_node = "h",
-  tree_open_file = "o",
-  close_workspace = "q",
-  delete_entry = "d",
-  refresh = "r",
-  chat_file = "<leader>nF",
-  context_add = "<leader>pa",
-  context_copy = "<leader>py",
-}
-~~~
-
-Workspace entry, CodeCompanion chat, review, agent changes, and current-file linking are global mappings. Tree navigation/filter/refresh/delete/copy actions are tree-local; task/context actions are available only in the composed views where their selection makes sense. No Neolit mappings are installed in ordinary source-file buffers. Native movement and fold keys remain available.
+Mappings are installed only in their relevant scope: global actions anywhere, tree actions in the tree, and context/task actions in the views that support them. Native Neovim keys are not overridden unless you explicitly assign them.
