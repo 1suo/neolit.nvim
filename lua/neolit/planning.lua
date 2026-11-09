@@ -847,6 +847,7 @@ function M.open(opts)
   local expanded_tasks = {}
   local diff_state = { tree_win = tree_win, preview_win = preview_win, diff_view = cfg.diff_view or "side_by_side" }
   local context_chunks, context_keys = {}, {}
+  local composed_expanded = {}
   local filter_mode = "all"
 
   local function open_in_preview(relative_path, line, focus)
@@ -1334,7 +1335,6 @@ function M.open(opts)
     local function state_mark(state)
       return tostring(state or "unmapped"):upper()
     end
-    local composed_expanded = {}
     local function is_expanded(key)
       return composed_expanded[key] == true
     end
