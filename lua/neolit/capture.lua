@@ -20,37 +20,6 @@ local function read_lines(path)
   return vim.fn.filereadable(path) == 1 and vim.fn.readfile(path) or {}
 end
 
-local function append_under_heading(path, heading, entry)
-  local lines = read_lines(path)
-  local heading_line, heading_level
-  for i, line in ipairs(lines) do
-    if line == heading then heading_line, heading_level = i, 2; break end
-  end
-  if not heading_line then
-    if #lines > 0 and lines[#lines] ~= "" then lines[#lines + 1] = "" end
-    lines[#lines + 1] = heading
-    heading_line = #lines
-  end
-
-  local finish = #lines
-  for i = heading_line + 1, #lines do
-    local hashes = lines[i]:match("^(#+)%s")
-    if hashes and #hashes <= heading_level then finish = i - 1; break end
-  end
-  while finish > heading_line and lines[finish]:match("^%s*$") do finish = finish - 1 end
-
-  local insert = {}
-  if finish > heading_line then insert[#insert + 1] = "" end
-  for _, line in ipairs(entry) do insert[#insert + 1] = line end
-  for i = #lines, finish + 1, -1 do table.remove(lines, i) end
-  for _, line in ipairs(insert) do lines[#lines + 1] = line end
-  for i = finish + 1, #read_lines(path) do
-    -- Existing trailing sections are retained below by the splice below.
-  end
-  vim.fn.mkdir(vim.fn.fnamemodify(path, ":h"), "p")
-  vim.fn.writefile(lines, path)
-end
-
 local function insert_section(path, heading, entry)
   local original = read_lines(path)
   local lines = {}
@@ -87,6 +56,8 @@ local function next_id(path, prefix)
 end
 
 local function open_capture(cfg, title, target, heading, template)
+  local marker = template:find("%?", 1, true)
+  if marker then template = template:sub(1, marker - 1) .. template:sub(marker + 2) end
   local lines = vim.split(template, "\n", { plain = true })
   vim.cmd("10new")
   local buf, win = vim.api.nvim_get_current_buf(), vim.api.nvim_get_current_win()
@@ -99,10 +70,9 @@ local function open_capture(cfg, title, target, heading, template)
   vim.wo[win].number = false
   vim.wo[win].signcolumn = "no"
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-  local marker = template:find("%%?", 1, true)
   if marker then
-    local before = template:sub(1, marker - 1)
-    local prefix = vim.split(before, "\n", { plain = true })
+    local before = (vim.api.nvim_buf_get_lines(buf, 0, -1, false))
+    local prefix = vim.split((table.concat(before, "\n")):sub(1, marker - 1), "\n", { plain = true })
     vim.api.nvim_win_set_cursor(win, { #prefix, #prefix[#prefix] })
   end
 
@@ -118,24 +88,8 @@ local function open_capture(cfg, title, target, heading, template)
       cancel()
       return
     end
-    if heading then
-      insert_section(target, heading, body)
-    else
-      local existing = read_lines(target)
-      local day = "## " .. os.date("%Y-%m-%d %a")
-      local found = false
-      for _, line in ipairs(existing) do if line == day then found = true; break end end
-      if not found then
-        if #existing > 0 and existing[#existing] ~= "" then existing[#existing + 1] = "" end
-        existing[#existing + 1] = day
-        existing[#existing + 1] = ""
-      elseif #existing > 0 and existing[#existing] ~= "" then
-        existing[#existing + 1] = ""
-      end
-      for _, line in ipairs(body) do existing[#existing + 1] = line end
-      vim.fn.mkdir(vim.fn.fnamemodify(target, ":h"), "p")
-      vim.fn.writefile(existing, target)
-    end
+    local section = heading or ("## " .. os.date("%Y-%m-%d %a"))
+    insert_section(target, section, body)
     vim.notify(title .. ": " .. target)
     cancel()
   end
@@ -153,7 +107,7 @@ end
 
 function M.capture_journal(cfg)
   local path = target_path(vim.fn.expand(cfg.journal_dir or "~/Documents/memo/journal"), os.date("%Y-%m") .. ".md")
-  open_capture(cfg, "Journal entry saved", path, nil, "`" .. os.date("%H:%M") .. "`  %?")
+  open_capture(cfg, "Journal entry saved", path, "## " .. os.date("%Y-%m-%d %a"), "`" .. os.date("%H:%M") .. "`  %?")
 end
 
 function M.capture_task(cfg)
