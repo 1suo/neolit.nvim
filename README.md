@@ -65,18 +65,19 @@ opens that exact native diff.
   writes, focus return, and idle refreshes also pick up external agent edits.
 - `x` copies the selected literal text/diff/hunk; `y` copies its source path
   and line.
-- `v` opens a composed planning view in the right pane. From a SPEC file it
-  shows each requirement with linked TODO tasks, descriptions, acceptance
-  criteria, and changed-file evidence. From a TODO file it shows its tasks and
-  linked requirements. Press `v` in that view to switch projections; `<CR>
-  navigates to the source chunk, `x` copies its Markdown range or selected
-  detail, and `y` copies its source location. Use `a` to add the selected source
-  chunk or diff to a temporary context packet, `d` to remove the selected chunk,
-  `Y` to copy the assembled packet for the existing agent, and `c` to clear it.
-  Source ranges and diffs are checked again before copying; changed context is
-  rejected rather than silently replaced. No chat/session is created; the
-  packet contains only the selected source chunks and diffs. The view is a
-  projection; source Markdown remains editable and authoritative.
+- `v` opens a compact composed planning view in the right pane. From a SPEC
+  it shows requirements and linked tasks; from a TODO it shows tasks and their
+  linked requirements. Rows summarize state and relationship counts. Details,
+  criteria, notes, and changed-file evidence stay collapsed until `za` expands
+  the selected requirement or task. `<CR>` navigates to the source, `x` copies
+  its Markdown range, and `y` copies its source location. Use `a` to add the
+  selected source chunk or diff to a temporary context packet, `d` to remove
+  it, `Y` to copy the assembled packet for the existing agent, and `c` to
+  clear it. `v` switches between requirement/task projections; `?` shows the
+  compact view's keys. Source ranges and diffs are checked again before copying;
+  changed context is rejected rather than silently replaced. No chat/session
+  is created; the packet contains only selected source chunks and diffs. The
+  view is a projection; source Markdown remains editable and authoritative.
 
 ## Keys
 
