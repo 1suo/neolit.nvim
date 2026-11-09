@@ -2322,6 +2322,35 @@ function M.open(opts)
       pcall(vim.api.nvim_del_augroup_by_id, refresh_group)
     end,
   })
+  local function create_action_command(name, callback, description)
+    vim.api.nvim_buf_create_user_command(buf, name, callback, { desc = description, force = true })
+  end
+  create_action_command("NeolitCompose", function()
+    local row = current_row()
+    local mode = row and row.doc_kind == "TODO" and "tasks" or "requirements"
+    open_composed_view(mode, row and row.doc_kind and row.path or nil)
+  end, "Open composed task/requirement view")
+  create_action_command("NeolitOpen", selected, "Open selected tree entry")
+  create_action_command("NeolitOpenFile", open_selected_file, "Open selected source file")
+  create_action_command("NeolitFilter", function()
+    local row = current_row()
+    filter_mode = filter_mode == "all" and "affected" or "all"
+    if filter_mode == "affected" then
+      local workspace = vim.b[buf].neolit_workspace or {}
+      local affected_paths = collect_affected_paths(workspace)
+      for path in pairs(affected_paths) do
+        local parent = path:match("^(.*)/[^/]+$")
+        while parent do expanded_dirs[parent] = true; parent = parent:match("^(.*)/[^/]+$") end
+      end
+    end
+    rerender_at(row and row.key)
+  end, "Toggle affected-only filter")
+  create_action_command("NeolitRefresh", refresh, "Refresh planning and Git data")
+  create_action_command("NeolitDelete", delete_selected, "Delete selected planning entry")
+  create_action_command("NeolitCopyText", copy_selected_text, "Copy selected text")
+  create_action_command("NeolitCopyPath", copy_selected_path, "Copy selected path")
+  create_action_command("NeolitToggle", toggle_node_at_cursor, "Toggle selected tree node")
+  create_action_command("NeolitClose", close_workspace, "Close Neolit workspace")
   map("<leader>nv", function()
     local row = current_row()
     local mode = row and row.doc_kind == "TODO" and "tasks" or "requirements"
@@ -2343,6 +2372,46 @@ function M.open(opts)
     local ok, err = pcall(vim.cmd, "CodeCompanionChat adapter=" .. adapter)
     if not ok then vim.notify("Could not open CodeCompanion chat: " .. tostring(err), vim.log.levels.ERROR) end
   end, "chat_open", "chat_open")
+  local function add_file_link_to_chat()
+    local row = current_row()
+    local relative = selected_file_target(row)
+      or (row and row.path)
+      or (row and row.reference and row.reference.path)
+    local target = relative and safe_repo_path(root, relative) or nil
+    if not target or vim.fn.filereadable(target) ~= 1 then
+      vim.notify("Select an existing file first", vim.log.levels.INFO)
+      return
+    end
+    if vim.fn.exists(":CodeCompanionChat") ~= 2 then
+      vim.notify("CodeCompanion.nvim is required", vim.log.levels.ERROR)
+      return
+    end
+    local name = vim.fn.fnamemodify(target, ":t"):gsub("%[", "\\\\["):gsub("%]", "\\\\]")
+    local link = "[" .. name .. ' ]("' .. target:gsub('"', '\\\\"') .. '")'
+    link = link:gsub(" %]", "]")
+    local context_buf = vim.api.nvim_create_buf(false, true)
+    vim.bo[context_buf].buftype = "nofile"
+    vim.bo[context_buf].bufhidden = "wipe"
+    vim.bo[context_buf].swapfile = false
+    vim.api.nvim_buf_set_lines(context_buf, 0, -1, false, { link })
+    local ok, err = pcall(vim.api.nvim_buf_call, context_buf, function()
+      vim.cmd("normal! ggVG")
+      vim.cmd("CodeCompanionChat Add")
+    end)
+    if vim.api.nvim_buf_is_valid(context_buf) then pcall(vim.api.nvim_buf_delete, context_buf, { force = true }) end
+    if not ok then vim.notify("Could not add file reference to CodeCompanion: " .. tostring(err), vim.log.levels.ERROR) end
+  end
+  vim.api.nvim_buf_create_user_command(buf, "NeolitChatFile", add_file_link_to_chat, { desc = "Add selected file as a quoted Markdown link to CodeCompanion" })
+  vim.api.nvim_buf_create_user_command(buf, "NeolitChat", function()
+    if vim.fn.exists(":CodeCompanionChat") ~= 2 then
+      vim.notify("CodeCompanion.nvim is required", vim.log.levels.ERROR)
+      return
+    end
+    vim.api.nvim_set_current_win(view_state.tree_win)
+    vim.cmd("lcd " .. vim.fn.fnameescape(root))
+    vim.cmd("CodeCompanionChat adapter=" .. ((cfg.codecompanion and cfg.codecompanion.adapter) or "opencode"))
+  end, { desc = "Open CodeCompanion chat for this repository" })
+  map("<leader>nF", add_file_link_to_chat, "chat_file", "chat_file")
   map("<leader>nC", function()
     if vim.fn.exists(":CodeCompanionChat") ~= 2 then
       vim.notify("CodeCompanion.nvim is required", vim.log.levels.ERROR)
@@ -2376,19 +2445,7 @@ function M.open(opts)
     for _, task in ipairs((vim.b[buf].neolit_workspace or {}).tasks or {}) do expanded_tasks[task.key] = false end
     rerender_at()
   end, "Collapse all folders, documents, tasks, and diffs")
-  map("<leader>nf", function()
-    local row = current_row()
-    filter_mode = filter_mode == "all" and "affected" or "all"
-    if filter_mode == "affected" then
-      local workspace = vim.b[buf].neolit_workspace or {}
-      local affected_paths = collect_affected_paths(workspace)
-      for path in pairs(affected_paths) do
-        local parent = path:match("^(.*)/[^/]+$")
-        while parent do expanded_dirs[parent] = true; parent = parent:match("^(.*)/[^/]+$") end
-      end
-    end
-    rerender_at(row and row.key)
-  end, "affected_filter", "affected_filter")
+  map("<leader>nf", function() vim.cmd("NeolitFilter") end, "affected_filter", "affected_filter")
   map("<leader>nr", refresh, "refresh", "refresh")
   map("<leader>nD", delete_selected, "delete_entry", "delete_entry")
   map("<leader>nx", copy_selected_text, "copy_text", "copy_text")
