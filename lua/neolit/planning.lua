@@ -2015,10 +2015,21 @@ function M.open(opts)
           vim.notify("Message is empty", vim.log.levels.INFO)
           return
         end
-        local message = prompt .. "\n\n## Context\n" .. context
+        local context_start
+        for index, line in ipairs(lines) do
+          if line == "## Context" then context_start = index; break end
+        end
+        if not context_start then return end
+        local context_lines = {}
+        for index = context_start + 1, #lines do
+          if lines[index]:match("^## ") then break end
+          context_lines[#context_lines + 1] = lines[index]
+        end
+        local message_context = table.concat(context_lines, "\n"):gsub("^%s+", ""):gsub("%s+$", "")
+        local message = prompt .. "\n\n## Context\n" .. message_context
         busy = true
         vim.bo[draft_buf].modifiable = true
-        vim.api.nvim_buf_set_lines(draft_buf, -1, -1, false, { "", "## Agent" })
+        vim.api.nvim_buf_set_lines(draft_buf, -1, -1, false, { "", "## Agent", "" })
         local function append_response(chunk)
           if type(chunk) ~= "string" or chunk == "" then return end
           vim.schedule(function()
