@@ -94,7 +94,10 @@ local function open_capture(cfg, title, target, heading, template)
     cancel()
   end
   vim.api.nvim_create_autocmd("BufWriteCmd", { buffer = buf, once = true, callback = save })
-  vim.keymap.set("n", "<C-s>", function() vim.cmd("write") end, { buffer = buf, silent = true, desc = "Save capture" })
+  vim.keymap.set({ "n", "i" }, "<C-s>", function()
+    vim.cmd("stopinsert")
+    vim.cmd("write")
+  end, { buffer = buf, silent = true, desc = "Save capture" })
   vim.keymap.set({ "n", "i" }, "<C-c>", cancel, { buffer = buf, silent = true, desc = "Cancel capture" })
   vim.cmd("startinsert")
 end
