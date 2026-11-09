@@ -1354,7 +1354,7 @@ function M.open(opts)
       return row
     end
     add("NEOLIT · " .. (mode == "tasks" and "TASK WORKSPACE" or "REQUIREMENT WORKSPACE")
-      .. (scope_path and (" · " .. scope_path) or "") .. " · v switch view · a add context · Y copy · c clear · <CR> source · x chunk · y path", { kind = "header" })
+      .. (scope_path and (" · " .. scope_path) or "") .. " · context " .. #context_chunks .. " · a add · d remove · Y copy · c clear · v switch · <CR> source · x chunk · y path", { kind = "header" })
 
     if mode == "requirements" then
       local scoped_specs = {}
@@ -1557,10 +1557,18 @@ function M.open(opts)
       end
       copy_value(table.concat(chunk, "\n"), row.kind == "task" and "TODO task" or "Planning chunk")
     end
+    local function context_key(row)
+      if not row then return nil end
+      if row.kind == "changed_file" then return "diff:" .. row.path end
+      if row.path and row.first then
+        return row.path .. ":" .. row.kind .. ":" .. tostring(row.first) .. ":"
+          .. tostring(row.last) .. (row.kind == "task_detail" and (":" .. tostring(row.text)) or "")
+      end
+    end
     local function append_context()
       local row = selected_view_row()
       if not row then return end
-      local label, content, key
+      local label, content, key, expected_source, expected_diff
       if row.kind == "changed_file" then
         local changed
         for _, file in ipairs(workspace.git.changedFiles or {}) do
@@ -1571,6 +1579,7 @@ function M.open(opts)
           return
         end
         label, content = row.path, changed.rawDiff
+        expected_diff = changed.rawDiff
         key = "diff:" .. row.path
       elseif row.path and row.first then
         local target = safe_repo_path(root, row.path)
@@ -1578,19 +1587,20 @@ function M.open(opts)
           vim.notify("Source chunk is no longer available; refresh the workspace", vim.log.levels.WARN)
           return
         end
+        local source_lines = vim.fn.readfile(target)
+        local chunk = {}
+        for index = row.first, math.min(row.last or row.first, #source_lines) do
+          chunk[#chunk + 1] = source_lines[index]
+        end
+        expected_source = table.concat(chunk, "\n")
         if row.kind == "task_detail" then
           content = row.text or ""
           label = row.path .. ":" .. tostring(row.line) .. " (detail)"
         else
-          local source_lines = vim.fn.readfile(target)
-          local chunk = {}
-          for index = row.first, math.min(row.last or row.first, #source_lines) do
-            chunk[#chunk + 1] = source_lines[index]
-          end
-          content = table.concat(chunk, "\n")
+          content = expected_source
           label = row.path .. ":" .. tostring(row.first)
         end
-        key = row.path .. ":" .. tostring(row.first) .. ":" .. tostring(row.last)
+        key = context_key(row)
       else
         vim.notify("Select a requirement, task, criterion, detail, or changed file", vim.log.levels.INFO)
         return
@@ -1600,15 +1610,66 @@ function M.open(opts)
         return
       end
       context_keys[key] = true
-      context_chunks[#context_chunks + 1] = label .. "\n" .. content
+      context_chunks[#context_chunks + 1] = {
+        key = key, label = label, content = content, path = row.path,
+        first = row.first, last = row.last, kind = row.kind,
+        expected_source = expected_source, expected_diff = expected_diff,
+      }
       vim.notify("Added context chunk (" .. #context_chunks .. ")")
+    end
+    local function remove_context()
+      local key = context_key(selected_view_row())
+      if not key or not context_keys[key] then
+        vim.notify("Selected chunk is not in the context", vim.log.levels.INFO)
+        return
+      end
+      for index, item in ipairs(context_chunks) do
+        if item.key == key then table.remove(context_chunks, index); break end
+      end
+      context_keys[key] = nil
+      vim.notify("Removed context chunk (" .. #context_chunks .. " remaining)")
     end
     local function copy_context()
       if #context_chunks == 0 then
         vim.notify("Context is empty", vim.log.levels.INFO)
         return
       end
-      copy_value(table.concat(context_chunks, "\n\n"), "Composed context")
+      local current = vim.b[buf].neolit_workspace or workspace
+      local output = {}
+      for _, item in ipairs(context_chunks) do
+        if item.expected_diff then
+          local changed
+          for _, file in ipairs(current.git.changedFiles or {}) do
+            if file.path == item.path then changed = file; break end
+          end
+          if not changed then
+            vim.notify("Context is stale: " .. item.path .. " is no longer changed; refresh and re-add it", vim.log.levels.WARN)
+            return
+          end
+          local result = vim.system(diff_command(root, changed, current.git.base), { cwd = root, text = true }):wait()
+          if result.code > 1 or normalize_diff(result.stdout or "") ~= normalize_diff(item.expected_diff) then
+            vim.notify("Context is stale: diff changed for " .. item.path .. "; refresh and re-add it", vim.log.levels.WARN)
+            return
+          end
+        elseif item.expected_source then
+          local target = safe_repo_path(root, item.path)
+          if not target or vim.fn.filereadable(target) ~= 1 then
+            vim.notify("Context is stale: source disappeared at " .. item.path, vim.log.levels.WARN)
+            return
+          end
+          local source_lines = vim.fn.readfile(target)
+          local chunk = {}
+          for index = item.first, math.min(item.last or item.first, #source_lines) do
+            chunk[#chunk + 1] = source_lines[index]
+          end
+          if table.concat(chunk, "\n") ~= item.expected_source then
+            vim.notify("Context is stale: source changed at " .. item.path .. "; refresh and re-add it", vim.log.levels.WARN)
+            return
+          end
+        end
+        output[#output + 1] = item.label .. "\n" .. item.content
+      end
+      copy_value(table.concat(output, "\n\n"), "Composed context")
     end
     local function clear_context()
       context_chunks, context_keys = {}, {}
@@ -1617,6 +1678,7 @@ function M.open(opts)
     vim.keymap.set("n", "<CR>", navigate, { buffer = view_buf, silent = true })
     vim.keymap.set("n", "x", copy_chunk, { buffer = view_buf, silent = true })
     vim.keymap.set("n", "a", append_context, { buffer = view_buf, silent = true })
+    vim.keymap.set("n", "d", remove_context, { buffer = view_buf, silent = true })
     vim.keymap.set("n", "Y", copy_context, { buffer = view_buf, silent = true })
     vim.keymap.set("n", "c", clear_context, { buffer = view_buf, silent = true })
     vim.keymap.set("n", "y", function()
