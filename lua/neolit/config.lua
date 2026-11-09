@@ -7,6 +7,7 @@ M.defaults = {
   directory = nil,
   comparison_base = "HEAD",
   diff_view = "side_by_side",
+  opencode = { url = "http://127.0.0.1:4096" },
   keymaps = {
     open_workspace = "<leader>nn",
     tree_composed = "<leader>nv",
