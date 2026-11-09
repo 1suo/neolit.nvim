@@ -871,7 +871,7 @@ function M.open(opts)
   local expanded_tasks = {}
   local diff_state = { tree_win = tree_win, preview_win = preview_win, diff_view = cfg.diff_view or "side_by_side" }
   local context_chunks, context_keys = {}, {}
-  local composed_expanded = {}
+  local composed_expanded, scope_expanded = {}, {}
   local composed_view_buf, context_view_buf
   local filter_mode = "all"
 
@@ -1958,7 +1958,7 @@ function M.open(opts)
     vim.keymap.set("n", "x", copy_chunk, { buffer = view_buf, silent = true })
     vim.keymap.set("n", "a", append_context, { buffer = view_buf, silent = true })
     vim.keymap.set("n", "d", remove_context, { buffer = view_buf, silent = true })
-    local function open_task_scope(task)
+    local function open_task_scope(task, selected_key)
       local projection = task_states[task.key] or {}
       local scope_lines, scope_rows = {}, {}
       local function scope_add(value, row)
@@ -1982,8 +1982,8 @@ function M.open(opts)
       for _, file in ipairs(workspace.git.changedFiles or {}) do
         if not changed_set[file.path] then other_changes[#other_changes + 1] = file end
       end
-      scope_add("NEOLIT · SCOPE REVIEW · OBSERVED ONLY · ctx " .. #context_chunks
-        .. " · a add · p packet · Y copy · q back · ? keys", { kind = "header" })
+      scope_add("NEOLIT · TASK SCOPE · OBSERVED · za expand · <CR> open · x copy · q back · ?",
+        { kind = "header" })
       scope_add("[" .. state_mark(state) .. "] " .. task.text,
         source_row("task", task_path(task), task.range, task.text, { task = task }))
       scope_add(#requirements .. " SPEC · " .. #criteria .. " AC · " .. #hints
@@ -1991,53 +1991,65 @@ function M.open(opts)
         { kind = "summary" })
       scope_add("STATE · " .. state_reason(state, projection), { kind = "summary" })
 
-      scope_add("INTENT · " .. #task.description .. " lines", { kind = "section" })
-      if #task.description == 0 then scope_add("  (none)", { kind = "empty" }) end
-      for _, detail in ipairs(task.description or {}) do
-        scope_add("  " .. detail, source_row("task_detail", task_path(task), task.range, detail, { task = task }))
-      end
-      if #(task.agentNotes or {}) > 0 then
-        scope_add("AGENT NOTES · " .. #task.agentNotes, { kind = "section" })
-        for _, note in ipairs(task.agentNotes) do
-          scope_add("  " .. note, source_row("task_detail", task_path(task), task.range, note, { task = task }))
+      local function scope_section(key, label, items)
+        if #items == 0 and key ~= "hints" then return end
+        local expanded = scope_expanded[task.key .. ":" .. key] == true
+        scope_add((expanded and "  ﹀ " or "  ﹥ ") .. label .. " · " .. #items,
+          { kind = "section", key = "scope-section:" .. key, section_key = key })
+        if expanded then
+          if #items == 0 then
+            scope_add("      (none)", { kind = "empty" })
+          else
+            for _, item in ipairs(items) do scope_add("    " .. item.text, item.row) end
+          end
         end
       end
-
-      scope_add("REQUIREMENTS · " .. #requirements, { kind = "section" })
-      if #requirements == 0 then scope_add("  (none linked)", { kind = "empty" }) end
-      for _, requirement in ipairs(requirements) do
-        scope_add("  " .. requirement.id .. " · " .. requirement.text,
-          source_row("requirement", requirement.sourcePath or requirement.specPath,
-            requirement.range, requirement.text, { requirement = requirement }))
+      local intent_items, note_items, requirement_items, criterion_items = {}, {}, {}, {}
+      local hint_items, change_items, hunk_items, other_items = {}, {}, {}, {}
+      local diagnostic_items, unresolved_items = {}, {}
+      for _, detail in ipairs(task.description or {}) do
+        intent_items[#intent_items + 1] = {
+          text = detail,
+          row = source_row("task_detail", task_path(task), task.range, detail, { task = task }),
+        }
       end
-
-      scope_add("ACCEPTANCE · " .. #criteria, { kind = "section" })
-      if #criteria == 0 then scope_add("  (none linked)", { kind = "empty" }) end
+      for _, note in ipairs(task.agentNotes or {}) do
+        note_items[#note_items + 1] = {
+          text = note,
+          row = source_row("task_detail", task_path(task), task.range, note, { task = task }),
+        }
+      end
+      for _, requirement in ipairs(requirements) do
+        requirement_items[#requirement_items + 1] = {
+          text = requirement.id .. " · " .. requirement.text,
+          row = source_row("requirement", requirement.sourcePath or requirement.specPath,
+            requirement.range, requirement.text, { requirement = requirement }),
+        }
+      end
       for _, criterion in ipairs(criteria) do
         local ref = criterion.specPath .. "#" .. criterion.id
         local verified = false
         for _, evidence in ipairs(projection.acceptanceCriteria or {}) do
           if evidence.ref == ref and evidence.verified then verified = true; break end
         end
-        scope_add("  " .. criterion.id .. " [" .. (verified and "VERIFIED" or "UNVERIFIED") .. "] " .. criterion.text,
-          source_row("criterion", criterion.sourcePath or criterion.specPath,
-            criterion.range, criterion.text, { criterion = criterion, verified = verified }))
+        criterion_items[#criterion_items + 1] = {
+          text = criterion.id .. " [" .. (verified and "VERIFIED" or "UNVERIFIED") .. "] " .. criterion.text,
+          row = source_row("criterion", criterion.sourcePath or criterion.specPath,
+            criterion.range, criterion.text, { criterion = criterion, verified = verified }),
+        }
       end
-
-      scope_add("FILE HINTS · " .. #hints .. " (not enforced boundaries)", { kind = "section" })
-      if #hints == 0 then scope_add("  (none declared)", { kind = "empty" }) end
       for _, path in ipairs(hints) do
-        scope_add("  " .. path, { kind = "file_hint", path = path, line = 1, first = 1, last = 1 })
+        hint_items[#hint_items + 1] = {
+          text = path,
+          row = { kind = "file_hint", path = path, line = 1, first = 1, last = 1 },
+        }
       end
-
-      scope_add("OBSERVED CHANGES · " .. #changed_paths, { kind = "section" })
-      if #changed_paths == 0 then scope_add("  (none associated)", { kind = "empty" }) end
       for _, path in ipairs(changed_paths) do
-        scope_add("  + " .. path, { kind = "changed_file", path = path, line = 1 })
+        change_items[#change_items + 1] = {
+          text = "+ " .. path,
+          row = { kind = "changed_file", path = path, line = 1 },
+        }
       end
-
-      scope_add("HUNK EVIDENCE · " .. #hunk_reviews, { kind = "section" })
-      if #hunk_reviews == 0 then scope_add("  (no candidate hunks)", { kind = "empty" }) end
       for _, review in ipairs(hunk_reviews) do
         local file
         for _, candidate in ipairs(workspace.git.changedFiles or {}) do
@@ -2050,33 +2062,43 @@ function M.open(opts)
             break
           end
         end
-        scope_add("  " .. review.path .. "#" .. tostring(review.hunkIndex + 1)
-          .. " [" .. tostring(review.state):upper() .. "] · " .. tostring(review.reason),
-          { kind = "task_hunk", path = review.path, line = 1, file = file,
+        hunk_items[#hunk_items + 1] = {
+          text = review.path .. "#" .. tostring(review.hunkIndex + 1)
+            .. " [" .. tostring(review.state):upper() .. "] · " .. tostring(review.reason),
+          row = { kind = "task_hunk", path = review.path, line = 1, file = file,
             hunkIndex = review.hunkIndex, hunk = find_changed_hunk(file, review.hunkIndex),
-            hunkAssociation = association })
+            hunkAssociation = association },
+        }
       end
-
-      scope_add("OTHER CHANGED PATHS · " .. #other_changes, { kind = "section" })
-      if #other_changes == 0 then scope_add("  (none)", { kind = "empty" }) end
       for _, file in ipairs(other_changes) do
-        scope_add("  ? " .. file.path, { kind = "changed_file", path = file.path, line = 1 })
+        other_items[#other_items + 1] = {
+          text = "? " .. file.path,
+          row = { kind = "changed_file", path = file.path, line = 1 },
+        }
       end
-      if #diagnostics > 0 then
-        scope_add("DIAGNOSTICS · " .. #diagnostics, { kind = "section" })
-        for _, diagnostic in ipairs(diagnostics) do
-          scope_add("  ! " .. diagnostic.message, { kind = "empty" })
-        end
+      for _, diagnostic in ipairs(diagnostics) do
+        diagnostic_items[#diagnostic_items + 1] = {
+          text = "! " .. diagnostic.message,
+          row = { kind = "empty" },
+        }
       end
-      if #(task.unresolvedReferences or {}) > 0 then
-        scope_add("UNRESOLVED REFERENCES · " .. #task.unresolvedReferences, { kind = "section" })
-        for _, reference in ipairs(task.unresolvedReferences) do
-          scope_add("  " .. reference.path .. " · " .. table.concat(reference.ids or {}, ", "),
-            { kind = "empty" })
-        end
+      for _, reference in ipairs(task.unresolvedReferences or {}) do
+        unresolved_items[#unresolved_items + 1] = {
+          text = reference.path .. " · " .. table.concat(reference.ids or {}, ", "),
+          row = { kind = "empty" },
+        }
       end
-      scope_add("File hints are relevance hints, not permission limits. Other changed paths are shown for review.",
-        { kind = "footnote" })
+      scope_section("intent", "INTENT", intent_items)
+      scope_section("notes", "AGENT NOTES", note_items)
+      scope_section("requirements", "REQUIREMENTS", requirement_items)
+      scope_section("criteria", "ACCEPTANCE", criterion_items)
+      scope_section("hints", "FILE HINTS · relevance only", hint_items)
+      scope_section("changes", "OBSERVED CHANGES", change_items)
+      scope_section("hunks", "HUNK EVIDENCE", hunk_items)
+      scope_section("other", "OTHER CHANGED PATHS", other_items)
+      scope_section("diagnostics", "DIAGNOSTICS", diagnostic_items)
+      scope_section("unresolved", "UNRESOLVED REFERENCES", unresolved_items)
+      scope_add("Hints are not permission limits; unrelated changes remain visible.", { kind = "footnote" })
 
       rows = scope_rows
       vim.bo[view_buf].modifiable = true
@@ -2098,22 +2120,27 @@ function M.open(opts)
       end
       vim.keymap.set("n", "<CR>", navigate, { buffer = view_buf, silent = true })
       vim.keymap.set("n", "x", copy_chunk, { buffer = view_buf, silent = true })
-      vim.keymap.set("n", "a", append_context, { buffer = view_buf, silent = true })
-      vim.keymap.set("n", "d", remove_context, { buffer = view_buf, silent = true })
-      vim.keymap.set("n", "Y", copy_context, { buffer = view_buf, silent = true })
-      vim.keymap.set("n", "c", clear_context, { buffer = view_buf, silent = true })
-      vim.keymap.set("n", "p", function()
-        open_context_view(function() open_task_scope(task) end)
+      vim.keymap.set("n", "za", function()
+        local row = selected_view_row()
+        if not row or row.kind ~= "section" or not row.section_key then return end
+        local key = task.key .. ":" .. row.section_key
+        scope_expanded[key] = not scope_expanded[key]
+        open_task_scope(task, row.key)
       end, { buffer = view_buf, silent = true })
       vim.keymap.set("n", "q", function()
         open_composed_view(mode, scope_path, "task:" .. task.key)
       end, { buffer = view_buf, silent = true })
       vim.keymap.set("n", "?", function()
-        vim.notify("Scope: <CR> open source/diff · a add context · x copy · p packet · Y copy packet · d remove · q back", vim.log.levels.INFO)
+        vim.notify("Task scope: za expand/collapse section · <CR> source/diff · x literal copy · q back", vim.log.levels.INFO)
       end, { buffer = view_buf, silent = true })
-      update_context_header()
       vim.api.nvim_set_current_win(win)
-      vim.api.nvim_win_set_cursor(win, { 1, 0 })
+      local selected_line = 1
+      if selected_key then
+        for line, row in pairs(scope_rows) do
+          if row and row.key == selected_key then selected_line = line; break end
+        end
+      end
+      vim.api.nvim_win_set_cursor(win, { selected_line, 0 })
     end
 
     vim.keymap.set("n", "s", function()
