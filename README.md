@@ -44,6 +44,18 @@ Example for lazy.nvim:
     -- CodeCompanion adapter used by <leader>nm.
     codecompanion = { adapter = "opencode" },
 
+    -- Keep the tree compact by default. Alternatives: "hunks", "codecompanion".
+    change_view = "files",
+
+    -- Window destinations: tree = "left" | "current";
+    -- file/diff = "right" | "tree" | "current"; chat = "right" | "current".
+    layout = {
+      tree = "left",
+      file = "right",
+      diff = "right",
+      chat = "right",
+    },
+
     -- Neolit installs no keymaps unless you define them here.
     keymaps = {
       open_workspace = "<leader>nn",
@@ -51,6 +63,7 @@ Example for lazy.nvim:
       review_changes = "<leader>ne",
       agent_changes = "<leader>nC",
       chat_file = "<leader>nF",
+      context_yank = "<leader>nY",
       tree_open_selected = "<CR>",
       tree_open_file = "o",
       tree_toggle = "F",
@@ -88,7 +101,8 @@ This setup selects OpenCode's built-in ACP adapter. It requires the `opencode` e
 - <leader>nm opens a CodeCompanion chat using the configured adapter.
 - Use CodeCompanion's /resume command in chat to resume an existing OpenCode session.
 - <leader>nM adds the current Neolit context composition to the active CodeCompanion chat.
-- <leader>nF adds the selected file as a quoted Markdown link, without attaching its contents.
+- <leader>nF yanks the selected file as a quoted Markdown link; no scratch buffer is created and no file contents are attached.
+- <leader>nY yanks formatted context for the selected task, requirement, file diff, or exact hunk.
 - <leader>ne invokes CodeCompanion Code Review.
 - <leader>nC invokes CodeCompanion's agent Changes list.
 
@@ -102,7 +116,9 @@ Open Neolit from the repository you want to inspect:
 - :NeolitPlan
 - Optional shortcut: configure `keymaps.open_workspace`
 
-The workspace opens a 36-column tree on the left and reuses the current window as the source preview on the right. Reopening Neolit focuses the existing workspace. :NeolitClose or `q` closes it.
+By default the workspace opens a 36-column tree on the left and uses the existing window on the right for file/diff previews and agent chat. Reopening Neolit restores the tree if a file/diff is configured to replace it. :NeolitClose or `q` closes it.
+
+Set `layout.tree = "current"` to open the tree without splitting. Set `layout.file` or `layout.diff` to `"tree"` to show that content in the tree's window, or `"current"` to use the focused window. Set `layout.chat = "current"` to launch the agent from the current window instead of the right-hand pane.
 
 ### Commands
 
@@ -124,6 +140,7 @@ Captured tasks still need explicit `SPEC:` references to participate in requirem
 ### Navigate and inspect
 
 - Expand/collapse folders, planning files, and changed files with za, zo, and zc.
+- `change_view = "files"` keeps changed-file rows compact. Use `"hunks"` to show Neolit's Git hunk attribution, or `"codecompanion"` to opt into CodeCompanion's grouped review checklist. The CodeCompanion checklist is not built in the default file view.
 - zr / zm open or close one visible level; zR / zM expand or collapse all.
 - <CR> opens the selected source or expands the selected tree node.
 - `o` opens the selected file in the right pane; `F` toggles the selected tree node; `h` / `l` collapse/expand or move to the parent.
@@ -176,6 +193,7 @@ Neolit installs **no keymaps by default**. All mappings are opt-in through the `
 Keymap action names include:
 
 - Global: `open_workspace`, `chat_open`, `agent_changes`, `review_changes`, `chat_file`, `open_journal`, `capture_journal`, `capture_task`, `capture_requirement`, `capture_criterion`.
+- Tree: `context_yank` yanks a formatted reference/diff for the selected row.
 - Tree: `tree_open_selected`, `tree_open_file`, `tree_toggle`, `tree_expand_node`, `tree_collapse_node`, `tree_composed`, `task_scope`, `affected_filter`, `refresh`, `delete_entry`, `copy_text`, `copy_path`, `close_workspace`, `tree_help`, and `tree_fold_toggle`, `tree_fold_open`, `tree_fold_close`, `tree_expand_level`, `tree_collapse_level`, `tree_expand_all`, `tree_collapse_all`.
 - Composed/context views: `open_source`, `view_back`, `view_help`, `context_add`, `context_remove`, `context_copy`, `context_clear`, `context_review`, `chat_context`, `switch_projection`, `copy_source`, `copy_path`.
 
