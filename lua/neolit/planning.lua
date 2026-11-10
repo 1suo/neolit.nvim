@@ -1460,7 +1460,8 @@ function M.open(opts)
 
     if row.kind == "task" and row.task then
       local line = row.task.range and row.task.range.startLine or 1
-      value = link .. ":" .. tostring(line) .. "\\n" .. row.task.text
+      value = link .. ":" .. tostring(line) .. "
+" .. row.task.text
     elseif row.kind == "task_requirement" and row.requirement then
       local item = row.requirement
       local line = item.range and item.range.startLine or 1
@@ -2916,6 +2917,7 @@ function M.open(opts)
   map("<leader>nx", copy_selected_text, "copy_text", "copy_text")
   map("<leader>nl", copy_selected_path, "copy_path", "copy_path")
   map("<leader>ny", copy_selected_context, "context_copy", "context_copy")
+  map("", copy_selected_context, "chat_file", "chat_file")
   map("", copy_selected_folder, "chat_folder", "chat_folder")
   map("?", function()
     vim.notify("Tree: <CR> open/expand · o open file · F toggle · h/l collapse/expand · za/zo/zc fold · zr/zm one level · zR/zM all · <leader>nv composed view · <leader>ns task scope in composed view · <leader>nf affected-only · <leader>nD delete · <leader>nx copy text · <leader>nl path · <leader>ny copy formatted context · <leader>nr refresh · <leader>nm chat · <leader>ne review · <leader>nC agent changes · <leader>nF file link · q close · ? help", vim.log.levels.INFO)
