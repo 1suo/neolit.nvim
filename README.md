@@ -51,6 +51,7 @@ Example for lazy.nvim:
     -- file/diff = "right" | "tree" | "current"; chat = "right" | "current".
     layout = {
       tree = "left",
+      width = 36,
       file = "right",
       diff = "right",
       chat = "right",
