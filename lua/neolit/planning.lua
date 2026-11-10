@@ -1987,26 +1987,7 @@ function M.open(opts)
     end
     local function add_context_to_codecompanion()
       local context = compose_context()
-      if not context then return end
-      if vim.fn.exists(":CodeCompanionChat") ~= 2 then
-        vim.notify("CodeCompanion.nvim is required for Neolit chat", vim.log.levels.ERROR)
-        return
-      end
-      local context_buf = vim.api.nvim_create_buf(false, true)
-      vim.bo[context_buf].buftype = "nofile"
-      vim.bo[context_buf].bufhidden = "wipe"
-      vim.bo[context_buf].swapfile = false
-      vim.api.nvim_buf_set_lines(context_buf, 0, -1, false, vim.split(context, "\n", { plain = true }))
-      local added, add_err = pcall(vim.api.nvim_buf_call, context_buf, function()
-        vim.cmd("normal! ggVG")
-        vim.cmd("CodeCompanionChat Add")
-      end)
-      if not added then
-        if vim.api.nvim_buf_is_valid(context_buf) then pcall(vim.api.nvim_buf_delete, context_buf, { force = true }) end
-        vim.notify("Could not add Neolit context to the active CodeCompanion chat: " .. tostring(add_err), vim.log.levels.ERROR)
-        return
-      end
-      if vim.api.nvim_buf_is_valid(context_buf) then pcall(vim.api.nvim_buf_delete, context_buf, { force = true }) end
+      if context then copy_value(context, "Composed context") end
     end
     local function open_codecompanion_chat()
       if vim.fn.exists(":CodeCompanionChat") ~= 2 then
