@@ -797,6 +797,7 @@ function M.open(opts)
   local codecompanion_review_loaded = false
   local codecompanion_preview_cache = {}
   local last_preview_key
+  local last_cursor_line
 
   local function build_codecompanion_review()
     if not package.loaded["codecompanion"] and vim.fn.exists(":CodeCompanionCodeReview") ~= 2 then
@@ -1058,6 +1059,7 @@ function M.open(opts)
             end
           end
           last_preview_key = nil
+          last_cursor_line = nil
           clear_codecompanion_previews()
           codecompanion_review_diffs = nil
           codecompanion_review_loaded = false
@@ -2671,7 +2673,6 @@ function M.open(opts)
   local refresh_group = vim.api.nvim_create_augroup("NeolitPlanning" .. buf, { clear = true })
   -- Hover previews reuse the single right-hand preview window. Enter promotes
   -- that preview by focusing it; it must not require a separate open-file chord.
-  local last_cursor_line
   vim.api.nvim_create_autocmd("CursorMoved", {
     group = refresh_group,
     buffer = buf,
