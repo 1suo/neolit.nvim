@@ -48,7 +48,7 @@ Example for lazy.nvim:
     change_view = "files",
 
     -- Window destinations: tree = "left" | "current";
-    -- file/diff = "right" | "tree" | "current"; chat = "right" | "current".
+    -- file/diff = "right" | "tree" | "current"; chat = "right" | "current" (split origin).
     layout = {
       tree = "left",
       width = 36,
@@ -119,7 +119,7 @@ Open Neolit from the repository you want to inspect:
 
 By default the workspace opens a 36-column tree on the left and uses the existing window on the right for file/diff previews and agent chat. Reopening Neolit restores the tree if a file/diff is configured to replace it. :NeolitClose or `q` closes it.
 
-Set `layout.tree = "current"` to open the tree without splitting. Set `layout.file` or `layout.diff` to `"tree"` to show that content in the tree's window, or `"current"` to use the focused window. Set `layout.chat = "current"` to launch the agent from the current window instead of the right-hand pane.
+Set `layout.tree = "current"` to open the tree without splitting. Set `layout.file` or `layout.diff` to `"tree"` to show that content in the tree's window, or `"current"` to use the focused window. Set `layout.chat = "current"` to use the current window as CodeCompanion's split origin instead of the right-hand pane. CodeCompanion still owns the chat window geometry; Neolit places its vertical split to the right by default.
 
 ### Commands
 
