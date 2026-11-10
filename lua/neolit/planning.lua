@@ -264,6 +264,8 @@ local function collect_affected_paths(workspace)
   return affected
 end
 
+local repository_tree_cache = setmetatable({}, { __mode = "k" })
+
 local function render(buf, root, workspace, expanded_files, expanded_dirs, expanded_tasks, filter_mode_value, change_view)
   local lines, rows = {}, {}
   expanded_files, expanded_dirs, expanded_tasks = expanded_files or {}, expanded_dirs or {}, expanded_tasks or {}
@@ -373,30 +375,58 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
 
   local affected_paths = collect_affected_paths(workspace)
 
-  local tree_root = { children = {}, files = {} }
-  local seen_paths = {}
-  local function insert_path(path)
-    if type(path) ~= "string" or path == "" or path:sub(1, 1) == "/" or (path == ".." or path:sub(1, 3) == "../" or path:find("/../", 1, true) or path:sub(-3) == "/..") or seen_paths[path] then return end
-    seen_paths[path] = true
-    local node, parts = tree_root, vim.split(path, "/", { plain = true })
-    for index = 1, #parts - 1 do
-      local name = parts[index]
-      node.children[name] = node.children[name] or { children = {}, files = {}, path = table.concat(parts, "/", 1, index) }
-      node = node.children[name]
+  local tree_root = repository_tree_cache[workspace]
+  if not tree_root then
+    tree_root = { children = {}, files = {} }
+    local seen_paths = {}
+    local function insert_path(path)
+      if type(path) ~= "string" or path == "" or path:sub(1, 1) == "/" or (path == ".." or path:sub(1, 3) == "../" or path:find("/../", 1, true) or path:sub(-3) == "/..") or seen_paths[path] then return end
+      seen_paths[path] = true
+      local node, parts = tree_root, vim.split(path, "/", { plain = true })
+      for index = 1, #parts - 1 do
+        local name = parts[index]
+        node.children[name] = node.children[name] or { children = {}, files = {}, path = table.concat(parts, "/", 1, index) }
+        node = node.children[name]
+      end
+      node.files[#node.files + 1] = { name = parts[#parts], path = path }
     end
-    node.files[#node.files + 1] = { name = parts[#parts], path = path }
+    for _, path in ipairs(workspace.git.repositoryFiles or {}) do insert_path(path) end
+    for _, path in ipairs(workspace.readmes or {}) do insert_path(path) end
+    for _, spec in ipairs(workspace.specs or {}) do insert_path(spec.path) end
+    for _, todo in ipairs(workspace.todos or {}) do insert_path(todo.path) end
+    for _, file in ipairs(workspace.git.changedFiles or {}) do insert_path(file.path); if file.previousPath then insert_path(file.previousPath) end end
+    local function prepare(node)
+      node.entries = {}
+      for name, child in pairs(node.children) do
+        node.entries[#node.entries + 1] = { name = name, directory = true, node = child, path = child.path }
+        prepare(child)
+      end
+      for _, entry in ipairs(node.files) do
+        node.entries[#node.entries + 1] = { name = entry.name, path = entry.path, directory = false, entry = entry }
+      end
+      table.sort(node.entries, function(a, b)
+        if a.directory ~= b.directory then return a.directory end
+        return a.name:lower() < b.name:lower()
+      end)
+    end
+    prepare(tree_root)
+    repository_tree_cache[workspace] = tree_root
   end
-  for _, path in ipairs(workspace.git.repositoryFiles or {}) do insert_path(path) end
-  for _, path in ipairs(workspace.readmes or {}) do insert_path(path) end
-  for _, spec in ipairs(workspace.specs or {}) do insert_path(spec.path) end
-  for _, todo in ipairs(workspace.todos or {}) do insert_path(todo.path) end
-  for _, file in ipairs(workspace.git.changedFiles or {}) do insert_path(file.path); if file.previousPath then insert_path(file.previousPath) end end
-
-  local function subtree_affected(node)
-    for _, file in ipairs(node.files) do if affected_paths[file.path] then return true end end
-    for _, child in pairs(node.children) do if subtree_affected(child) then return true end end
-    return false
+  local affected_dirs = {}
+  local function mark_affected_dirs(node)
+    local has_affected = false
+    for _, file in ipairs(node.files) do
+      if affected_paths[file.path] then has_affected = true; break end
+    end
+    for name, child in pairs(node.children) do
+      if mark_affected_dirs(child) then
+        affected_dirs[child.path] = true
+        has_affected = true
+      end
+    end
+    return has_affected
   end
+  mark_affected_dirs(tree_root)
   local function render_task(task, prefix, depth)
     local key = task.key
     local expanded = expanded_tasks[key] == true
@@ -582,22 +612,9 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
     .. " · f filter · v view · ? keys", { kind = "header" })
 
   local function render_tree(node, prefix, parent_key)
-    local entries = {}
-    for name, child in pairs(node.children) do
-      if filter_mode ~= "affected" or subtree_affected(child) then
-        entries[#entries + 1] = { name = name, directory = true, node = child, path = child.path }
-      end
-    end
-    for _, entry in ipairs(node.files) do
-      if filter_mode ~= "affected" or affected_paths[entry.path] then
-        entries[#entries + 1] = { name = entry.name, path = entry.path, directory = false, entry = entry }
-      end
-    end
-    table.sort(entries, function(a, b)
-      if a.directory ~= b.directory then return a.directory end
-      return a.name:lower() < b.name:lower()
-    end)
+    local entries = node.entries or {}
     for index, entry in ipairs(entries) do
+      if filter_mode ~= "affected" or (entry.directory and affected_dirs[entry.path] or not entry.directory and affected_paths[entry.path]) then
       local last = index == #entries
       local branch = last and "└" or "├"
       local child_prefix = prefix .. (last and "  " or "│ ")
@@ -608,6 +625,7 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
         if expanded then render_tree(entry.node, child_prefix, "dir:" .. entry.path) end
       else
         render_file(entry.entry, prefix, branch)
+      end
       end
     end
   end
@@ -893,42 +911,18 @@ function M.open(opts)
     end
     vim.wo[win].cursorbind = false
     vim.wo[win].scrollbind = false
-    local target_buf
-    if focus then
-      local existing_buf = vim.fn.bufnr(file_path)
-      target_buf = vim.fn.bufadd(file_path)
-      vim.fn.bufload(target_buf)
-      if not vim.b[target_buf].neolit_language_initialized then
-        set_source_language(target_buf, relative_path)
-        vim.b[target_buf].neolit_language_initialized = true
-      end
-      if vim.b[target_buf].neolit_semantics_revision ~= refresh_revision then
-        render_planning_semantics(target_buf, vim.b[buf].neolit_workspace, relative_path)
-        vim.b[target_buf].neolit_semantics_revision = refresh_revision
-      end
-      if existing_buf < 0 then vim.bo[target_buf].buflisted = false end
-    else
-      -- Hover previews use cached scratch buffers. Loading real source buffers
-      -- fires BufRead/FileType autocmds and can start LSP + Treesitter for every
-      -- file the cursor crosses, which makes navigation crawl in large repos.
-      target_buf = source_preview_cache[relative_path]
-      if not target_buf or not vim.api.nvim_buf_is_valid(target_buf) then
-        target_buf = vim.api.nvim_create_buf(false, true)
-        vim.bo[target_buf].buftype = "nofile"
-        vim.bo[target_buf].bufhidden = "hide"
-        vim.bo[target_buf].swapfile = false
-        vim.bo[target_buf].buflisted = false
-        -- Avoid slurping generated/vendor bundles into the hover pane.
-        local size = vim.fn.getfsize(file_path)
-        local source = size > 1024 * 1024
-          and { "File exceeds the 1 MiB hover-preview limit; press Enter to open" }
-          or vim.fn.readfile(file_path, "", 2000)
-        vim.api.nvim_buf_set_lines(target_buf, 0, -1, false, source)
-        vim.bo[target_buf].modifiable = false
-        vim.b[target_buf].neolit_preview_source = relative_path
-        source_preview_cache[relative_path] = target_buf
-      end
+    local existing_buf = vim.fn.bufnr(file_path)
+    local target_buf = vim.fn.bufadd(file_path)
+    vim.fn.bufload(target_buf)
+    if not vim.b[target_buf].neolit_language_initialized then
+      set_source_language(target_buf, relative_path)
+      vim.b[target_buf].neolit_language_initialized = true
     end
+    if vim.b[target_buf].neolit_semantics_revision ~= refresh_revision then
+      render_planning_semantics(target_buf, vim.b[buf].neolit_workspace, relative_path)
+      vim.b[target_buf].neolit_semantics_revision = refresh_revision
+    end
+    if existing_buf < 0 then vim.bo[target_buf].buflisted = false end
     -- Preview windows frequently replace a modified source buffer. A normal
     -- nvim_win_set_buf() raises E37 when that buffer is no longer shown in any
     -- window; :hide preserves it without forcing a write or discarding edits.
@@ -1101,7 +1095,6 @@ function M.open(opts)
           last_preview_key = nil
           last_cursor_line = nil
           last_related_key = nil
-          clear_source_previews()
           clear_codecompanion_previews()
           codecompanion_review_diffs = nil
           codecompanion_review_loaded = false
@@ -2756,7 +2749,6 @@ function M.open(opts)
     callback = function()
       refresh_revision = refresh_revision + 1
       if refresh_job then pcall(vim.fn.jobstop, refresh_job); refresh_job = nil end
-      clear_source_previews()
       clear_codecompanion_previews()
       codecompanion_review_diffs = nil
       codecompanion_review_loaded = false
@@ -2867,7 +2859,6 @@ function M.open(opts)
   local function close_workspace()
     refresh_revision = refresh_revision + 1
     if refresh_job then pcall(vim.fn.jobstop, refresh_job); refresh_job = nil end
-    clear_source_previews()
     clear_codecompanion_previews()
     codecompanion_review_diffs = nil
     codecompanion_review_loaded = false
