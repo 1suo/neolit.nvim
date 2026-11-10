@@ -19,8 +19,8 @@ local function add_codecompanion_file_reference(root, relative)
   local name = vim.fn.fnamemodify(target, ":t"):gsub("%[", "\\["):gsub("%]", "\\]")
   local escaped_target = target:gsub('"', '\\"')
   local link = "[" .. name .. ']("' .. escaped_target .. '")'
-  local ok = pcall(vim.fn.setreg, "+", link)
-  if not ok then vim.fn.setreg('"', link) end
+  vim.fn.setreg('"', link)
+  pcall(vim.fn.setreg, "+", link)
   vim.notify("File reference yanked: " .. relative, vim.log.levels.INFO)
 end
 
@@ -1250,13 +1250,13 @@ function M.open(opts)
       vim.notify("Nothing to copy for this selection", vim.log.levels.INFO)
       return
     end
+    vim.fn.setreg('"', value)
     local ok = pcall(vim.fn.setreg, "+", value)
     if not ok then
-      vim.fn.setreg('"', value)
-      vim.notify(label .. " copied to unnamed register (clipboard unavailable)", vim.log.levels.INFO)
+      vim.notify(label .. " yanked to unnamed register (clipboard unavailable)", vim.log.levels.INFO)
       return
     end
-    vim.notify(label .. " copied")
+    vim.notify(label .. " yanked")
   end
 
   local function copy_source_line(path, line, label)
@@ -1356,13 +1356,21 @@ function M.open(opts)
     local fence = string.rep(string.char(96), 3)
     if row.kind == "task_hunk" and file then
       local patch = not row.ccReviewEntry and extract_diff_hunk(file.rawDiff or "", row.hunkIndex) or nil
-      if not patch and row.hunk and row.hunk.newStart then
+      local wanted_start = row.hunk and (row.hunk.newStart or row.hunk.to_start)
+      if row.ccReviewEntry then
+        local review = (vim.b[buf].neolit_workspace or {}).codecompanionReview
+        local review_diff = review and review.diffs and review.diffs[path]
+        local cc_index = row.ccReviewEntry.hunks and row.ccReviewEntry.hunks[1]
+        local cc_hunk = review_diff and cc_index and review_diff.hunks[cc_index]
+        wanted_start = cc_hunk and cc_hunk.to_start or wanted_start
+      end
+      if not patch and wanted_start then
         local collecting, parts = false, {}
         for _, line in ipairs(vim.split(file.rawDiff or "", "\n", { plain = true })) do
           local start = tonumber(line:match("^@@ %-%d+,?%d* %+(%d+)"))
           if start then
             if collecting then break end
-            collecting = start == tonumber(row.hunk.newStart)
+            collecting = start == tonumber(wanted_start)
           end
           if collecting then parts[#parts + 1] = line end
         end
