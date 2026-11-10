@@ -413,20 +413,22 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
     repository_tree_cache[workspace] = tree_root
   end
   local affected_dirs = {}
-  local function mark_affected_dirs(node)
-    local has_affected = false
-    for _, file in ipairs(node.files) do
-      if affected_paths[file.path] then has_affected = true; break end
-    end
-    for name, child in pairs(node.children) do
-      if mark_affected_dirs(child) then
-        affected_dirs[child.path] = true
-        has_affected = true
+  if filter_mode == "affected" then
+    local function mark_affected_dirs(node)
+      local has_affected = false
+      for _, file in ipairs(node.files) do
+        if affected_paths[file.path] then has_affected = true; break end
       end
+      for _, child in pairs(node.children) do
+        if mark_affected_dirs(child) then
+          affected_dirs[child.path] = true
+          has_affected = true
+        end
+      end
+      return has_affected
     end
-    return has_affected
+    mark_affected_dirs(tree_root)
   end
-  mark_affected_dirs(tree_root)
   local function render_task(task, prefix, depth)
     local key = task.key
     local expanded = expanded_tasks[key] == true
@@ -814,7 +816,6 @@ function M.open(opts)
   local codecompanion_review_diffs
   local codecompanion_review_loaded = false
   local codecompanion_preview_cache = {}
-  local source_preview_cache = {}
   local last_preview_key
   local last_cursor_line
   local last_related_key
@@ -864,15 +865,6 @@ function M.open(opts)
       end
     end
     return true
-  end
-
-  local function clear_source_previews()
-    for _, cached in pairs(source_preview_cache) do
-      if cached and vim.api.nvim_buf_is_valid(cached) then
-        pcall(vim.api.nvim_buf_delete, cached, { force = true })
-      end
-    end
-    source_preview_cache = {}
   end
 
   local function clear_codecompanion_previews()
