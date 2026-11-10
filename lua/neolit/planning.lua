@@ -799,6 +799,14 @@ function M.open(opts)
   local last_preview_key
   local last_cursor_line
 
+  local function run_chat_command(command)
+    local splitright = vim.o.splitright
+    if not (cfg.layout and cfg.layout.chat == "current") then vim.o.splitright = true end
+    local ok, err = pcall(vim.cmd, command)
+    vim.o.splitright = splitright
+    if not ok then vim.notify("Could not open CodeCompanion: " .. tostring(err), vim.log.levels.ERROR) end
+  end
+
   local function build_codecompanion_review()
     if not package.loaded["codecompanion"] and vim.fn.exists(":CodeCompanionCodeReview") ~= 2 then
       return nil
@@ -2025,8 +2033,7 @@ function M.open(opts)
         return
       end
       vim.cmd("lcd " .. vim.fn.fnameescape(root))
-      local ok, err = pcall(vim.cmd, "CodeCompanionChat adapter=" .. adapter)
-      if not ok then vim.notify("Could not open CodeCompanion chat: " .. tostring(err), vim.log.levels.ERROR) end
+      run_chat_command("CodeCompanionChat adapter=" .. adapter)
     end
     local function clear_context()
       context_chunks, context_keys = {}, {}
@@ -2755,7 +2762,7 @@ function M.open(opts)
       or (view_state.preview_win and vim.api.nvim_win_is_valid(view_state.preview_win) and view_state.preview_win)
       or view_state.tree_win
     if target and vim.api.nvim_win_is_valid(target) then vim.api.nvim_set_current_win(target) end
-    vim.cmd("CodeCompanionChat Changes")
+    run_chat_command("CodeCompanionChat Changes")
   end, "Open CodeCompanion agent changes")
   create_action_command("NeolitReview", function()
     if vim.fn.exists(":CodeCompanionCodeReview") == 2 then vim.cmd("CodeCompanionCodeReview")
@@ -2788,7 +2795,7 @@ function M.open(opts)
       vim.api.nvim_set_current_win(chat_win)
       vim.cmd("lcd " .. vim.fn.fnameescape(root))
     end
-    vim.cmd("CodeCompanionChat adapter=" .. ((cfg.codecompanion and cfg.codecompanion.adapter) or "opencode"))
+    run_chat_command("CodeCompanionChat adapter=" .. ((cfg.codecompanion and cfg.codecompanion.adapter) or "opencode"))
   end, { desc = "Open CodeCompanion chat for this repository" })
   map("o", open_selected_file, "tree_open_file", "tree_open_file")
   map("F", toggle_node_at_cursor, "tree_toggle", "tree_toggle")
