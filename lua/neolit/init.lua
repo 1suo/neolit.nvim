@@ -38,6 +38,14 @@ function M.setup(user)
       end
     end
   end
+
+  local function run_codecompanion(command)
+    local splitright = vim.o.splitright
+    if not (configured.layout and configured.layout.chat == "current") then vim.o.splitright = true end
+    local ok, err = pcall(vim.cmd, command)
+    vim.o.splitright = splitright
+    if not ok then vim.notify("Could not open CodeCompanion: " .. tostring(err), vim.log.levels.ERROR) end
+  end
   global_map("chat_open", function()
     if not require_codecompanion("CodeCompanionChat", "chat") then return end
     local adapter = (configured.codecompanion and configured.codecompanion.adapter) or "opencode"
@@ -54,7 +62,7 @@ function M.setup(user)
         end
       end
     end
-    vim.cmd("CodeCompanionChat adapter=" .. adapter)
+    run_codecompanion("CodeCompanionChat adapter=" .. adapter)
   end)
   global_map("agent_changes", function()
     if not require_codecompanion("CodeCompanionChat", "agent changes") then return end
@@ -67,7 +75,7 @@ function M.setup(user)
         end
       end
     end
-    vim.cmd("CodeCompanionChat Changes")
+    run_codecompanion("CodeCompanionChat Changes")
   end)
   global_map("review_changes", function()
     if require_codecompanion("CodeCompanionCodeReview", "code review") then vim.cmd("CodeCompanionCodeReview") end
@@ -80,7 +88,7 @@ function M.setup(user)
     vim.cmd("CodeCompanionChat adapter=" .. adapter)
   end, { desc = "Open CodeCompanion chat", force = true })
   vim.api.nvim_create_user_command("NeolitAgentChanges", function()
-    if require_codecompanion("CodeCompanionChat", "agent changes") then focus_chat_target(); vim.cmd("CodeCompanionChat Changes") end
+    if require_codecompanion("CodeCompanionChat", "agent changes") then focus_chat_target(); run_codecompanion("CodeCompanionChat Changes") end
   end, { desc = "Open CodeCompanion agent changes", force = true })
   vim.api.nvim_create_user_command("NeolitReview", function()
     if require_codecompanion("CodeCompanionCodeReview", "code review") then vim.cmd("CodeCompanionCodeReview") end
