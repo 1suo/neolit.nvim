@@ -2254,7 +2254,9 @@ function M.open(opts)
       scope_section("criteria", "ACCEPTANCE", criterion_items)
       scope_section("hints", "FILE HINTS · relevance only", hint_items)
       scope_section("changes", "OBSERVED CHANGES", change_items)
-      scope_section("hunks", "HUNK EVIDENCE", hunk_items)
+      if cfg.change_view == "hunks" then
+        scope_section("hunks", "HUNK EVIDENCE", hunk_items)
+      end
       scope_section("other", "OTHER CHANGED PATHS", other_items)
       scope_section("diagnostics", "DIAGNOSTICS", diagnostic_items)
       scope_section("unresolved", "UNRESOLVED REFERENCES", unresolved_items)
