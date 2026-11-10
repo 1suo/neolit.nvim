@@ -9,6 +9,15 @@ M.defaults = {
   todo_file = "TODO.md",
   spec_file = "SPEC.md",
   codecompanion = { adapter = "opencode" },
+  -- "files" keeps the tree compact; "hunks" shows Neolit Git attribution;
+  -- "codecompanion" opts into CodeCompanion's grouped review checklist.
+  change_view = "files",
+  layout = {
+    tree = "left", -- "left" | "current"
+    file = "right", -- "right" | "tree" | "current"
+    diff = "right", -- "right" | "tree" | "current"
+    chat = "right", -- "right" | "current"
+  },
   keymaps = {},
 }
 
@@ -16,8 +25,8 @@ function M.merge(user)
   local merged = {}
   for key, value in pairs(M.defaults) do merged[key] = value end
   for key, value in pairs(user or {}) do
-    if key == "keymaps" and type(value) == "table" then
-      merged.keymaps = vim.tbl_extend("force", merged.keymaps or {}, value)
+    if (key == "keymaps" or key == "layout" or key == "codecompanion") and type(value) == "table" then
+      merged[key] = vim.tbl_extend("force", merged[key] or {}, value)
     else
       merged[key] = value
     end
