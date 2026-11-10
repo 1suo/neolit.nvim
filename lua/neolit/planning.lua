@@ -2039,7 +2039,40 @@ function M.open(opts)
     end
     local function add_context_to_codecompanion()
       local context = compose_context()
-      if context then copy_value(context, "Composed context") end
+      if not context then return end
+      local ok, codecompanion = pcall(require, "codecompanion")
+      if not ok or type(codecompanion.last_chat) ~= "function" then
+        vim.notify("CodeCompanion.nvim is required to send composed context", vim.log.levels.ERROR)
+        return
+      end
+      local chat = codecompanion.last_chat()
+      if not chat then
+        local adapter = (cfg.codecompanion and cfg.codecompanion.adapter) or "opencode"
+        local created, result = pcall(codecompanion.chat, {
+          params = { adapter = adapter },
+          stop_context_insertion = true,
+        })
+        if not created then
+          vim.notify("Could not open CodeCompanion chat: " .. tostring(result), vim.log.levels.ERROR)
+          return
+        end
+        chat = result
+      end
+      if not chat or type(chat.add_context) ~= "function" then
+        vim.notify("Could not access the active CodeCompanion chat", vim.log.levels.ERROR)
+        return
+      end
+      local context_id = "<neolit_context>" .. tostring(chat.bufnr) .. ":" .. tostring(#chat.messages + 1)
+      local added, err = pcall(chat.add_context, chat, { role = "user", content = context }, {
+        source = "neolit",
+        id = context_id,
+      })
+      if not added then
+        vim.notify("Could not add context to CodeCompanion: " .. tostring(err), vim.log.levels.ERROR)
+        return
+      end
+      if chat.ui and type(chat.ui.open) == "function" then chat.ui:open() end
+      vim.notify("Sent " .. #context_chunks .. " context chunk(s) to CodeCompanion; enter your prompt")
     end
     local function open_codecompanion_chat()
       if vim.fn.exists(":CodeCompanionChat") ~= 2 then
