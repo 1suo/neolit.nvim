@@ -85,7 +85,7 @@ function M.setup(user)
     if not require_codecompanion("CodeCompanionChat", "chat") then return end
     focus_chat_target()
     local adapter = (configured.codecompanion and configured.codecompanion.adapter) or "opencode"
-    vim.cmd("CodeCompanionChat adapter=" .. adapter)
+    run_codecompanion("CodeCompanionChat adapter=" .. adapter)
   end, { desc = "Open CodeCompanion chat", force = true })
   vim.api.nvim_create_user_command("NeolitAgentChanges", function()
     if require_codecompanion("CodeCompanionChat", "agent changes") then focus_chat_target(); run_codecompanion("CodeCompanionChat Changes") end
