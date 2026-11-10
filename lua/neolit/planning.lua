@@ -875,17 +875,25 @@ function M.open(opts)
     local existing_buf = vim.fn.bufnr(file_path)
     local target_buf = vim.fn.bufadd(file_path)
     vim.fn.bufload(target_buf)
-    set_source_language(target_buf, relative_path)
-    render_planning_semantics(target_buf, vim.b[buf].neolit_workspace, relative_path)
+    if not vim.b[target_buf].neolit_language_initialized then
+      set_source_language(target_buf, relative_path)
+      vim.b[target_buf].neolit_language_initialized = true
+    end
+    if vim.b[target_buf].neolit_semantics_revision ~= refresh_revision then
+      render_planning_semantics(target_buf, vim.b[buf].neolit_workspace, relative_path)
+      vim.b[target_buf].neolit_semantics_revision = refresh_revision
+    end
     -- Hover previews should not flood the user's buffer list. Preserve the
     -- listed state of buffers that were already open before Neolit previewed them.
     if existing_buf < 0 then vim.bo[target_buf].buflisted = false end
     -- Preview windows frequently replace a modified source buffer. A normal
     -- nvim_win_set_buf() raises E37 when that buffer is no longer shown in any
     -- window; :hide preserves it without forcing a write or discarding edits.
-    vim.api.nvim_win_call(win, function()
-      vim.cmd("hide buffer " .. target_buf)
-    end)
+    if vim.api.nvim_win_get_buf(win) ~= target_buf then
+      vim.api.nvim_win_call(win, function()
+        vim.cmd("hide buffer " .. target_buf)
+      end)
+    end
     vim.wo[win].wrap = vim.go.wrap
     if focus then
       vim.api.nvim_set_current_win(win)
@@ -893,7 +901,10 @@ function M.open(opts)
       vim.api.nvim_set_current_win(original_win)
     end
     if line then
-      vim.api.nvim_win_set_cursor(win, { math.max(1, line), 0 })
+      local cursor = vim.api.nvim_win_get_cursor(win)
+      if cursor[1] ~= math.max(1, line) then
+        vim.api.nvim_win_set_cursor(win, { math.max(1, line), 0 })
+      end
     end
   end
   local function open_codecompanion_diff(file, file_diff, hunk_index, focus)
@@ -938,9 +949,11 @@ function M.open(opts)
     end
     vim.wo[win].cursorbind = false
     vim.wo[win].scrollbind = false
-    vim.api.nvim_win_call(win, function()
-      vim.cmd("hide buffer " .. preview)
-    end)
+    if vim.api.nvim_win_get_buf(win) ~= preview then
+      vim.api.nvim_win_call(win, function()
+        vim.cmd("hide buffer " .. preview)
+      end)
+    end
     vim.wo[win].wrap = vim.go.wrap
     if hunk_index and file_diff.hunks[hunk_index] then
       vim.api.nvim_win_set_cursor(win, { math.max(1, file_diff.hunks[hunk_index].pos[1] + 1), 0 })
@@ -1043,6 +1056,7 @@ function M.open(opts)
               parent = parent:match("^(.*)/[^/]+$")
             end
           end
+          last_preview_key = nil
           clear_codecompanion_previews()
           codecompanion_review_diffs = nil
           codecompanion_review_loaded = false
@@ -1167,8 +1181,16 @@ function M.open(opts)
   end
 
   local current_row
+  local last_preview_key
   local function preview_row(row)
     if not row then return end
+    local path, line = selected_file_target(row)
+    local preview_key = table.concat({
+      tostring(row.kind), tostring(path or ""), tostring(line or ""),
+      tostring(row.hunkIndex or row.ccHunkIndex or ""),
+    }, ":")
+    if preview_key == last_preview_key then return end
+    last_preview_key = preview_key
     local workspace = vim.b[buf].neolit_workspace
     if row.kind == "planning_document" then
       open_in_preview(row.path, nil, false)
@@ -2648,15 +2670,20 @@ function M.open(opts)
   local refresh_group = vim.api.nvim_create_augroup("NeolitPlanning" .. buf, { clear = true })
   -- Hover previews reuse the single right-hand preview window. Enter promotes
   -- that preview by focusing it; it must not require a separate open-file chord.
+  local last_cursor_line
   vim.api.nvim_create_autocmd("CursorMoved", {
     group = refresh_group,
     buffer = buf,
     callback = function()
       -- CursorMoved fires for every window displaying this buffer. Only the
-      -- designated navigator window is allowed to drive hover previews.
+      -- designated navigator window drives previews; horizontal cursor motion
+      -- within the same row does not rebuild highlights or touch preview buffers.
       if not vim.api.nvim_win_is_valid(view_state.tree_win)
         or vim.api.nvim_get_current_win() ~= view_state.tree_win
         or vim.api.nvim_win_get_buf(view_state.tree_win) ~= buf then return end
+      local line = vim.api.nvim_win_get_cursor(view_state.tree_win)[1]
+      if line == last_cursor_line then return end
+      last_cursor_line = line
       highlight_related()
       preview_row(current_row())
     end,
