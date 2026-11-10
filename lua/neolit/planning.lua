@@ -799,6 +799,7 @@ function M.open(opts)
   local source_preview_cache = {}
   local last_preview_key
   local last_cursor_line
+  local last_related_key
 
   local function run_chat_command(command)
     local splitright = vim.o.splitright
@@ -918,7 +919,10 @@ function M.open(opts)
         vim.bo[target_buf].swapfile = false
         vim.bo[target_buf].buflisted = false
         -- Avoid slurping generated/vendor bundles into the hover pane.
-        local source = vim.fn.readfile(file_path, "", 2000)
+        local size = vim.fn.getfsize(file_path)
+        local source = size > 1024 * 1024
+          and { "File exceeds the 1 MiB hover-preview limit; press Enter to open" }
+          or vim.fn.readfile(file_path, "", 2000)
         vim.api.nvim_buf_set_lines(target_buf, 0, -1, false, source)
         vim.bo[target_buf].modifiable = false
         vim.b[target_buf].neolit_preview_source = relative_path
@@ -940,10 +944,9 @@ function M.open(opts)
       vim.api.nvim_set_current_win(original_win)
     end
     if line then
+      local target_line = math.min(math.max(1, line), vim.api.nvim_buf_line_count(target_buf))
       local cursor = vim.api.nvim_win_get_cursor(win)
-      if cursor[1] ~= math.max(1, line) then
-        vim.api.nvim_win_set_cursor(win, { math.max(1, line), 0 })
-      end
+      if cursor[1] ~= target_line then vim.api.nvim_win_set_cursor(win, { target_line, 0 }) end
     end
   end
   local function open_codecompanion_diff(file, file_diff, hunk_index, focus)
@@ -2610,7 +2613,6 @@ function M.open(opts)
     rerender_at(first_key)
   end
   local related_ns = vim.api.nvim_create_namespace("neolit-related-" .. buf)
-  local last_related_key
   local function highlight_related()
     if not vim.api.nvim_buf_is_valid(buf) then return end
     local rows = vim.b[buf].neolit_rows
