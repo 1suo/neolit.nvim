@@ -99,6 +99,35 @@ function M.chat_file(opts)
   add_codecompanion_file_reference(root, absolute:sub(#root + 2))
 end
 
+function M.chat_folder(opts)
+  local ok, _, root = pcall(find_core, opts or {})
+  if not ok then
+    vim.notify(tostring(_), vim.log.levels.ERROR)
+    return
+  end
+  root = canonical_worktree(root)
+  local name = vim.api.nvim_buf_get_name(0)
+  if name == "" then
+    vim.notify("Current buffer has no file path", vim.log.levels.INFO)
+    return
+  end
+  local absolute = vim.fn.resolve(vim.fn.fnamemodify(name, ":p"))
+  if absolute:sub(1, #root + 1) ~= root .. "/" then
+    vim.notify("Current file is outside the Neolit worktree", vim.log.levels.WARN)
+    return
+  end
+  local relative = absolute:sub(#root + 2):match("^(.*)/[^/]+$")
+  if not relative then
+    vim.notify("Current file is in the worktree root", vim.log.levels.INFO)
+    return
+  end
+  local display = relative:match("([^/]+)$") or relative
+  local link = "[" .. display .. "/](" .. relative .. "/)"
+  vim.fn.setreg('"', link)
+  pcall(vim.fn.setreg, "+", link)
+  vim.notify("Folder reference yanked: " .. relative, vim.log.levels.INFO)
+end
+
 safe_repo_path = function(root, relative)
   if type(relative) ~= "string" or relative == "" or relative:sub(1, 1) == "/" or relative:sub(1, 1) == "\\" or relative:match("^%a:") then
     return nil
@@ -1462,7 +1491,7 @@ function M.open(opts)
     end
     local display = path:match("([^/]+)$") or path
     display = display:gsub("%[", "\\\\["):gsub("%]", "\\\\]")
-    copy_value("[" .. display .. '/ ]("' .. path .. '/")', "Folder reference")
+    copy_value("[" .. display .. "/](" .. path .. "/)", "Folder reference")
   end
 
   local function copy_selected_path()
