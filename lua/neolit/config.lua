@@ -14,6 +14,7 @@ M.defaults = {
   change_view = "files",
   layout = {
     tree = "left", -- "left" | "current"
+    width = 36,
     file = "right", -- "right" | "tree" | "current"
     diff = "right", -- "right" | "tree" | "current"
     chat = "right", -- "right" | "current"
