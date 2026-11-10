@@ -1181,6 +1181,7 @@ function M.open(opts)
   end
 
   local current_row
+  local selected_file_target
   local last_preview_key
   local function preview_row(row)
     if not row then return end
@@ -1239,7 +1240,7 @@ function M.open(opts)
     end
   end
 
-  local function selected_file_target(row)
+  selected_file_target = function(row)
     if not row then return nil end
     if row.file and type(row.file.path) == "string" then
       return row.file.path, row.kind == "change_line" and row.lineNumber or nil
