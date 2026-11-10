@@ -46,7 +46,17 @@ function M.setup(user)
     vim.cmd("CodeCompanionChat adapter=" .. adapter)
   end)
   global_map("agent_changes", function()
-    if require_codecompanion("CodeCompanionChat", "agent changes") then vim.cmd("CodeCompanionChat Changes") end
+    if not require_codecompanion("CodeCompanionChat", "agent changes") then return end
+    if not (configured.layout and configured.layout.chat == "current") then
+      for _, candidate in ipairs(vim.api.nvim_list_bufs()) do
+        if vim.api.nvim_buf_is_valid(candidate) and vim.bo[candidate].filetype == "neolit-planning" then
+          local target = vim.b[candidate].neolit_preview_win or vim.b[candidate].neolit_tree_win
+          if target and vim.api.nvim_win_is_valid(target) then vim.api.nvim_set_current_win(target) end
+          break
+        end
+      end
+    end
+    vim.cmd("CodeCompanionChat Changes")
   end)
   global_map("review_changes", function()
     if require_codecompanion("CodeCompanionCodeReview", "code review") then vim.cmd("CodeCompanionCodeReview") end
