@@ -44,13 +44,19 @@ local function find_core(opts)
   local root = vim.fn.fnamemodify(cfg.directory or vim.fn.getcwd(), ":p")
   local plugin_root = config.plugin_root()
   local env = vim.fn.environ()
-  local npm_root = vim.fn.system({ "npm", "root", "-g" }):gsub("%s+$", "")
+  local readable = function(file) return vim.fn.filereadable(file) == 1 end
+  -- Prefer the plugin-local or sibling core without spawning npm on every open.
   local neolit_dir = config.find_neolit_dir(cfg, {
-    env = env,
-    plugin_root = plugin_root,
-    npm_root = npm_root ~= "" and npm_root or nil,
-    readable = function(file) return vim.fn.filereadable(file) == 1 end,
+    env = env, plugin_root = plugin_root, readable = readable,
   })
+  if not neolit_dir then
+    local npm_root = vim.fn.system({ "npm", "root", "-g" }):gsub("%s+$", "")
+    neolit_dir = config.find_neolit_dir(cfg, {
+      env = env, plugin_root = plugin_root,
+      npm_root = npm_root ~= "" and npm_root or nil,
+      readable = readable,
+    })
+  end
   if not neolit_dir then
     error("Neolit core dependency is missing; run `npm install` in the neolit.nvim plugin directory")
   end
@@ -2684,13 +2690,8 @@ function M.open(opts)
       if name ~= "" and name:sub(1, #root + 1) == root .. "/" then refresh() end
     end,
   })
-  -- Refresh on explicit request, file writes, or returning to the Neovim UI.
-  -- CursorHold fires repeatedly while the user is simply reading the tree and
-  -- used to launch a full Node/Git workspace scan every few seconds.
-  vim.api.nvim_create_autocmd("FocusGained", {
-    group = refresh_group,
-    callback = refresh,
-  })
+  -- Workspace refresh is explicit (or follows a planning/source file write).
+  -- Do not run a full Node/Git scan on idle or focus changes.
   vim.api.nvim_create_autocmd("BufWipeout", {
     group = refresh_group,
     buffer = buf,
