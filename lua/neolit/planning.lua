@@ -264,7 +264,7 @@ local function collect_affected_paths(workspace)
   return affected
 end
 
-local function render(buf, root, workspace, expanded_files, expanded_dirs, expanded_tasks, filter_mode_value)
+local function render(buf, root, workspace, expanded_files, expanded_dirs, expanded_tasks, filter_mode_value, change_view)
   local lines, rows = {}, {}
   expanded_files, expanded_dirs, expanded_tasks = expanded_files or {}, expanded_dirs or {}, expanded_tasks or {}
   local function add(text, row)
@@ -401,7 +401,7 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
     local state = type(projection) == "table" and projection.state or task.state or "planned"
     local checkbox = task.checked and "[x]" or "[ ]"
     local indent = string.rep(" ", depth)
-    local reviews = cfg.change_view == "hunks" and type(projection) == "table" and projection.hunkReviews or {}
+    local reviews = change_view == "hunks" and type(projection) == "table" and projection.hunkReviews or {}
     local changed_paths = type(projection) == "table" and projection.changedPaths or {}
     local diagnostics = diagnostics_by_task[key] or {}
     local expandable = #(task.filePaths or {}) + #(task.specReferences or {})
@@ -496,7 +496,7 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
     local cc_diff = cc_review and cc_review.diffs and cc_review.diffs[path]
     -- TODO/SPEC contents are presented in their source buffers, not duplicated
     -- as a second navigation tree. Only changed code files expand to evidence.
-    local has_hunk_children = cfg.change_view == "codecompanion" and cc_diff and #cc_diff.hunks > 0
+    local has_hunk_children = change_view == "codecompanion" and cc_diff and #cc_diff.hunks > 0
       or cfg.change_view == "hunks" and #file_hunks > 0
     local has_children = changed ~= nil
       and ((file_association and #(file_association.taskKeys or {}) > 0) or has_hunk_children)
@@ -1072,7 +1072,7 @@ function M.open(opts)
           codecompanion_review_diffs = nil
           codecompanion_review_loaded = false
           workspace.codecompanionReview = nil
-          render(buf, root, workspace, expanded_files, expanded_dirs, expanded_tasks, filter_mode)
+          render(buf, root, workspace, expanded_files, expanded_dirs, expanded_tasks, filter_mode, cfg.change_view)
           vim.b[buf].neolit_workspace = workspace
         end)
       end,
