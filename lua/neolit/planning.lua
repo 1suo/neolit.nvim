@@ -762,7 +762,7 @@ function M.open(opts)
     preview_win = original_win
     vim.cmd("topleft 36vnew")
     tree_win = vim.api.nvim_get_current_win()
-    vim.api.nvim_win_set_width(tree_win, 36)
+    vim.api.nvim_win_set_width(tree_win, math.max(20, tonumber(cfg.layout and cfg.layout.width) or 36))
   end
   local buf = vim.api.nvim_get_current_buf()
   vim.b[buf].neolit_tree_win = tree_win
