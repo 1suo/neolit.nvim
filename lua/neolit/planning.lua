@@ -500,9 +500,10 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
     local cc_diff = cc_review and cc_review.diffs and cc_review.diffs[path]
     -- TODO/SPEC contents are presented in their source buffers, not duplicated
     -- as a second navigation tree. Only changed code files expand to evidence.
+    local has_hunk_children = cfg.change_view == "codecompanion" and cc_diff and #cc_diff.hunks > 0
+      or cfg.change_view == "hunks" and #file_hunks > 0
     local has_children = changed ~= nil
-      and ((file_association and #(file_association.taskKeys or {}) > 0)
-        or (cc_diff and #cc_diff.hunks > 0) or #file_hunks > 0)
+      and ((file_association and #(file_association.taskKeys or {}) > 0) or has_hunk_children)
     add(prefix .. branch .. (has_children and (is_expanded and "-" or "+") or " ")
       .. entry.name
       .. (marker ~= "" and (" " .. marker) or "")
@@ -521,7 +522,7 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
               parent_key = "file:" .. path, file = changed, association = file_association, task = task })
         end
       end
-      if cc_diff then
+      if cfg.change_view == "codecompanion" and cc_diff then
         for entry_index, entry in ipairs(cc_review.entries or {}) do
           if entry.kind == "hunk" and entry.path == path then
             local first_hunk = entry.hunks and entry.hunks[1]
@@ -554,7 +555,7 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
                 hunk = hunk, ccHunkIndex = first_hunk, ccReviewEntry = entry, hunkAssociation = mapped })
           end
         end
-      else
+      elseif cfg.change_view == "hunks" then
         for _, item in ipairs(file_hunks) do
           local task_count = #(item.candidateTaskKeys or {})
           local requirement_count = #(item.candidateRequirementRefs or {})
@@ -707,6 +708,34 @@ end
 function M.open(opts)
   opts = opts or {}
 
+  -- Restore a tree buffer even when the configured file/diff target replaced
+  -- its window; this keeps the navigator recoverable without another instance.
+  for _, candidate in ipairs(vim.api.nvim_list_bufs()) do
+    if vim.api.nvim_buf_is_valid(candidate) and vim.bo[candidate].filetype == "neolit-planning" then
+      local restored = false
+      for _, tabpage in ipairs(vim.api.nvim_list_tabpages()) do
+        for _, win in ipairs(vim.api.nvim_tabpage_list_wins(tabpage)) do
+          if vim.api.nvim_win_get_buf(win) == candidate then
+            vim.api.nvim_set_current_tabpage(tabpage)
+            vim.api.nvim_set_current_win(win)
+            restored = true
+            break
+          end
+        end
+        if restored then break end
+      end
+      if not restored then
+        local tree = vim.b[candidate].neolit_tree_win
+        if tree and vim.api.nvim_win_is_valid(tree) then
+          vim.api.nvim_set_current_win(tree)
+          vim.api.nvim_win_set_buf(tree, candidate)
+        else
+          vim.api.nvim_set_current_buf(candidate)
+        end
+      end
+      return
+    end
+  end
   -- The workspace is a singleton per Neovim instance. Reopening :Neolit
   -- should reveal the existing tree, not create another tree in the layout.
   for _, tabpage in ipairs(vim.api.nvim_list_tabpages()) do
@@ -724,14 +753,23 @@ function M.open(opts)
   local ok, cfg, root, neolit_dir = pcall(find_core, opts)
   if not ok then vim.notify(cfg, vim.log.levels.ERROR); return end
 
-  -- Split the current window to the left: the window that was already
-  -- open becomes Neolit's one-and-only right preview pane. Do not split it
-  -- again or create a second preview window.
-  local preview_win = vim.api.nvim_get_current_win()
-  vim.cmd("topleft 36vnew")
+  -- The tree may occupy the current window or a dedicated left column.
+  -- File/diff previews use the existing right-hand window unless configured
+  -- to replace the tree/current window.
+  local original_win = vim.api.nvim_get_current_win()
+  local tree_win, preview_win
+  if (cfg.layout and cfg.layout.tree) == "current" then
+    tree_win = original_win
+    preview_win = nil
+    vim.cmd("enew")
+  else
+    preview_win = original_win
+    vim.cmd("topleft 36vnew")
+    tree_win = vim.api.nvim_get_current_win()
+    vim.api.nvim_win_set_width(tree_win, 36)
+  end
   local buf = vim.api.nvim_get_current_buf()
-  local tree_win = vim.api.nvim_get_current_win()
-  vim.api.nvim_win_set_width(tree_win, 36)
+  vim.b[buf].neolit_tree_win = tree_win
   -- Keep the navigation column fixed while preview/diff windows split and
   -- resize the remaining space. The right side then owns all remaining width.
   vim.wo[tree_win].winfixwidth = true
@@ -776,6 +814,7 @@ function M.open(opts)
   end
 
   local function ensure_codecompanion_review(workspace)
+    if cfg.change_view ~= "codecompanion" then return false end
     if codecompanion_review_loaded then return false end
     codecompanion_review_loaded = true
     local built = build_codecompanion_review()
@@ -820,14 +859,16 @@ function M.open(opts)
     if not tree or not vim.api.nvim_win_is_valid(tree) then return end
     -- Tree and preview are distinct, permanent window roles. Never fall back
     -- to the tree window: doing so replaces the navigator with a source file.
-    local win = view_state.preview_win
-    if not win or not vim.api.nvim_win_is_valid(win) or win == tree then
+    local target = (cfg.layout and cfg.layout.file) or "right"
+    local win = target == "tree" and tree or target == "current" and vim.api.nvim_get_current_win() or view_state.preview_win
+    if target == "right" and (not win or not vim.api.nvim_win_is_valid(win) or win == tree) then
       vim.api.nvim_set_current_win(tree)
       vim.cmd("rightbelow vsplit")
       win = vim.api.nvim_get_current_win()
       view_state.preview_win = win
     end
-    if win == tree or vim.api.nvim_win_get_buf(tree) ~= buf then
+    if not win or not vim.api.nvim_win_is_valid(win) then return end
+    if target == "right" and (win == tree or vim.api.nvim_win_get_buf(tree) ~= buf) then
       vim.notify("Neolit window roles are inconsistent; close and reopen :Neolit", vim.log.levels.ERROR)
       return
     end
@@ -861,14 +902,16 @@ function M.open(opts)
     local original_win = vim.api.nvim_get_current_win()
     local tree = view_state.tree_win
     if not tree or not vim.api.nvim_win_is_valid(tree) then return end
-    local win = view_state.preview_win
-    if not win or not vim.api.nvim_win_is_valid(win) or win == tree then
+    local target = (cfg.layout and cfg.layout.diff) or "right"
+    local win = target == "tree" and tree or target == "current" and vim.api.nvim_get_current_win() or view_state.preview_win
+    if target == "right" and (not win or not vim.api.nvim_win_is_valid(win) or win == tree) then
       vim.api.nvim_set_current_win(tree)
       vim.cmd("rightbelow vsplit")
       win = vim.api.nvim_get_current_win()
       view_state.preview_win = win
     end
-    if win == tree or vim.api.nvim_win_get_buf(tree) ~= buf then
+    if not win or not vim.api.nvim_win_is_valid(win) then return end
+    if target == "right" and (win == tree or vim.api.nvim_win_get_buf(tree) ~= buf) then
       vim.notify("Neolit window roles are inconsistent; close and reopen :Neolit", vim.log.levels.ERROR)
       return
     end
@@ -2588,7 +2631,10 @@ function M.open(opts)
       if name ~= "" and name:sub(1, #root + 1) == root .. "/" then refresh() end
     end,
   })
-  vim.api.nvim_create_autocmd({ "FocusGained", "CursorHold", "CursorHoldI" }, {
+  -- Refresh on explicit request, file writes, or returning to the Neovim UI.
+  -- CursorHold fires repeatedly while the user is simply reading the tree and
+  -- used to launch a full Node/Git workspace scan every few seconds.
+  vim.api.nvim_create_autocmd("FocusGained", {
     group = refresh_group,
     callback = refresh,
   })
@@ -2660,8 +2706,14 @@ function M.open(opts)
       vim.notify("CodeCompanion.nvim is required", vim.log.levels.ERROR)
       return
     end
-    vim.api.nvim_set_current_win(view_state.tree_win)
-    vim.cmd("lcd " .. vim.fn.fnameescape(root))
+    local chat_target = (cfg.layout and cfg.layout.chat) or "right"
+    local chat_win = chat_target == "current" and vim.api.nvim_get_current_win()
+      or (view_state.preview_win and vim.api.nvim_win_is_valid(view_state.preview_win) and view_state.preview_win)
+      or view_state.tree_win
+    if chat_win and vim.api.nvim_win_is_valid(chat_win) then
+      vim.api.nvim_set_current_win(chat_win)
+      vim.cmd("lcd " .. vim.fn.fnameescape(root))
+    end
     vim.cmd("CodeCompanionChat adapter=" .. ((cfg.codecompanion and cfg.codecompanion.adapter) or "opencode"))
   end, { desc = "Open CodeCompanion chat for this repository" })
   map("o", open_selected_file, "tree_open_file", "tree_open_file")
