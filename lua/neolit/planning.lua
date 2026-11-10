@@ -1468,7 +1468,7 @@ function M.open(opts)
     elseif row.kind == "task_acceptance" and row.criterion then
       local item = row.criterion
       local line = item.range and item.range.startLine or 1
-      value = link .. ":" .. tostring(line) .. "\\n" .. item.id .. " " .. item.text
+      value = link .. ":" .. tostring(line) .. "\n" .. item.id .. " " .. item.text
     elseif row.kind == "task_reference" and row.reference then
       value = link .. "\nSPEC reference: " .. table.concat(row.reference.ids or {}, ", ")
     end
@@ -2212,8 +2212,6 @@ function M.open(opts)
       vim.notify("Workspace: za expand/collapse · <leader>ns task scope · <leader>np review · o source · <leader>na add · <leader>n- remove · <leader>ny copy · <leader>nc clear · <leader>nx copy · <leader>nl path · <leader>nv switch · <leader>nm chat · <leader>nM send context to chat · <leader>nq back", vim.log.levels.INFO)
     end)
     bind_key(view_buf, cfg, "copy_source", "<leader>nx", copy_chunk)
-    bind_key(view_buf, cfg, "context_add", "<leader>na", append_context)
-    bind_key(view_buf, cfg, "context_remove", "<leader>nd", remove_context)
     local function open_task_scope(task, selected_key)
       local projection = task_states[task.key] or {}
       local scope_lines, scope_rows = {}, {}
@@ -2238,7 +2236,7 @@ function M.open(opts)
       for _, file in ipairs(workspace.git.changedFiles or {}) do
         if not changed_set[file.path] then other_changes[#other_changes + 1] = file end
       end
-      scope_add("NEOLIT · TASK SCOPE · OBSERVED · za expand · o open · <leader>nx copy · <leader>na add context · <leader>n- remove context · <leader>nq back · ?",
+      scope_add("NEOLIT · TASK SCOPE · OBSERVED · za expand · o open · <leader>nx copy · <leader>nq back · ?",
         { kind = "header" })
       scope_add("[" .. state_mark(state) .. "] " .. task.text,
         source_row("task", task_path(task), task.range, task.text, { task = task }))
@@ -2380,8 +2378,7 @@ function M.open(opts)
       bind_key(view_buf, cfg, "open_source", "<CR>", navigate)
       bind_key(view_buf, cfg, "copy_source", "<leader>nx", copy_chunk)
       bind_key(view_buf, cfg, "context_add", "<leader>na", append_context)
-      bind_key(view_buf, cfg, "chat_context", "<leader>nM", add_context_to_codecompanion)
-      bind_key(view_buf, cfg, "context_remove", "<leader>nd", remove_context)
+        bind_key(view_buf, cfg, "context_remove", "<leader>nd", remove_context)
       bind_key(view_buf, cfg, "tree_fold_toggle", "za", function()
         local row = selected_view_row()
         if not row or row.kind ~= "section" or not row.section_key then return end
@@ -2427,9 +2424,6 @@ function M.open(opts)
     vim.api.nvim_buf_create_user_command(view_buf, "NeolitContextClear", clear_context, { desc = "Clear composed Neolit context", force = true })
     vim.api.nvim_buf_create_user_command(view_buf, "NeolitContextReview", function() open_context_view() end, { desc = "Review composed Neolit context", force = true })
     vim.api.nvim_buf_create_user_command(view_buf, "NeolitChatContext", add_context_to_codecompanion, { desc = "Add composed Neolit context to CodeCompanion", force = true })
-    bind_key(view_buf, cfg, "context_copy", "<leader>ny", copy_context)
-    bind_key(view_buf, cfg, "context_clear", "<leader>nc", clear_context)
-    bind_key(view_buf, cfg, "context_review", "<leader>np", open_context_view)
     bind_key(view_buf, cfg, "chat_context", "<leader>nM", add_context_to_codecompanion)
     bind_key(view_buf, cfg, "copy_path", "<leader>nl", function()
       local row = selected_view_row()
