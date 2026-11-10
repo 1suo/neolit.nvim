@@ -85,16 +85,23 @@ end
 M.plan = M.open
 
 function M.close()
-  for _, tab in ipairs(vim.api.nvim_list_tabpages()) do
-    for _, win in ipairs(vim.api.nvim_tabpage_list_wins(tab)) do
-      local buf = vim.api.nvim_win_get_buf(win)
-      if vim.bo[buf].filetype == "neolit-planning" then
-        vim.api.nvim_win_close(win, true)
-        if vim.api.nvim_buf_is_valid(buf) then
-          pcall(vim.api.nvim_buf_delete, buf, { force = true })
+  for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+    if vim.api.nvim_buf_is_valid(buf) and vim.bo[buf].filetype == "neolit-planning" then
+      local tree = vim.b[buf].neolit_tree_win
+      if tree and vim.api.nvim_win_is_valid(tree) then
+        pcall(vim.api.nvim_win_close, tree, true)
+      else
+        for _, tab in ipairs(vim.api.nvim_list_tabpages()) do
+          for _, win in ipairs(vim.api.nvim_tabpage_list_wins(tab)) do
+            if vim.api.nvim_win_get_buf(win) == buf then
+              pcall(vim.api.nvim_win_close, win, true)
+              break
+            end
+          end
         end
-        return
       end
+      pcall(vim.api.nvim_buf_delete, buf, { force = true })
+      return
     end
   end
 end
