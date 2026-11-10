@@ -1050,7 +1050,7 @@ function M.open(opts)
       .. "const m = await import(" .. string.format("%q", url) .. "); "
       .. "const w = await m.loadPlanningWorkspace(process.cwd(), { comparisonBase: " .. comparison_base
       .. ", specPaths: [" .. spec_path .. "], todoPaths: [" .. todo_path .. "] }); "
-      .. "w.git.repositoryFiles = execFileSync(\"git\", [\"ls-files\", \"--cached\", \"--others\", \"--exclude-standard\", \"-z\"], { cwd: process.cwd(), encoding: \"utf8\" }).split(\"\\0\").filter(Boolean).sort(); "
+      .. "w.git.repositoryFiles = execFileSync(\"git\", [\"ls-files\", \"--cached\", \"-z\"], { cwd: process.cwd(), encoding: \"utf8\" }).split(\"\\0\").filter(Boolean).sort(); "
       .. "w.git.diff = ''; "
       .. "for (const f of w.git.changedFiles) for (const h of f.hunks) { "
       .. "delete h.changes; delete h.addedLines; delete h.removedLines; "
