@@ -8,14 +8,12 @@ local function bind_key(buf, cfg, action, default, callback, opts)
   vim.keymap.set("n", lhs, callback, options)
 end
 
+local safe_repo_path
+
 local function add_codecompanion_file_reference(root, relative)
   local target = type(relative) == "string" and safe_repo_path(root, relative) or nil
   if not target or vim.fn.filereadable(target) ~= 1 then
     vim.notify("Select an existing file first", vim.log.levels.INFO)
-    return
-  end
-  if vim.fn.exists(":CodeCompanionChat") ~= 2 then
-    vim.notify("CodeCompanion.nvim is required", vim.log.levels.ERROR)
     return
   end
   local name = vim.fn.fnamemodify(target, ":t"):gsub("%[", "\\["):gsub("%]", "\\]")
@@ -95,7 +93,7 @@ function M.chat_file(opts)
   add_codecompanion_file_reference(root, absolute:sub(#root + 2))
 end
 
-local function safe_repo_path(root, relative)
+safe_repo_path = function(root, relative)
   if type(relative) ~= "string" or relative == "" or relative:sub(1, 1) == "/" or relative:sub(1, 1) == "\\" or relative:match("^%a:") then
     return nil
   end
@@ -765,7 +763,7 @@ function M.open(opts)
   if preview_win then vim.b[buf].neolit_preview_win = preview_win end
   -- Keep the navigation column fixed while preview/diff windows split and
   -- resize the remaining space. The right side then owns all remaining width.
-  vim.wo[tree_win].winfixwidth = true
+  vim.wo[tree_win].winfixwidth = (cfg.layout and cfg.layout.tree) ~= "current"
   vim.wo[tree_win].cursorbind = false
   vim.wo[tree_win].scrollbind = false
   vim.wo[tree_win].wrap = vim.go.wrap
@@ -843,8 +841,8 @@ function M.open(opts)
 
   local function open_in_preview(relative_path, line, focus)
     local original_win = vim.api.nvim_get_current_win()
-    local target = safe_repo_path(root, relative_path)
-    if not target or vim.fn.filereadable(target) ~= 1 then
+    local file_path = safe_repo_path(root, relative_path)
+    if not file_path or vim.fn.filereadable(file_path) ~= 1 then
       vim.notify("File is no longer available: " .. tostring(relative_path), vim.log.levels.WARN)
       return
     end
@@ -852,9 +850,9 @@ function M.open(opts)
     if not tree or not vim.api.nvim_win_is_valid(tree) then return end
     -- Tree and preview are distinct, permanent window roles. Never fall back
     -- to the tree window: doing so replaces the navigator with a source file.
-    local target = (cfg.layout and cfg.layout.file) or "right"
-    local win = target == "tree" and tree or target == "current" and vim.api.nvim_get_current_win() or view_state.preview_win
-    if target == "right" and (not win or not vim.api.nvim_win_is_valid(win) or win == tree) then
+    local placement = (cfg.layout and cfg.layout.file) or "right"
+    local win = placement == "tree" and tree or placement == "current" and vim.api.nvim_get_current_win() or view_state.preview_win
+    if placement == "right" and (not win or not vim.api.nvim_win_is_valid(win) or win == tree) then
       vim.api.nvim_set_current_win(tree)
       vim.cmd("rightbelow vsplit")
       win = vim.api.nvim_get_current_win()
@@ -862,14 +860,14 @@ function M.open(opts)
       vim.b[buf].neolit_preview_win = win
     end
     if not win or not vim.api.nvim_win_is_valid(win) then return end
-    if target == "right" and (win == tree or vim.api.nvim_win_get_buf(tree) ~= buf) then
+    if placement == "right" and (win == tree or vim.api.nvim_win_get_buf(tree) ~= buf) then
       vim.notify("Neolit window roles are inconsistent; close and reopen :Neolit", vim.log.levels.ERROR)
       return
     end
     vim.wo[win].cursorbind = false
     vim.wo[win].scrollbind = false
-    local existing_buf = vim.fn.bufnr(target)
-    local target_buf = vim.fn.bufadd(target)
+    local existing_buf = vim.fn.bufnr(file_path)
+    local target_buf = vim.fn.bufadd(file_path)
     vim.fn.bufload(target_buf)
     set_source_language(target_buf, relative_path)
     render_planning_semantics(target_buf, vim.b[buf].neolit_workspace, relative_path)
