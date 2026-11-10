@@ -397,7 +397,7 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
     local state = type(projection) == "table" and projection.state or task.state or "planned"
     local checkbox = task.checked and "[x]" or "[ ]"
     local indent = string.rep(" ", depth)
-    local reviews = type(projection) == "table" and projection.hunkReviews or {}
+    local reviews = cfg.change_view == "hunks" and type(projection) == "table" and projection.hunkReviews or {}
     local changed_paths = type(projection) == "table" and projection.changedPaths or {}
     local diagnostics = diagnostics_by_task[key] or {}
     local expandable = #(task.filePaths or {}) + #(task.specReferences or {})
@@ -753,7 +753,7 @@ function M.open(opts)
   if (cfg.layout and cfg.layout.tree) == "current" then
     tree_win = original_win
     preview_win = nil
-    vim.cmd("enew")
+    vim.cmd("hide enew")
   else
     preview_win = original_win
     vim.cmd("topleft 36vnew")
@@ -858,6 +858,7 @@ function M.open(opts)
       vim.cmd("rightbelow vsplit")
       win = vim.api.nvim_get_current_win()
       view_state.preview_win = win
+      vim.b[buf].neolit_preview_win = win
     end
     if not win or not vim.api.nvim_win_is_valid(win) then return end
     if target == "right" and (win == tree or vim.api.nvim_win_get_buf(tree) ~= buf) then
@@ -901,6 +902,7 @@ function M.open(opts)
       vim.cmd("rightbelow vsplit")
       win = vim.api.nvim_get_current_win()
       view_state.preview_win = win
+      vim.b[buf].neolit_preview_win = win
     end
     if not win or not vim.api.nvim_win_is_valid(win) then return end
     if target == "right" and (win == tree or vim.api.nvim_win_get_buf(tree) ~= buf) then
