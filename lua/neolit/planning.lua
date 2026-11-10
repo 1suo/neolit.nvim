@@ -79,56 +79,43 @@ function M.worktree_root(opts)
   return canonical_worktree(root)
 end
 
-function M.chat_file(opts)
-  local ok, _, root = pcall(find_core, opts or {})
-  if not ok then
-    vim.notify(tostring(_), vim.log.levels.ERROR)
-    return
-  end
-  root = canonical_worktree(root)
+function M.chat_file()
   local name = vim.api.nvim_buf_get_name(0)
   if name == "" then
     vim.notify("Current buffer has no file path", vim.log.levels.INFO)
     return
   end
   local absolute = vim.fn.resolve(vim.fn.fnamemodify(name, ":p"))
-  if absolute:sub(1, #root + 1) ~= root .. "/" then
-    vim.notify("Current file is outside the Neolit worktree", vim.log.levels.WARN)
+  if vim.fn.filereadable(absolute) ~= 1 then
+    vim.notify("Current file is not readable: " .. absolute, vim.log.levels.WARN)
     return
   end
-  add_codecompanion_file_reference(root, absolute:sub(#root + 2))
-end
-
-function M.chat_folder(opts)
-  local ok, _, root = pcall(find_core, opts or {})
-  if not ok then
-    vim.notify(tostring(_), vim.log.levels.ERROR)
-    return
-  end
-  root = canonical_worktree(root)
-  local name = vim.api.nvim_buf_get_name(0)
-  if name == "" then
-    vim.notify("Current buffer has no file path", vim.log.levels.INFO)
-    return
-  end
-  local absolute = vim.fn.resolve(vim.fn.fnamemodify(name, ":p"))
-  if absolute:sub(1, #root + 1) ~= root .. "/" then
-    vim.notify("Current file is outside the Neolit worktree", vim.log.levels.WARN)
-    return
-  end
-  local relative = absolute:sub(#root + 2):match("^(.*)/[^/]+$")
-  if not relative then
-    local link = '[root]("./")'
-    vim.fn.setreg('"', link)
-    pcall(vim.fn.setreg, "+", link)
-    vim.notify("Folder reference yanked: repository root", vim.log.levels.INFO)
-    return
-  end
-  local display = relative:match("([^/]+)$") or relative
-  local link = "[" .. display .. '/]("' .. relative .. '/")'
+  local display = vim.fn.fnamemodify(absolute, ":t")
+    :gsub("%[", "\\\\["):gsub("%]", "\\\\]")
+  local link = "[" .. display .. ']("' .. absolute:gsub('"', '\\\"') .. '")'
   vim.fn.setreg('"', link)
   pcall(vim.fn.setreg, "+", link)
-  vim.notify("Folder reference yanked: " .. relative, vim.log.levels.INFO)
+  vim.notify("File reference yanked: " .. absolute, vim.log.levels.INFO)
+end
+
+function M.chat_folder()
+  local name = vim.api.nvim_buf_get_name(0)
+  if name == "" then
+    vim.notify("Current buffer has no file path", vim.log.levels.INFO)
+    return
+  end
+  local absolute = vim.fn.resolve(vim.fn.fnamemodify(name, ":p"))
+  local folder = vim.fn.fnamemodify(absolute, ":h")
+  if vim.fn.isdirectory(folder) ~= 1 then
+    vim.notify("Containing folder is not available: " .. folder, vim.log.levels.WARN)
+    return
+  end
+  local display = vim.fn.fnamemodify(folder, ":t")
+    :gsub("%[", "\\\\["):gsub("%]", "\\\\]")
+  local link = "[" .. display .. '/]("' .. folder:gsub('"', '\\\"') .. '/")'
+  vim.fn.setreg('"', link)
+  pcall(vim.fn.setreg, "+", link)
+  vim.notify("Folder reference yanked: " .. folder, vim.log.levels.INFO)
 end
 
 safe_repo_path = function(root, relative)
