@@ -118,11 +118,14 @@ function M.chat_folder(opts)
   end
   local relative = absolute:sub(#root + 2):match("^(.*)/[^/]+$")
   if not relative then
-    vim.notify("Current file is in the worktree root", vim.log.levels.INFO)
+    local link = '[root]("./")'
+    vim.fn.setreg('"', link)
+    pcall(vim.fn.setreg, "+", link)
+    vim.notify("Folder reference yanked: repository root", vim.log.levels.INFO)
     return
   end
   local display = relative:match("([^/]+)$") or relative
-  local link = "[" .. display .. "/](" .. relative .. "/)"
+  local link = "[" .. display .. '/]("' .. relative .. '/")'
   vim.fn.setreg('"', link)
   pcall(vim.fn.setreg, "+", link)
   vim.notify("Folder reference yanked: " .. relative, vim.log.levels.INFO)
@@ -1486,12 +1489,12 @@ function M.open(opts)
       path = path:match("^(.*)/[^/]+$") or ""
     end
     if not path or path == "" then
-      vim.notify("This selection has no containing folder", vim.log.levels.INFO)
+      copy_value("[root](\"./\")", "Folder reference")
       return
     end
     local display = path:match("([^/]+)$") or path
     display = display:gsub("%[", "\\\\["):gsub("%]", "\\\\]")
-    copy_value("[" .. display .. "/](" .. path .. "/)", "Folder reference")
+    copy_value("[" .. display .. '/]("' .. path .. '/")', "Folder reference")
   end
 
   local function copy_selected_path()
