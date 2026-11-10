@@ -64,7 +64,8 @@ Example for lazy.nvim:
       review_changes = "<leader>ne",
       agent_changes = "<leader>nC",
       chat_file = "<leader>nF",
-      context_yank = "<leader>nY",
+      chat_folder = "<leader>nG",
+      context_copy = "<leader>ny",
       tree_open_selected = "<CR>",
       tree_open_file = "o",
       tree_toggle = "F",
@@ -194,8 +195,9 @@ Neolit installs **no keymaps by default**. All mappings are opt-in through the `
 Keymap action names include:
 
 - Global: `open_workspace`, `chat_open`, `agent_changes`, `review_changes`, `chat_file`, `open_journal`, `capture_journal`, `capture_task`, `capture_requirement`, `capture_criterion`.
-- Tree: `context_yank` yanks a formatted reference/diff for the selected row.
+- Tree: `context_copy` yanks a Markdown reference for the item under the cursor. Files and folders become links; TODO/SPEC entries include their source path, line, and text. On a folder row it yanks that folder link.
+- Global: `chat_file` yanks the current file link; `chat_folder` yanks its containing folder link.
 - Tree: `tree_open_selected`, `tree_open_file`, `tree_toggle`, `tree_expand_node`, `tree_collapse_node`, `tree_composed`, `task_scope`, `affected_filter`, `refresh`, `delete_entry`, `copy_text`, `copy_path`, `close_workspace`, `tree_help`, and `tree_fold_toggle`, `tree_fold_open`, `tree_fold_close`, `tree_expand_level`, `tree_collapse_level`, `tree_expand_all`, `tree_collapse_all`.
-- Composed/context views: `open_source`, `view_back`, `view_help`, `context_add`, `context_remove`, `context_copy`, `context_clear`, `context_review`, `chat_context`, `switch_projection`, `copy_source`, `copy_path`.
+- Composed/task views: `open_source`, `view_back`, `view_help`, `switch_projection`, `copy_source`, `copy_path`.
 
 Mappings are installed only in their relevant scope: global actions anywhere, tree actions in the tree, and context/task actions in the views that support them. Native Neovim keys are not overridden unless you explicitly assign them.
