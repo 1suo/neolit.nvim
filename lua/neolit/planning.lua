@@ -280,7 +280,12 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
     if file.previousPath then git_status[file.previousPath] = git_status[file.previousPath] or { index = "R", worktree = " " } end
   end
   for _, association in ipairs(workspace.git.associations or {}) do associations[association.path] = association end
-  for _, association in ipairs(workspace.git.hunkAssociations or {}) do hunk_associations[association.path .. "#" .. association.hunkIndex] = association end
+  local hunks_by_path = {}
+  for _, association in ipairs(workspace.git.hunkAssociations or {}) do
+    hunk_associations[association.path .. "#" .. association.hunkIndex] = association
+    hunks_by_path[association.path] = hunks_by_path[association.path] or {}
+    hunks_by_path[association.path][#hunks_by_path[association.path] + 1] = association
+  end
 
   local tasks_by_doc, tasks_by_key, requirements_by_doc, doc_kind = {}, {}, {}, {}
   for _, path in ipairs(workspace.readmes or {}) do doc_kind[path] = "README" end
@@ -315,9 +320,7 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
     end
   end
   local function find_changed_file(path)
-    for _, file in ipairs(workspace.git.changedFiles or {}) do
-      if file.path == path then return file end
-    end
+    return changed_by_path[path]
   end
   local function find_changed_hunk(file, hunk_index)
     if type(file) ~= "table" or type(hunk_index) ~= "number" then return nil end
@@ -488,16 +491,13 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
     ) or ""
     local is_expanded = expanded_files[path] == true
     local file_association = associations[path]
-    local file_hunks = {}
-    for _, item in ipairs(workspace.git.hunkAssociations or {}) do
-      if item.path == path then file_hunks[#file_hunks + 1] = item end
-    end
+    local file_hunks = hunks_by_path[path] or {}
     local cc_review = workspace.codecompanionReview
     local cc_diff = cc_review and cc_review.diffs and cc_review.diffs[path]
     -- TODO/SPEC contents are presented in their source buffers, not duplicated
     -- as a second navigation tree. Only changed code files expand to evidence.
     local has_hunk_children = change_view == "codecompanion" and cc_diff and #cc_diff.hunks > 0
-      or cfg.change_view == "hunks" and #file_hunks > 0
+      or change_view == "hunks" and #file_hunks > 0
     local has_children = changed ~= nil
       and ((file_association and #(file_association.taskKeys or {}) > 0) or has_hunk_children)
     add(prefix .. branch .. (has_children and (is_expanded and "-" or "+") or " ")
@@ -518,7 +518,7 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
               parent_key = "file:" .. path, file = changed, association = file_association, task = task })
         end
       end
-      if cfg.change_view == "codecompanion" and cc_diff then
+      if change_view == "codecompanion" and cc_diff then
         for entry_index, entry in ipairs(cc_review.entries or {}) do
           if entry.kind == "hunk" and entry.path == path then
             local first_hunk = entry.hunks and entry.hunks[1]
@@ -551,7 +551,7 @@ local function render(buf, root, workspace, expanded_files, expanded_dirs, expan
                 hunk = hunk, ccHunkIndex = first_hunk, ccReviewEntry = entry, hunkAssociation = mapped })
           end
         end
-      elseif cfg.change_view == "hunks" then
+      elseif change_view == "hunks" then
         for _, item in ipairs(file_hunks) do
           local task_count = #(item.candidateTaskKeys or {})
           local requirement_count = #(item.candidateRequirementRefs or {})
@@ -796,6 +796,7 @@ function M.open(opts)
   local codecompanion_review_diffs
   local codecompanion_review_loaded = false
   local codecompanion_preview_cache = {}
+  local source_preview_cache = {}
   local last_preview_key
   local last_cursor_line
 
@@ -846,6 +847,15 @@ function M.open(opts)
     return true
   end
 
+  local function clear_source_previews()
+    for _, cached in pairs(source_preview_cache) do
+      if cached and vim.api.nvim_buf_is_valid(cached) then
+        pcall(vim.api.nvim_buf_delete, cached, { force = true })
+      end
+    end
+    source_preview_cache = {}
+  end
+
   local function clear_codecompanion_previews()
     for _, cached in pairs(codecompanion_preview_cache) do
       if cached.bufnr and vim.api.nvim_buf_is_valid(cached.bufnr) then
@@ -882,20 +892,38 @@ function M.open(opts)
     end
     vim.wo[win].cursorbind = false
     vim.wo[win].scrollbind = false
-    local existing_buf = vim.fn.bufnr(file_path)
-    local target_buf = vim.fn.bufadd(file_path)
-    vim.fn.bufload(target_buf)
-    if not vim.b[target_buf].neolit_language_initialized then
-      set_source_language(target_buf, relative_path)
-      vim.b[target_buf].neolit_language_initialized = true
+    local target_buf
+    if focus then
+      local existing_buf = vim.fn.bufnr(file_path)
+      target_buf = vim.fn.bufadd(file_path)
+      vim.fn.bufload(target_buf)
+      if not vim.b[target_buf].neolit_language_initialized then
+        set_source_language(target_buf, relative_path)
+        vim.b[target_buf].neolit_language_initialized = true
+      end
+      if vim.b[target_buf].neolit_semantics_revision ~= refresh_revision then
+        render_planning_semantics(target_buf, vim.b[buf].neolit_workspace, relative_path)
+        vim.b[target_buf].neolit_semantics_revision = refresh_revision
+      end
+      if existing_buf < 0 then vim.bo[target_buf].buflisted = false end
+    else
+      -- Hover previews use cached scratch buffers. Loading real source buffers
+      -- fires BufRead/FileType autocmds and can start LSP + Treesitter for every
+      -- file the cursor crosses, which makes navigation crawl in large repos.
+      target_buf = source_preview_cache[relative_path]
+      if not target_buf or not vim.api.nvim_buf_is_valid(target_buf) then
+        target_buf = vim.api.nvim_create_buf(false, true)
+        vim.bo[target_buf].buftype = "nofile"
+        vim.bo[target_buf].bufhidden = "hide"
+        vim.bo[target_buf].swapfile = false
+        vim.bo[target_buf].buflisted = false
+        local source = vim.fn.readfile(file_path)
+        vim.api.nvim_buf_set_lines(target_buf, 0, -1, false, source)
+        vim.bo[target_buf].modifiable = false
+        vim.b[target_buf].neolit_preview_source = relative_path
+        source_preview_cache[relative_path] = target_buf
+      end
     end
-    if vim.b[target_buf].neolit_semantics_revision ~= refresh_revision then
-      render_planning_semantics(target_buf, vim.b[buf].neolit_workspace, relative_path)
-      vim.b[target_buf].neolit_semantics_revision = refresh_revision
-    end
-    -- Hover previews should not flood the user's buffer list. Preserve the
-    -- listed state of buffers that were already open before Neolit previewed them.
-    if existing_buf < 0 then vim.bo[target_buf].buflisted = false end
     -- Preview windows frequently replace a modified source buffer. A normal
     -- nvim_win_set_buf() raises E37 when that buffer is no longer shown in any
     -- window; :hide preserves it without forcing a write or discarding edits.
@@ -1068,6 +1096,8 @@ function M.open(opts)
           end
           last_preview_key = nil
           last_cursor_line = nil
+          last_related_key = nil
+          clear_source_previews()
           clear_codecompanion_previews()
           codecompanion_review_diffs = nil
           codecompanion_review_loaded = false
@@ -2373,7 +2403,7 @@ function M.open(opts)
   rerender_at = function(key)
     local workspace = vim.b[buf].neolit_workspace
     if not workspace then return end
-    render(buf, root, workspace, expanded_files, expanded_dirs, expanded_tasks, filter_mode)
+    render(buf, root, workspace, expanded_files, expanded_dirs, expanded_tasks, filter_mode, cfg.change_view)
     if key then
       for line, row in pairs(vim.b[buf].neolit_rows or {}) do
         if row and row.key == key then
@@ -2579,17 +2609,22 @@ function M.open(opts)
     rerender_at(first_key)
   end
   local related_ns = vim.api.nvim_create_namespace("neolit-related-" .. buf)
+  local last_related_key
   local function highlight_related()
     if not vim.api.nvim_buf_is_valid(buf) then return end
-    vim.api.nvim_buf_clear_namespace(buf, related_ns, 0, -1)
     local rows = vim.b[buf].neolit_rows
     if type(rows) ~= "table" then return end
     local tree = view_state.tree_win
     if not tree or not vim.api.nvim_win_is_valid(tree) or vim.api.nvim_win_get_buf(tree) ~= buf then return end
     local cursor = vim.api.nvim_win_get_cursor(tree)
     local selected_row = rows[cursor[1]]
-    if type(selected_row) ~= "table"
-      or (selected_row.kind ~= "task" and selected_row.kind ~= "requirement") then return end
+    local selected_key = selected_row and (selected_row.kind == "task" and selected_row.task and ("task:" .. selected_row.task.key)
+      or selected_row.kind == "requirement" and ("requirement:" .. tostring(selected_row.spec_path) .. "#" .. tostring(selected_row.requirement and selected_row.requirement.id)))
+      or ""
+    if selected_key == last_related_key then return end
+    last_related_key = selected_key
+    vim.api.nvim_buf_clear_namespace(buf, related_ns, 0, -1)
+    if selected_key == "" then return end
 
     local selected_task = type(selected_row.task) == "table" and selected_row.task or nil
     local selected_requirement = type(selected_row.requirement) == "table" and selected_row.requirement or nil
@@ -2718,6 +2753,7 @@ function M.open(opts)
     callback = function()
       refresh_revision = refresh_revision + 1
       if refresh_job then pcall(vim.fn.jobstop, refresh_job); refresh_job = nil end
+      clear_source_previews()
       clear_codecompanion_previews()
       codecompanion_review_diffs = nil
       codecompanion_review_loaded = false
