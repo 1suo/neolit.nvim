@@ -27,6 +27,17 @@ function M.setup(user)
     end
     return true
   end
+
+  local function focus_chat_target()
+    if configured.layout and configured.layout.chat == "current" then return end
+    for _, candidate in ipairs(vim.api.nvim_list_bufs()) do
+      if vim.api.nvim_buf_is_valid(candidate) and vim.bo[candidate].filetype == "neolit-planning" then
+        local target = vim.b[candidate].neolit_preview_win or vim.b[candidate].neolit_tree_win
+        if target and vim.api.nvim_win_is_valid(target) then vim.api.nvim_set_current_win(target) end
+        break
+      end
+    end
+  end
   global_map("chat_open", function()
     if not require_codecompanion("CodeCompanionChat", "chat") then return end
     local adapter = (configured.codecompanion and configured.codecompanion.adapter) or "opencode"
@@ -64,17 +75,18 @@ function M.setup(user)
   global_map("chat_file", function() planning.chat_file(configured) end)
   vim.api.nvim_create_user_command("NeolitChat", function()
     if not require_codecompanion("CodeCompanionChat", "chat") then return end
+    focus_chat_target()
     local adapter = (configured.codecompanion and configured.codecompanion.adapter) or "opencode"
     vim.cmd("CodeCompanionChat adapter=" .. adapter)
   end, { desc = "Open CodeCompanion chat", force = true })
   vim.api.nvim_create_user_command("NeolitAgentChanges", function()
-    if require_codecompanion("CodeCompanionChat", "agent changes") then vim.cmd("CodeCompanionChat Changes") end
+    if require_codecompanion("CodeCompanionChat", "agent changes") then focus_chat_target(); vim.cmd("CodeCompanionChat Changes") end
   end, { desc = "Open CodeCompanion agent changes", force = true })
   vim.api.nvim_create_user_command("NeolitReview", function()
     if require_codecompanion("CodeCompanionCodeReview", "code review") then vim.cmd("CodeCompanionCodeReview") end
   end, { desc = "Review CodeCompanion changes", force = true })
   vim.api.nvim_create_user_command("NeolitChatFile", function() planning.chat_file(configured) end,
-    { desc = "Add current file as a quoted Markdown link to CodeCompanion", force = true })
+    { desc = "Yank current file as a quoted Markdown link", force = true })
   vim.api.nvim_create_user_command("Neolit", function()
     M.open()
   end, { desc = "Open the Git-native planning workspace", force = true })
