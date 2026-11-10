@@ -1455,23 +1455,22 @@ function M.open(opts)
     if is_directory then display = display .. "/" end
     display = display:gsub("%[", "\\\\["):gsub("%]", "\\\\]")
     local link_path = path .. (is_directory and "/" or "")
-    local link = "[" .. display .. ' ]("' .. link_path:gsub('"', '\\"') .. '")'
+    local link = "[" .. display .. ']("' .. link_path:gsub('"', '\\"') .. '")'
     local value = link
 
     if row.kind == "task" and row.task then
       local line = row.task.range and row.task.range.startLine or 1
-      value = link .. ":" .. tostring(line) .. "
-" .. row.task.text
+      value = link .. ":" .. tostring(line) .. "\n" .. row.task.text
     elseif row.kind == "task_requirement" and row.requirement then
       local item = row.requirement
       local line = item.range and item.range.startLine or 1
-      value = link .. ":" .. tostring(line) .. "\\n" .. item.id .. " " .. item.text
+      value = link .. ":" .. tostring(line) .. "\n" .. item.id .. " " .. item.text
     elseif row.kind == "task_acceptance" and row.criterion then
       local item = row.criterion
       local line = item.range and item.range.startLine or 1
       value = link .. ":" .. tostring(line) .. "\\n" .. item.id .. " " .. item.text
     elseif row.kind == "task_reference" and row.reference then
-      value = link .. "\\nSPEC reference: " .. table.concat(row.reference.ids or {}, ", ")
+      value = link .. "\nSPEC reference: " .. table.concat(row.reference.ids or {}, ", ")
     end
 
     copy_value(value, "Reference")
