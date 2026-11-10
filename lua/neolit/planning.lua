@@ -1399,61 +1399,70 @@ function M.open(opts)
   local function copy_selected_context()
     local row = current_row()
     if not row then return end
+
     local path = selected_file_target(row) or row.path
       or (row.reference and row.reference.path)
       or (row.requirement and row.requirement.specPath)
       or (row.criterion and row.criterion.specPath)
+      or (row.diagnostic and (row.diagnostic.path or row.diagnostic.todoPath))
+      or (row.task and row.task.key and row.task.key:match("^(.-)::"))
     if type(path) ~= "string" or path == "" then
       vim.notify("This selection has no source path", vim.log.levels.INFO)
       return
     end
-    local name = vim.fn.fnamemodify(path, ":t"):gsub("%[", "\\["):gsub("%]", "\\]")
-    local link = "[" .. name .. ']("' .. path:gsub('"', '\\"') .. '")'
-    local value = link
-    local file = row.file
-    local fence = string.rep(string.char(96), 3)
-    if row.kind == "task_hunk" and file then
-      local patch = not row.ccReviewEntry and extract_diff_hunk(file.rawDiff or "", row.hunkIndex) or nil
-      local wanted_start = row.hunk and (row.hunk.newStart or row.hunk.to_start)
-      if row.ccReviewEntry then
-        local review = (vim.b[buf].neolit_workspace or {}).codecompanionReview
-        local review_diff = review and review.diffs and review.diffs[path]
-        local cc_index = row.ccReviewEntry.hunks and row.ccReviewEntry.hunks[1]
-        local cc_hunk = review_diff and cc_index and review_diff.hunks[cc_index]
-        wanted_start = cc_hunk and cc_hunk.to_start or wanted_start
-      end
-      if not patch and wanted_start then
-        local collecting, parts = false, {}
-        for _, line in ipairs(vim.split(file.rawDiff or "", "\n", { plain = true })) do
-          local start = tonumber(line:match("^@@ %-%d+,?%d* %+(%d+)"))
-          if start then
-            if collecting then break end
-            collecting = start == tonumber(wanted_start)
-          end
-          if collecting then parts[#parts + 1] = line end
-        end
-        if #parts > 0 then patch = table.concat(parts, "\n") end
-      end
-      if patch then value = link .. "\n\n" .. fence .. "diff\n" .. patch .. "\n" .. fence
-      else
-        vim.notify("Exact hunk patch is unavailable; refresh the workspace", vim.log.levels.WARN)
-        return
-      end
-    elseif (row.kind == "file" or row.kind == "task_change" or row.kind == "changed_file") and file and file.rawDiff and file.rawDiff ~= "" then
-      value = link .. "\n\n" .. fence .. "diff\n" .. file.rawDiff:gsub("\n$", "") .. "\n" .. fence
-    elseif row.kind == "task" then
-      value = link .. ":" .. tostring(row.task.range and row.task.range.startLine or 1)
-        .. "\n" .. row.task.text
-    elseif row.kind == "requirement" or row.kind == "task_requirement" then
-      local requirement = row.requirement
-      value = link .. ":" .. tostring(requirement.range and requirement.range.startLine or 1)
-        .. "\n" .. requirement.id .. " " .. requirement.text
-    elseif row.kind == "task_acceptance" or row.kind == "requirement_criterion" then
-      local criterion = row.criterion
-      value = link .. ":" .. tostring(criterion.range and criterion.range.startLine or 1)
-        .. "\n" .. criterion.id .. " " .. criterion.text
+
+    local is_directory = row.kind == "tree_directory"
+    local target = safe_repo_path(root, path)
+    if not target then
+      vim.notify("Unsafe repository path", vim.log.levels.WARN)
+      return
     end
-    copy_value(value, "Context")
+    if not is_directory and vim.fn.filereadable(target) ~= 1 then
+      vim.notify("Source file is no longer available: " .. path, vim.log.levels.WARN)
+      return
+    end
+
+    local display = vim.fn.fnamemodify(path, ":t")
+    if is_directory then display = display .. "/" end
+    display = display:gsub("%[", "\\\\["):gsub("%]", "\\\\]")
+    local link_path = path .. (is_directory and "/" or "")
+    local link = "[" .. display .. ' ]("' .. link_path:gsub('"', '\\"') .. '")'
+    local value = link
+
+    if row.kind == "task" and row.task then
+      local line = row.task.range and row.task.range.startLine or 1
+      value = link .. ":" .. tostring(line) .. "\\n" .. row.task.text
+    elseif row.kind == "task_requirement" and row.requirement then
+      local item = row.requirement
+      local line = item.range and item.range.startLine or 1
+      value = link .. ":" .. tostring(line) .. "\\n" .. item.id .. " " .. item.text
+    elseif row.kind == "task_acceptance" and row.criterion then
+      local item = row.criterion
+      local line = item.range and item.range.startLine or 1
+      value = link .. ":" .. tostring(line) .. "\\n" .. item.id .. " " .. item.text
+    elseif row.kind == "task_reference" and row.reference then
+      value = link .. "\\nSPEC reference: " .. table.concat(row.reference.ids or {}, ", ")
+    end
+
+    copy_value(value, "Reference")
+  end
+
+  local function copy_selected_folder()
+    local row = current_row()
+    local path = row and (row.path or (row.task and row.task.key and row.task.key:match("^(.-)::"))
+      or (row.requirement and row.requirement.specPath) or (row.criterion and row.criterion.specPath))
+    if row and row.kind == "tree_directory" then
+      path = row.path:match("^(.*)/[^/]+$") or ""
+    elseif path and path ~= "" then
+      path = path:match("^(.*)/[^/]+$") or ""
+    end
+    if not path or path == "" then
+      vim.notify("This selection has no containing folder", vim.log.levels.INFO)
+      return
+    end
+    local display = path:match("([^/]+)$") or path
+    display = display:gsub("%[", "\\\\["):gsub("%]", "\\\\]")
+    copy_value("[" .. display .. '/ ]("' .. path .. '/")', "Folder reference")
   end
 
   local function copy_selected_path()
@@ -2878,6 +2887,7 @@ function M.open(opts)
   map("<leader>nx", copy_selected_text, "copy_text", "copy_text")
   map("<leader>nl", copy_selected_path, "copy_path", "copy_path")
   map("<leader>ny", copy_selected_context, "context_copy", "context_copy")
+  map("", copy_selected_folder, "chat_folder", "chat_folder")
   map("?", function()
     vim.notify("Tree: <CR> open/expand · o open file · F toggle · h/l collapse/expand · za/zo/zc fold · zr/zm one level · zR/zM all · <leader>nv composed view · <leader>ns task scope in composed view · <leader>nf affected-only · <leader>nD delete · <leader>nx copy text · <leader>nl path · <leader>ny copy formatted context · <leader>nr refresh · <leader>nm chat · <leader>ne review · <leader>nC agent changes · <leader>nF file link · q close · ? help", vim.log.levels.INFO)
   end, "tree_help", "tree_help")
