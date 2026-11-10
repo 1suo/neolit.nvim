@@ -2189,12 +2189,6 @@ function M.open(opts)
         if item then context_keys[item.key] = nil end
         open_context_view()
       end
-      bind_key(packet_buf, cfg, "context_copy", "<leader>ny", copy_context)
-      bind_key(packet_buf, cfg, "context_remove", "<leader>nd", remove_packet_item)
-      bind_key(packet_buf, cfg, "context_clear", "<leader>nc", function()
-        clear_context()
-        open_context_view()
-      end)
       bind_key(packet_buf, cfg, "view_back", "<leader>nq", function()
         if return_to then return_to() else open_composed_view(mode, scope_path) end
       end)
@@ -2380,8 +2374,6 @@ function M.open(opts)
       end
       bind_key(view_buf, cfg, "open_source", "<CR>", navigate)
       bind_key(view_buf, cfg, "copy_source", "<leader>nx", copy_chunk)
-      bind_key(view_buf, cfg, "context_add", "<leader>na", append_context)
-        bind_key(view_buf, cfg, "context_remove", "<leader>nd", remove_context)
       bind_key(view_buf, cfg, "tree_fold_toggle", "za", function()
         local row = selected_view_row()
         if not row or row.kind ~= "section" or not row.section_key then return end
