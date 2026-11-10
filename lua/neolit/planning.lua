@@ -2735,8 +2735,15 @@ function M.open(opts)
   create_action_command("NeolitYankContext", copy_selected_context, "Yank formatted context for the selected entry")
   create_action_command("NeolitToggle", toggle_node_at_cursor, "Toggle selected tree node")
   create_action_command("NeolitAgentChanges", function()
-    if vim.fn.exists(":CodeCompanionChat") == 2 then vim.cmd("CodeCompanionChat Changes")
-    else vim.notify("CodeCompanion.nvim is required", vim.log.levels.ERROR) end
+    if vim.fn.exists(":CodeCompanionChat") ~= 2 then
+      vim.notify("CodeCompanion.nvim is required", vim.log.levels.ERROR)
+      return
+    end
+    local target = (cfg.layout and cfg.layout.chat) == "current" and vim.api.nvim_get_current_win()
+      or (view_state.preview_win and vim.api.nvim_win_is_valid(view_state.preview_win) and view_state.preview_win)
+      or view_state.tree_win
+    if target and vim.api.nvim_win_is_valid(target) then vim.api.nvim_set_current_win(target) end
+    vim.cmd("CodeCompanionChat Changes")
   end, "Open CodeCompanion agent changes")
   create_action_command("NeolitReview", function()
     if vim.fn.exists(":CodeCompanionCodeReview") == 2 then vim.cmd("CodeCompanionCodeReview")
