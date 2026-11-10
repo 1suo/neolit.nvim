@@ -796,6 +796,7 @@ function M.open(opts)
   local codecompanion_review_diffs
   local codecompanion_review_loaded = false
   local codecompanion_preview_cache = {}
+  local last_preview_key
 
   local function build_codecompanion_review()
     if not package.loaded["codecompanion"] and vim.fn.exists(":CodeCompanionCodeReview") ~= 2 then
@@ -1182,7 +1183,6 @@ function M.open(opts)
 
   local current_row
   local selected_file_target
-  local last_preview_key
   local function preview_row(row)
     if not row then return end
     local path, line = selected_file_target(row)
