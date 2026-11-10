@@ -1628,7 +1628,7 @@ function M.open(opts)
     add("NEOLIT · " .. (mode == "tasks" and "TASKS" or "REQUIREMENTS")
       .. (scope_path and (" · " .. vim.fn.fnamemodify(scope_path, ":t")) or "")
       .. " · " .. scoped_requirement_count .. " req · " .. scoped_task_count .. " tasks"
-      .. " · ctx " .. #context_chunks .. " · za details · <leader>np review · <leader>na add · <leader>n- remove · <leader>ny copy · <leader>nc clear · <leader>nm chat",
+      .. " · za details · <leader>ny yank reference · <leader>nq back",
       { kind = "header" })
 
     if mode == "requirements" then
@@ -2906,7 +2906,7 @@ function M.open(opts)
   map("", copy_selected_context, "chat_file", "chat_file")
   map("", copy_selected_folder, "chat_folder", "chat_folder")
   map("?", function()
-    vim.notify("Tree: <CR> open/expand · o open file · F toggle · h/l collapse/expand · za/zo/zc fold · zr/zm one level · zR/zM all · <leader>nv composed view · <leader>ns task scope in composed view · <leader>nf affected-only · <leader>nD delete · <leader>nx copy text · <leader>nl path · <leader>ny copy formatted context · <leader>nr refresh · <leader>nm chat · <leader>ne review · <leader>nC agent changes · <leader>nF file link · q close · ? help", vim.log.levels.INFO)
+    vim.notify("Tree: <CR> open/expand · o open file · F toggle · h/l collapse/expand · za/zo/zc fold · zr/zm one level · zR/zM all · <leader>nv composed view · <leader>ns task scope in composed view · <leader>nf affected-only · <leader>nD delete · <leader>nx copy text · <leader>nl path · <leader>ny copy formatted context · <leader>nr refresh · <leader>nm chat · <leader>ne review · <leader>nC agent changes · <leader>nF yank reference · q close · ? help", vim.log.levels.INFO)
   end, "tree_help", "tree_help")
   local function close_workspace()
     refresh_revision = refresh_revision + 1
