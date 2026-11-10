@@ -917,7 +917,8 @@ function M.open(opts)
         vim.bo[target_buf].bufhidden = "hide"
         vim.bo[target_buf].swapfile = false
         vim.bo[target_buf].buflisted = false
-        local source = vim.fn.readfile(file_path)
+        -- Avoid slurping generated/vendor bundles into the hover pane.
+        local source = vim.fn.readfile(file_path, "", 2000)
         vim.api.nvim_buf_set_lines(target_buf, 0, -1, false, source)
         vim.bo[target_buf].modifiable = false
         vim.b[target_buf].neolit_preview_source = relative_path
@@ -2864,6 +2865,7 @@ function M.open(opts)
   local function close_workspace()
     refresh_revision = refresh_revision + 1
     if refresh_job then pcall(vim.fn.jobstop, refresh_job); refresh_job = nil end
+    clear_source_previews()
     clear_codecompanion_previews()
     codecompanion_review_diffs = nil
     codecompanion_review_loaded = false
