@@ -101,7 +101,7 @@ This setup selects OpenCode's built-in ACP adapter. It requires the `opencode` e
 
 - <leader>nm opens a CodeCompanion chat using the configured adapter.
 - Use CodeCompanion's /resume command in chat to resume an existing OpenCode session.
-- <leader>nM adds the current Neolit context composition to the active CodeCompanion chat.
+- <leader>nM yanks the current Neolit context composition to the unnamed register and clipboard; paste it into the agent chat. No temporary buffer is created or switched into CodeCompanion.
 - <leader>nF yanks the selected file as a quoted Markdown link; no scratch buffer is created and no file contents are attached.
 - <leader>nY yanks formatted context for the selected task, requirement, file diff, or exact hunk.
 - <leader>ne invokes CodeCompanion Code Review.
