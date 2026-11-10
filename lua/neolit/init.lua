@@ -81,6 +81,7 @@ function M.setup(user)
     if require_codecompanion("CodeCompanionCodeReview", "code review") then vim.cmd("CodeCompanionCodeReview") end
   end)
   global_map("chat_file", function() planning.chat_file(configured) end)
+  global_map("chat_folder", function() planning.chat_folder(configured) end)
   vim.api.nvim_create_user_command("NeolitChat", function()
     if not require_codecompanion("CodeCompanionChat", "chat") then return end
     focus_chat_target()
@@ -94,7 +95,9 @@ function M.setup(user)
     if require_codecompanion("CodeCompanionCodeReview", "code review") then vim.cmd("CodeCompanionCodeReview") end
   end, { desc = "Review CodeCompanion changes", force = true })
   vim.api.nvim_create_user_command("NeolitChatFile", function() planning.chat_file(configured) end,
-    { desc = "Yank current file as a quoted Markdown link", force = true })
+    { desc = "Yank current file as a Markdown link", force = true })
+  vim.api.nvim_create_user_command("NeolitChatFolder", function() planning.chat_folder(configured) end,
+    { desc = "Yank current file's folder as a Markdown link", force = true })
   vim.api.nvim_create_user_command("Neolit", function()
     M.open()
   end, { desc = "Open the Git-native planning workspace", force = true })
