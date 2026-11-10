@@ -762,6 +762,7 @@ function M.open(opts)
   end
   local buf = vim.api.nvim_get_current_buf()
   vim.b[buf].neolit_tree_win = tree_win
+  if preview_win then vim.b[buf].neolit_preview_win = preview_win end
   -- Keep the navigation column fixed while preview/diff windows split and
   -- resize the remaining space. The right side then owns all remaining width.
   vim.wo[tree_win].winfixwidth = true
@@ -1356,7 +1357,7 @@ function M.open(opts)
     local file = row.file
     local fence = string.rep(string.char(96), 3)
     if row.kind == "task_hunk" and file then
-      local patch = extract_diff_hunk(file.rawDiff or "", row.hunkIndex)
+      local patch = not row.ccReviewEntry and extract_diff_hunk(file.rawDiff or "", row.hunkIndex) or nil
       if not patch and row.hunk and row.hunk.newStart then
         local collecting, parts = false, {}
         for _, line in ipairs(vim.split(file.rawDiff or "", "\n", { plain = true })) do
@@ -2789,7 +2790,7 @@ function M.open(opts)
   map("<leader>nl", copy_selected_path, "copy_path", "copy_path")
   map("<leader>nY", copy_selected_context, "context_yank", "context_yank")
   map("?", function()
-    vim.notify("Tree: <CR> open/expand · o open file · F toggle · h/l collapse/expand · za/zo/zc fold · zr/zm one level · zR/zM all · <leader>nv composed view · <leader>ns task scope in composed view · <leader>nf affected-only · <leader>nD delete · <leader>nx copy text · <leader>nl path · <leader>nr refresh · <leader>nm chat · <leader>ne review · <leader>nC agent changes · <leader>nF file link · q close · ? help", vim.log.levels.INFO)
+    vim.notify("Tree: <CR> open/expand · o open file · F toggle · h/l collapse/expand · za/zo/zc fold · zr/zm one level · zR/zM all · <leader>nv composed view · <leader>ns task scope in composed view · <leader>nf affected-only · <leader>nD delete · <leader>nx copy text · <leader>nl path · <leader>nY yank context · <leader>nr refresh · <leader>nm chat · <leader>ne review · <leader>nC agent changes · <leader>nF file link · q close · ? help", vim.log.levels.INFO)
   end, "tree_help", "tree_help")
   local function close_workspace()
     refresh_revision = refresh_revision + 1
