@@ -21,17 +21,9 @@ local function add_codecompanion_file_reference(root, relative)
   local name = vim.fn.fnamemodify(target, ":t"):gsub("%[", "\\["):gsub("%]", "\\]")
   local escaped_target = target:gsub('"', '\\"')
   local link = "[" .. name .. ']("' .. escaped_target .. '")'
-  local context_buf = vim.api.nvim_create_buf(false, true)
-  vim.bo[context_buf].buftype = "nofile"
-  vim.bo[context_buf].bufhidden = "wipe"
-  vim.bo[context_buf].swapfile = false
-  vim.api.nvim_buf_set_lines(context_buf, 0, -1, false, { link })
-  local ok, err = pcall(vim.api.nvim_buf_call, context_buf, function()
-    vim.cmd("normal! ggVG")
-    vim.cmd("CodeCompanionChat Add")
-  end)
-  if vim.api.nvim_buf_is_valid(context_buf) then pcall(vim.api.nvim_buf_delete, context_buf, { force = true }) end
-  if not ok then vim.notify("Could not add file reference to CodeCompanion: " .. tostring(err), vim.log.levels.ERROR) end
+  local ok = pcall(vim.fn.setreg, "+", link)
+  if not ok then vim.fn.setreg('"', link) end
+  vim.notify("File reference yanked: " .. relative, vim.log.levels.INFO)
 end
 
 local function state_reason(state, projection)
@@ -1343,6 +1335,58 @@ function M.open(opts)
         vim.api.nvim_win_get_cursor(0)[1], false)[1] or ""
       copy_value(line:gsub("^%s+", ""), "Selected text")
     end
+  end
+
+  local function copy_selected_context()
+    local row = current_row()
+    if not row then return end
+    local path = selected_file_target(row) or row.path
+      or (row.reference and row.reference.path)
+      or (row.requirement and row.requirement.specPath)
+      or (row.criterion and row.criterion.specPath)
+    if type(path) ~= "string" or path == "" then
+      vim.notify("This selection has no source path", vim.log.levels.INFO)
+      return
+    end
+    local name = vim.fn.fnamemodify(path, ":t"):gsub("%[", "\\["):gsub("%]", "\\]")
+    local link = "[" .. name .. ']("' .. path:gsub('"', '\\"') .. '")'
+    local value = link
+    local file = row.file
+    local fence = string.rep(string.char(96), 3)
+    if row.kind == "task_hunk" and file then
+      local patch = extract_diff_hunk(file.rawDiff or "", row.hunkIndex)
+      if not patch and row.hunk and row.hunk.newStart then
+        local collecting, parts = false, {}
+        for _, line in ipairs(vim.split(file.rawDiff or "", "\n", { plain = true })) do
+          local start = tonumber(line:match("^@@ %-%d+,?%d* %+(%d+)"))
+          if start then
+            if collecting then break end
+            collecting = start == tonumber(row.hunk.newStart)
+          end
+          if collecting then parts[#parts + 1] = line end
+        end
+        if #parts > 0 then patch = table.concat(parts, "\n") end
+      end
+      if patch then value = link .. "\n\n" .. fence .. "diff\n" .. patch .. "\n" .. fence
+      else
+        vim.notify("Exact hunk patch is unavailable; refresh the workspace", vim.log.levels.WARN)
+        return
+      end
+    elseif (row.kind == "file" or row.kind == "task_change" or row.kind == "changed_file") and file and file.rawDiff and file.rawDiff ~= "" then
+      value = link .. "\n\n" .. fence .. "diff\n" .. file.rawDiff:gsub("\n$", "") .. "\n" .. fence
+    elseif row.kind == "task" then
+      value = link .. ":" .. tostring(row.task.range and row.task.range.startLine or 1)
+        .. "\n" .. row.task.text
+    elseif row.kind == "requirement" or row.kind == "task_requirement" then
+      local requirement = row.requirement
+      value = link .. ":" .. tostring(requirement.range and requirement.range.startLine or 1)
+        .. "\n" .. requirement.id .. " " .. requirement.text
+    elseif row.kind == "task_acceptance" or row.kind == "requirement_criterion" then
+      local criterion = row.criterion
+      value = link .. ":" .. tostring(criterion.range and criterion.range.startLine or 1)
+        .. "\n" .. criterion.id .. " " .. criterion.text
+    end
+    copy_value(value, "Context")
   end
 
   local function copy_selected_path()
@@ -2678,6 +2722,7 @@ function M.open(opts)
   create_action_command("NeolitDelete", delete_selected, "Delete selected planning entry")
   create_action_command("NeolitCopyText", copy_selected_text, "Copy selected text")
   create_action_command("NeolitCopyPath", copy_selected_path, "Copy selected path")
+  create_action_command("NeolitYankContext", copy_selected_context, "Yank formatted context for the selected entry")
   create_action_command("NeolitToggle", toggle_node_at_cursor, "Toggle selected tree node")
   create_action_command("NeolitAgentChanges", function()
     if vim.fn.exists(":CodeCompanionChat") == 2 then vim.cmd("CodeCompanionChat Changes")
@@ -2700,7 +2745,7 @@ function M.open(opts)
       or (row and row.reference and row.reference.path)
     add_codecompanion_file_reference(root, relative)
   end
-  vim.api.nvim_buf_create_user_command(buf, "NeolitChatFile", add_file_link_to_chat, { desc = "Add selected file as a quoted Markdown link to CodeCompanion" })
+  vim.api.nvim_buf_create_user_command(buf, "NeolitChatFile", add_file_link_to_chat, { desc = "Yank selected file as a quoted Markdown link" })
   vim.api.nvim_buf_create_user_command(buf, "NeolitChat", function()
     if vim.fn.exists(":CodeCompanionChat") ~= 2 then
       vim.notify("CodeCompanion.nvim is required", vim.log.levels.ERROR)
@@ -2740,6 +2785,7 @@ function M.open(opts)
   map("<leader>nD", delete_selected, "delete_entry", "delete_entry")
   map("<leader>nx", copy_selected_text, "copy_text", "copy_text")
   map("<leader>nl", copy_selected_path, "copy_path", "copy_path")
+  map("<leader>nY", copy_selected_context, "context_yank", "context_yank")
   map("?", function()
     vim.notify("Tree: <CR> open/expand · o open file · F toggle · h/l collapse/expand · za/zo/zc fold · zr/zm one level · zR/zM all · <leader>nv composed view · <leader>ns task scope in composed view · <leader>nf affected-only · <leader>nD delete · <leader>nx copy text · <leader>nl path · <leader>nr refresh · <leader>nm chat · <leader>ne review · <leader>nC agent changes · <leader>nF file link · q close · ? help", vim.log.levels.INFO)
   end, "tree_help", "tree_help")
